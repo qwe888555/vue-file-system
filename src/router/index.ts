@@ -12,9 +12,15 @@ import { useUserStore } from '@/store/user'
 const profileRoutes: RouteRecordRaw[] = [
   {
     path: '/profile',
-    name: 'Profile',
-    component: () => import('@/views/profile/Profile.vue'),
+    component: () => import('@/views/layouts/Layout.vue'),
     meta: { title: '个人中心', icon: 'User' },
+    children: [
+      {
+        path: '',
+        name: 'Profile',
+        component: () => import('@/views/profile/Profile.vue'),
+      },
+    ],
   },
 ]
 
@@ -43,7 +49,7 @@ const roleMenuMap: Record<UserRole, string[]> = {
 router.beforeEach(async (to, _from, next) => {
   const userStore = useUserStore()
 
-  // 白名单：登录页、SSO回调、异常页
+  // 白名单：登录页、异常页
   if (to.meta.hidden) {
     next()
     return
@@ -51,7 +57,7 @@ router.beforeEach(async (to, _from, next) => {
 
   // 未登录 → 跳登录页
   if (!userStore.token) {
-    next({ path: '/login', query: { redirect: to.fullPath } })
+    next({ path: '/login' })
     return
   }
 

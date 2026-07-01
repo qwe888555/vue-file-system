@@ -6,7 +6,7 @@
 // 样式统一使用全局 Design Token，禁止硬编码色值
 
 import Sidebar from './Sidebar.vue'
-import Header from './Header.vue'
+
 </script>
 
 <template>
@@ -15,8 +15,8 @@ import Header from './Header.vue'
     <Sidebar />
 
     <div class="layout-main">
-      <!-- 顶部栏 -->
-      <Header />
+
+     
 
       <!-- 主体内容 -->
       <main class="layout-content">
