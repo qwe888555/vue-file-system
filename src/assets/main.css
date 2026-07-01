@@ -1,0 +1,37 @@
+/* Tailwind V4 入口语法 */
+@import "tailwindcss";
+
+/* 全局设计Token 统一尺寸、颜色 */
+:root {
+  --color-primary: #409EFF;
+  --color-success: #67C23A;
+  --color-warning: #E6A23C;
+  --color-danger: #F56C6C;
+  --color-gray: #909399;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+
+  --radius-sm: 4px;
+  --radius-base: 6px;
+  --radius-lg: 8px;
+}
+
+body {
+  margin: 0;
+  font-size: 14px;
+}
+@import "tailwindcss";
+
+/* 全局自定义样式可以写在这里 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+body {
+  font-family: "Microsoft Yahei", sans-serif;
+}
