@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.{js,vue,css,scss}\"",
-    "format:check": "prettier --check \"src/**/*.{js,vue,css,scss}\"",
+    "format:check": "prettier --check \"src/**/*.{js,vue,css,scss}\""
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
