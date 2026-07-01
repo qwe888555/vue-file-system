@@ -16,9 +16,6 @@
 // ── 8. 生命周期 ──
 
 // ── 9. 方法函数 ──
-
-const unusedVar = '我不会被用到'
-console.log('不规范代码')
 </script>
 
 <template>
