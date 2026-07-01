@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 export const useUserStore = defineStore('user', {
   state: () => ({
     token: localStorage.getItem('token') || '',
-    role: localStorage.getItem('role') || 'user' // 默认普通用户
+    role: localStorage.getItem('role') || 'user', // 默认普通用户
   }),
   actions: {
     // 登录存储信息
@@ -19,6 +19,6 @@ export const useUserStore = defineStore('user', {
       this.role = 'user'
       localStorage.removeItem('token')
       localStorage.removeItem('role')
-    }
-  }
+    },
+  },
 })

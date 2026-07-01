@@ -23,6 +23,6 @@ export function usePermission() {
   return {
     isAdmin,
     isUser,
-    canUpload
+    canUpload,
   }
 }

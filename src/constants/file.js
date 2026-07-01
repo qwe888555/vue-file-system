@@ -9,7 +9,7 @@ export const FILE_CATEGORY = [
 // 用户角色
 export const ROLE_ENUM = {
   ADMIN: 'admin',
-  USER: 'user'
+  USER: 'user',
 }
 // 文件图标映射
 export const FILE_ICON_MAP = {
@@ -17,5 +17,5 @@ export const FILE_ICON_MAP = {
   docx: 'Document',
   dwg: 'DocumentCopy',
   png: 'Picture',
-  jpg: 'Picture'
+  jpg: 'Picture',
 }

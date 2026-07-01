@@ -18,7 +18,7 @@ export function usePagination(fetchApi) {
       pageSize.value = 1
       pageSize.value = size
       getList()
-    }
+    },
   }))
 
   // 请求列表
@@ -28,7 +28,7 @@ export function usePagination(fetchApi) {
       const res = await fetchApi({
         pageNum: pageNum.value,
         pageSize: pageSize.value,
-        ...extraParams
+        ...extraParams,
       })
       total.value = res.total
       return res.list

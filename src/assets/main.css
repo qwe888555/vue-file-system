@@ -1,30 +1,47 @@
 /* Tailwind V4 入口语法 */
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* 全局设计Token 统一尺寸、颜色 */
 :root {
-  --color-primary: #409EFF;
-  --color-success: #67C23A;
-  --color-warning: #E6A23C;
-  --color-danger: #F56C6C;
+  /* ── 色彩 ── */
+  --color-primary: #409eff;
+  --color-success: #67c23a;
+  --color-warning: #e6a23c;
+  --color-danger: #f56c6c;
   --color-gray: #909399;
+  --color-info: #909399;
 
+  /* ── 字体大小 ── */
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 20px;
+  --font-size-xxl: 24px;
+
+  /* ── 间距 ── */
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 12px;
   --spacing-lg: 16px;
   --spacing-xl: 24px;
 
+  /* ── 圆角 ── */
   --radius-sm: 4px;
   --radius-base: 6px;
   --radius-lg: 8px;
+
+  /* ── 阴影 ── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-base: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
 body {
   margin: 0;
   font-size: 14px;
 }
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* 全局自定义样式可以写在这里 */
 * {
@@ -33,5 +50,5 @@ body {
   box-sizing: border-box;
 }
 body {
-  font-family: "Microsoft Yahei", sans-serif;
+  font-family: 'Microsoft Yahei', sans-serif;
 }

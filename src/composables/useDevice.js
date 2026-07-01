@@ -9,6 +9,6 @@ export function useDevice() {
 
   return {
     isMobile,
-    isPc
+    isPc,
   }
 }
