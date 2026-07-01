@@ -4,6 +4,7 @@
 
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import logoImg from '@/assets/logo.png'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,9 +28,9 @@ function handleSelect(path: string) {
 
 <template>
   <aside class="sidebar">
-    <!-- Logo 占位 -->
+    <!-- Logo -->
     <div class="sidebar-logo">
-      <div class="logo-placeholder">Logo</div>
+      <img :src="logoImg" alt="成都东软学院" class="sidebar-logo-img" />
     </div>
 
     <!-- 菜单 -->
@@ -65,18 +66,20 @@ function handleSelect(path: string) {
 }
 
 .sidebar-logo {
-  height: 60px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-bottom: 1px solid #e4e7ed;
   flex-shrink: 0;
+  padding: 0 16px;
 }
 
-.logo-placeholder {
-  font-size: 18px;
-  font-weight: 600;
-  color: #909399;
+.sidebar-logo-img {
+  height: 44px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 .sidebar-menu {
