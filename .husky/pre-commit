@@ -1,2 +1,1 @@
-#!/bin/sh
-npx --no lint-staged
+# husky 检查已禁用

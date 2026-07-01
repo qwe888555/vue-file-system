@@ -1,5 +1,7 @@
+// ── 应用入口 ──
+// 人员 A 维护
+
 import './assets/main.css'
-// 下面保留你原本的router、pinia、ElementPlus所有代码不动
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
@@ -9,7 +11,8 @@ import 'element-plus/dist/index.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 const app = createApp(App)
-// 全局注册所有Element图标
+
+// 全局注册所有 Element 图标
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }

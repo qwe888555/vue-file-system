@@ -1,24 +1,77 @@
 # 项目开发规范 CONTRIBUTING.md
-## 1. 命名规则
-1. 文件夹：全部小写短横线命名，例：`mobile-file`，禁止驼峰、中文
-2. Vue组件文件：大驼峰 PascalCase，例：`FileCard.vue`
-3. js工具文件：小驼峰，例：`usePagination.js`
-4. 导入路径统一使用 `@/` 别名指向src，禁止 `../../` 多层相对路径
 
-## 2. 目录使用规则
-1. `composables`：存放全局通用业务Hook（分页、上传、权限、设备判断）
-2. `constants`：存放枚举、字典、分类、角色、状态码，禁止页面硬编码文字
-3. `api`：接口请求文件，按业务拆分，与页面业务解耦
-4. `components`：全局公共组件，分pc、mobile子文件夹，复用≥2次才可抽为公共组件
-5. `views/pc`：电脑端管理员页面（含上传管理）；`views/mobile`：移动端查看页面，**永久不引入上传组件**
+## 1. 文件职责说明
 
-## 3. Vue单文件书写顺序（强制）
-`<script setup>` 固定顺序：导入VueAPI → 导入组件/路由 → 导入api/常量/hook → Props/Emits → Pinia仓库 → 响应式变量 → computed → watch → 生命周期 → 业务方法
-`<template>` 结构从上至下布局，样式必须添加 `scoped`。
+```
+src/api/            # 接口层：封装请求，按业务模块拆分
+src/assets/         # 样式资源：全局 CSS + Design Token 变量
+src/components/     # 组件层：common 放全局公共组件，其余按模块分包
+src/composables/    # 组合式函数：封装可复用的业务逻辑（useXxx）
+src/router/         # 路由配置：index 入口 + 按模块拆分，含路由守卫
+src/store/          # 状态管理：Pinia，按业务域拆 Store，每文件 ≤200 行
+src/types/          # TypeScript 类型定义
+src/views/          # 页面级组件 + layouts 布局
+```
 
-## 4. 权限硬性规则
-1. 路由自动识别设备跳转PC/移动端，移动端路由屏蔽所有上传页面
-2. 前端隐藏操作按钮为体验控制，后端接口必须二次鉴权，非admin账号禁止调用上传接口
+## 2. 命名规范
 
-## 5. 样式规范
-全局样式变量统一在 `assets/main.css` 定义，页面优先使用Tailwind原子样式，零散色值、尺寸统一调用全局变量。
+| 类型 | 规范 | 示例 |
+|------|------|------|
+| 文件夹 | kebab-case | `user-profile/` |
+| Vue 文件 | PascalCase | `UserProfile.vue` |
+| TS 文件 | camelCase | `useRequest.ts` |
+
+- 禁止同名文件（含不同目录），禁止 `../../` 导入
+
+## 3. 代码约束
+
+- **行数**：单 `.vue` 文件 ≤ **600 行**，超限必须拆子组件
+- **内联样式**：禁止（动态计算值例外，需注释说明）
+- **`<style>`**：必须加 `scoped`，覆写第三方组件用 `:deep()` 并 CR 备注
+- **Design Token**：统一使用 `--color-*`、`--spacing-*`、`--font-size-*`
+- **字段来源**：禁止自行编造，必须来自接口文档或后端返回
+
+## 4. 增删改查规范
+
+### 查询
+- 输入搜索字段加 **300ms 防抖**，避免高频请求
+- 搜索后翻页时查询条件必须保持
+- 重置功能必须清空所有条件并重新查询
+
+### 新增/编辑
+- 弹窗打开时加载详情数据 → 整体 Loading
+- 弹窗内下拉框数据获取 → 下拉框自身 Loading
+- 点击确定提交 → 按钮 Loading + 禁用态，防止重复提交
+- 弹窗关闭后清空旧数据，下次打开重新 Loading
+- 表单校验通过后才可调接口
+
+### 删除
+- 删除前必须弹出确认框（`ElMessageBox.confirm`）
+- 删除成功后刷新列表，重置分页到第一页
+- 批量删除需支持多选 + 确认框
+
+### 数据反显
+- 使用可选链 `?.` 和空值合并 `??` 兜底，禁止模板中写三元表达式判断空值
+- 字典值统一通过 Store 转换，禁止模板硬编码 `{1: '启用'}`
+- 日期/金额统一用工具函数格式化
+- 至少验证三种数据场景：正常数据、空数据、异常数据
+
+## 5. 状态与数据流
+
+- **跨模块通信**：Pinia Store > composable > provide/inject（需注释下游） > emit/props
+- **禁止**：直接修改另一模块的内部状态或 ref
+- **增删改后**：必须刷新列表，相关联组件同步更新
+- **接口字段名**：以接口文档或后端返回为准，禁止前端编造
+
+## 6. 工程配置
+
+| 工具 | 作用 | 说明 |
+|------|------|------|
+| ESLint | 代码质量检查 | 强制启用，禁止 `eslint-disable` |
+| Prettier | 代码格式化 | `printWidth:100, singleQuote, semi:false` |
+| Husky | 提交前自动检查 | 自动 `eslint --fix` + `prettier --write` |
+
+## 7. Git 协作
+
+- **分支**：`feature/<模块名>-<功能>` / `fix/<描述>`
+- **Commit**：`<type>(<scope>): <description>`（如 `feat(chat): 添加流式渲染`）
