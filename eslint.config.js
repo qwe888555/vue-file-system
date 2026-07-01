@@ -19,9 +19,9 @@ export default [
       'vue/order-in-components': 'warn',
 
       // ── 通用规则 ──
-      'no-console': 'warn',
-      'no-debugger': 'warn',
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-console': 'error',
+      'no-debugger': 'error',
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       'prefer-const': 'error',
     },
   },
