@@ -129,10 +129,10 @@ async function handleLogin() {
       userStore.userInfo = {
         id: 1,
         username: form.username,
-        realName: '管理员',
+        first_name: '管理员',
         avatar: '',
         email: '',
-        role: 'superadmin',
+        role: 'super_admin',
       }
       ElMessage.success('登录成功')
       emit('update:visible', false)
