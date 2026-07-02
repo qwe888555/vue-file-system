@@ -7,6 +7,7 @@
 import { ref, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
+import logoImg from '@/assets/logo.png'
 
 // ── 2. 类型定义 ──
 interface Message {
@@ -189,14 +190,7 @@ function navigateTo(path: string) {
       <!-- 顶部校徽标题区 -->
       <div class="sidebar-brand">
         <div class="brand-logo">
-          <svg viewBox="0 0 40 40" width="36" height="36" fill="none">
-            <circle cx="20" cy="20" r="18" stroke="#fff" stroke-width="2.5" />
-            <text x="20" y="26" text-anchor="middle" fill="#fff" font-size="18" font-weight="bold">CD</text>
-          </svg>
-        </div>
-        <div class="brand-text" :class="{ collapsed: sidebarCollapsed }">
-          <span class="brand-name">成都东软学院</span>
-          <span class="brand-en">Chengdu Neusoft University</span>
+          <img :src="logoImg" alt="成都东软学院" class="sidebar-logo-img" />
         </div>
       </div>
 
@@ -535,33 +529,15 @@ function navigateTo(path: string) {
 
 .brand-logo {
   flex-shrink: 0;
-}
-
-.brand-text {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow: hidden;
-  white-space: nowrap;
-  transition: opacity 0.2s ease;
+  align-items: center;
 }
 
-.brand-text.collapsed {
-  opacity: 0;
-  width: 0;
-}
-
-.brand-name {
-  font-size: var(--font-size-base, 14px);
-  font-weight: 700;
-  color: #fff;
-  letter-spacing: 1px;
-}
-
-.brand-en {
-  font-size: var(--font-size-xs, 12px);
-  color: rgba(255, 255, 255, 0.7);
-  letter-spacing: 0.5px;
+.sidebar-logo-img {
+  height: 44px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 /* ── 功能导航板块 ── */
