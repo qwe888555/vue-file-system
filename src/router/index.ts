@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import type { UserRole } from '@/types'
+import { getAllowedPaths } from '@/config/permission'
 
 import authRoutes from './common'
 import chatRoutes from './chat'
@@ -40,17 +41,11 @@ const router = createRouter({
 })
 
 // ── 路由守卫：权限拦截 + 登录校验 ──
-const roleMenuMap: Record<UserRole, string[]> = {
-  user: ['/chat', '/profile'],
-  admin: ['/chat', '/knowledge', '/profile'],
-  superadmin: ['/chat', '/knowledge', '/admin', '/profile'],
-}
-
 router.beforeEach(async (to, _from, next) => {
   const userStore = useUserStore()
 
-  // 白名单：登录页、异常页
-  if (to.meta.hidden) {
+  // 白名单：登录页、异常页（硬编码 /login 防止路由死循环）
+  if (to.path === '/login' || to.meta.hidden) {
     next()
     return
   }
@@ -72,7 +67,7 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
-  const currentRole = userStore.role!
+  const currentRole = userStore.role
   if (!currentRole) {
     next({ path: '/login' })
     return
@@ -82,15 +77,23 @@ router.beforeEach(async (to, _from, next) => {
   if (to.meta.roles) {
     const allowedRoles = to.meta.roles as UserRole[]
     if (!allowedRoles.includes(currentRole)) {
+      console.warn(
+        `[权限守卫] 角色 "${currentRole}" 无权访问 "${to.path}"，所需角色:`,
+        allowedRoles,
+      )
       next({ path: '/403' })
       return
     }
   }
 
   // 角色菜单校验
-  const allowedPaths = roleMenuMap[currentRole] || []
+  const allowedPaths = getAllowedPaths(currentRole)
   const matched = to.matched.some((r) => allowedPaths.some((p) => r.path.startsWith(p)))
   if (!matched && to.path !== '/') {
+    console.warn(
+      `[权限守卫] 路径 "${to.path}" 不在角色 "${currentRole}" 的允许列表中:`,
+      allowedPaths,
+    )
     next({ path: '/403' })
     return
   }

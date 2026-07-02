@@ -1,25 +1,30 @@
 <script setup lang="ts">
 // ── 侧边栏 ──
-// 功能：Logo 占位 + 菜单导航（智能问答 / 知识库管理 / 账号管理）
+// 功能：Logo 占位 + 菜单导航（按角色动态过滤）
 
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
+import { usePermissionStore } from '@/store/permission'
 import logoImg from '@/assets/logo.png'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const permissionStore = usePermissionStore()
 
-const menuItems = [
-  { path: '/chat', label: '智能问答', icon: 'ChatLineSquare' },
-  { path: '/knowledge', label: '知识库管理', icon: 'Folder' },
-  { path: '/admin/users', label: '账号管理', icon: 'Setting' },
-]
+// 按角色动态生成菜单项
+const menuItems = computed(() => {
+  return permissionStore.permissionMenus.map((item) => ({
+    path: item.children?.[0]?.path ?? item.path,
+    label: item.title,
+    icon: item.icon || '',
+  }))
+})
 
 // 按路径前缀匹配高亮
 const activeMenu = computed(() => {
-  const matched = menuItems.find((item) => route.path.startsWith(item.path))
+  const matched = menuItems.value.find((item) => route.path.startsWith(item.path))
   return matched ? matched.path : route.path
 })
 
@@ -70,7 +75,7 @@ function handleLogout() {
 
 <style scoped>
 .sidebar {
-  width: 260px;
+  width: 220px;
   height: 100%;
   background: #fff;
   display: flex;
