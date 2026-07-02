@@ -27,6 +27,7 @@ const profileRoutes: RouteRecordRaw[] = [
 
 // ── 合并所有路由 ──
 const routes: RouteRecordRaw[] = [
+  { path: '/', redirect: '/chat' },
   ...authRoutes,
   ...chatRoutes,
   ...profileRoutes,
@@ -75,7 +76,7 @@ router.beforeEach(async (to, _from, next) => {
   // 权限校验
   if (to.meta.roles) {
     const allowedRoles = to.meta.roles as UserRole[]
-    if (!allowedRoles.includes(currentRole)) {
+    if (!allowedRoles.includes(currentRole!)) {
       console.warn(
         `[权限守卫] 角色 "${currentRole}" 无权访问 "${to.path}"，所需角色:`,
         allowedRoles,
