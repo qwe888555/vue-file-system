@@ -1,13 +1,23 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import MarkdownIt from 'markdown-it'
+import * as mammoth from 'mammoth'
 import type { KnowledgeFile } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
 
 const file = ref<KnowledgeFile | null>(null)
+const previewContent = ref('')
+const isLoading = ref(false)
+
+const md = new MarkdownIt({
+  html: true,
+  linkify: true,
+  typographer: true,
+})
 
 const fileTypeIcons: Record<string, string> = {
   pdf: 'Document',
@@ -16,6 +26,8 @@ const fileTypeIcons: Record<string, string> = {
   audio: 'Headset',
   video: 'VideoCamera',
   archive: 'FolderOpened',
+  txt: 'FileText',
+  md: 'FileText',
 }
 
 const fileTypeColors: Record<string, string> = {
@@ -25,6 +37,30 @@ const fileTypeColors: Record<string, string> = {
   audio: '#909399',
   video: '#e6a23c',
   archive: '#9b59b6',
+  txt: '#409eff',
+  md: '#409eff',
+}
+
+const fileCategory: Record<string, string> = {
+  pdf: 'PDF文档',
+  doc: 'Word文档',
+  docx: 'Word文档',
+  txt: '文本文件',
+  md: 'Markdown文档',
+  jpg: '图片',
+  jpeg: '图片',
+  png: '图片',
+  gif: '图片',
+  bmp: '图片',
+  mp3: '音频',
+  wav: '音频',
+  mp4: '视频',
+  avi: '视频',
+  mkv: '视频',
+  zip: '压缩包',
+  rar: '压缩包',
+  xlsx: 'Excel表格',
+  pptx: '演示文稿',
 }
 
 const defaultFiles: KnowledgeFile[] = [
@@ -150,12 +186,92 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+function getFileExtension(title: string): string {
+  const parts = title.split('.')
+  return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : ''
+}
+
+const fileExtension = computed(() => file.value ? getFileExtension(file.value.title) : '')
+
+const previewType = computed(() => {
+  const ext = fileExtension.value
+  if (['md', 'markdown'].includes(ext)) return 'markdown'
+  if (['txt'].includes(ext)) return 'text'
+  if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(ext)) return 'image'
+  if (['mp3', 'wav'].includes(ext)) return 'audio'
+  if (['mp4', 'avi', 'mkv'].includes(ext)) return 'video'
+  if (['pdf'].includes(ext)) return 'pdf'
+  return 'other'
+})
+
+async function loadFileContent() {
+  if (!file.value) return
+  
+  isLoading.value = true
+  
+  if (file.value.content) {
+    if (previewType.value === 'markdown') {
+      previewContent.value = md.render(file.value.content)
+    } else {
+      previewContent.value = file.value.content
+    }
+  } else if (file.value.fileData) {
+    if (previewType.value === 'text') {
+      const base64Data = file.value.fileData.split(',')[1]
+      const decoded = atob(base64Data)
+      previewContent.value = decoded
+    } else if (['doc', 'docx'].includes(fileExtension.value)) {
+      try {
+        const base64Data = file.value.fileData.split(',')[1]
+        const binaryData = atob(base64Data)
+        const arrayBuffer = new ArrayBuffer(binaryData.length)
+        const uint8Array = new Uint8Array(arrayBuffer)
+        for (let i = 0; i < binaryData.length; i++) {
+          uint8Array[i] = binaryData.charCodeAt(i)
+        }
+        const result = await mammoth.extractRawText({ arrayBuffer })
+        previewContent.value = result.value
+      } catch (error) {
+        console.error('Failed to extract text from Word document:', error)
+        previewContent.value = '无法解析Word文档内容，请下载查看'
+      }
+    }
+  } else {
+    previewContent.value = ''
+  }
+  
+  isLoading.value = false
+}
+
 function goBack() {
   router.push('/knowledge/list')
 }
 
 function handleDownload() {
-  ElMessage.info('下载功能开发中')
+  if (!file.value) return
+  
+  if (file.value.fileData) {
+    const link = document.createElement('a')
+    link.href = file.value.fileData
+    link.download = file.value.title
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    ElMessage.success('下载成功')
+  } else if (file.value.content) {
+    const blob = new Blob([file.value.content], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = file.value.title
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    ElMessage.success('下载成功')
+  } else {
+    ElMessage.info('下载功能开发中')
+  }
 }
 
 function handleRename() {
@@ -201,6 +317,7 @@ onMounted(() => {
   const id = parseInt(route.params.id as string)
   const files = getFiles()
   file.value = files.find((f) => f.id === id) || files[0]
+  loadFileContent()
 })
 </script>
 
@@ -257,7 +374,7 @@ onMounted(() => {
           </div>
           <div class="detail-row">
             <span class="detail-label">格式</span>
-            <span class="detail-value">{{ file?.fileType?.toUpperCase() }}</span>
+            <span class="detail-value">{{ fileCategory[fileExtension] || '未知' }}</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">大小</span>
@@ -282,6 +399,16 @@ onMounted(() => {
           </h4>
           <p class="desc-content">{{ file?.summary }}</p>
         </div>
+
+        <div v-if="file?.keywords?.length" class="info-keywords">
+          <h4 class="desc-title">
+            <el-icon><Tag /></el-icon>
+            关键词
+          </h4>
+          <div class="keyword-tags">
+            <el-tag v-for="kw in file.keywords" :key="kw" size="small" effect="plain">{{ kw }}</el-tag>
+          </div>
+        </div>
       </div>
 
       <div class="preview-card">
@@ -290,11 +417,62 @@ onMounted(() => {
           文件预览
         </h4>
         <div class="preview-content">
-          <div class="preview-placeholder">
+          <div v-if="isLoading" class="preview-loading">
+            <el-icon :size="48" color="#409eff" class="loading-icon"><Loading /></el-icon>
+            <p>加载中...</p>
+          </div>
+
+          <div v-else-if="previewType === 'markdown'" class="markdown-preview">
+            <div v-html="previewContent"></div>
+          </div>
+
+          <div v-else-if="previewType === 'text' || (['doc', 'docx'].includes(fileExtension))" class="text-preview">
+            <pre>{{ previewContent || '文件内容为空' }}</pre>
+          </div>
+
+          <div v-else-if="previewType === 'image'" class="image-preview">
+            <img
+              :src="file?.fileData || 'https://via.placeholder.com/600x400?text=图片预览'"
+              :alt="file?.title"
+              class="preview-image"
+            />
+          </div>
+
+          <div v-else-if="previewType === 'audio'" class="audio-preview">
+            <audio controls class="preview-audio">
+              <source :src="file?.fileData || ''" type="audio/mpeg" />
+              您的浏览器不支持音频播放
+            </audio>
+          </div>
+
+          <div v-else-if="previewType === 'video'" class="video-preview">
+            <video controls class="preview-video">
+              <source :src="file?.fileData || ''" type="video/mp4" />
+              您的浏览器不支持视频播放
+            </video>
+          </div>
+
+          <div v-else-if="previewType === 'pdf'" class="pdf-preview">
+            <iframe
+              v-if="file?.fileData"
+              :src="file.fileData"
+              class="pdf-iframe"
+            ></iframe>
+            <div v-else class="pdf-placeholder">
+              <el-icon :size="64" color="#f56c6c"><Document /></el-icon>
+              <p>PDF 文件预览</p>
+              <el-button @click="handleDownload" type="primary" size="large">
+                <el-icon><Download /></el-icon>
+                下载查看
+              </el-button>
+            </div>
+          </div>
+
+          <div v-else class="preview-placeholder">
             <el-icon :size="64" color="#c0c4cc">
               <component :is="fileTypeIcons[file?.fileType || 'doc'] || 'Document'" />
             </el-icon>
-            <p>文件预览功能开发中</p>
+            <p>{{ fileCategory[fileExtension] || '文件' }}预览功能开发中</p>
             <el-button @click="handleDownload" type="primary" size="large">
               <el-icon><Download /></el-icon>
               下载查看
@@ -437,6 +615,16 @@ onMounted(() => {
   margin: 0;
 }
 
+.info-keywords {
+  margin-top: var(--spacing-md);
+}
+
+.keyword-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .preview-card {
   background: #fff;
   border-radius: var(--radius-lg);
@@ -457,6 +645,192 @@ onMounted(() => {
 
 .preview-content {
   height: calc(100% - 40px);
+}
+
+.preview-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 400px;
+  color: var(--color-text-secondary);
+}
+
+.loading-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.markdown-preview {
+  max-height: 600px;
+  overflow-y: auto;
+  padding: var(--spacing-md);
+  background: #fafafa;
+  border-radius: var(--radius-base);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.markdown-preview :deep(h1) {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 16px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.markdown-preview :deep(h2) {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 14px 0;
+}
+
+.markdown-preview :deep(h3) {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 12px 0;
+}
+
+.markdown-preview :deep(p) {
+  margin: 8px 0;
+}
+
+.markdown-preview :deep(ul),
+.markdown-preview :deep(ol) {
+  padding-left: 24px;
+  margin: 8px 0;
+}
+
+.markdown-preview :deep(li) {
+  margin: 4px 0;
+}
+
+.markdown-preview :deep(code) {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+.markdown-preview :deep(pre) {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.markdown-preview :deep(a) {
+  color: #409eff;
+  text-decoration: none;
+}
+
+.markdown-preview :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.markdown-preview :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+
+.markdown-preview :deep(th),
+.markdown-preview :deep(td) {
+  border: 1px solid #ddd;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.markdown-preview :deep(th) {
+  background: #f5f5f5;
+}
+
+.text-preview {
+  max-height: 600px;
+  overflow-y: auto;
+  padding: var(--spacing-md);
+  background: #fafafa;
+  border-radius: var(--radius-base);
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.image-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: 600px;
+  overflow: hidden;
+  background: #fafafa;
+  border-radius: var(--radius-base);
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 600px;
+  object-fit: contain;
+}
+
+.audio-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100px;
+  background: #fafafa;
+  border-radius: var(--radius-base);
+}
+
+.preview-audio {
+  width: 100%;
+  max-width: 500px;
+}
+
+.video-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fafafa;
+  border-radius: var(--radius-base);
+}
+
+.preview-video {
+  width: 100%;
+  max-height: 500px;
+}
+
+.pdf-preview {
+  height: 100%;
+}
+
+.pdf-iframe {
+  width: 100%;
+  height: 500px;
+  border: none;
+  border-radius: var(--radius-base);
+}
+
+.pdf-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 400px;
+  color: var(--color-text-secondary);
+}
+
+.pdf-placeholder p {
+  margin: var(--spacing-lg) 0;
+  font-size: 14px;
 }
 
 .preview-placeholder {

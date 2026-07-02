@@ -231,47 +231,47 @@ onMounted(() => { chat.init() })
 
       <!-- 输入栏 -->
       <div class="chat-input-area">
-        <div class="chat-input-wrapper">
-          <div class="input-extra-wrap">
-            <button class="input-extra-btn" @click="toggleToolsMenu">
-              <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
-                <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />
-              </svg>
-            </button>
-            <Transition name="tools">
-              <div v-if="showToolsMenu" class="tools-menu">
-                <div class="tools-menu-item" @click="handleDocumentAction">
-                  <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
-                    <path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z" />
-                    <path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
-                  </svg>
-                  <span>文档相关操作</span>
+        <div class="input-anim-container">
+          <div class="input-anim-layer outer"></div>
+          <div class="input-anim-layer mid"></div>
+          <div class="chat-input-wrapper">
+            <div class="input-extra-wrap">
+              <button class="input-extra-btn" @click="toggleToolsMenu">
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
+                  <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />
+                </svg>
+              </button>
+              <Transition name="tools">
+                <div v-if="showToolsMenu" class="tools-menu">
+                  <div class="tools-menu-item" @click="handleDocumentAction">
+                    <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
+                      <path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z" />
+                      <path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                    </svg>
+                    <span>文档相关操作</span>
+                  </div>
+                  <div class="tools-menu-item" @click="handleLanguageSetting">
+                    <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
+                      <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z" />
+                      <path d="M6.5 10c0 1.5.5 3 1.5 4.5.5.7 1 1.2 1.5 1.5.5-.3 1-.8 1.5-1.5 1-1.5 1.5-3 1.5-4.5s-.5-3-1.5-4.5c-.5-.7-1-1.2-1.5-1.5-.5.3-1 .8-1.5 1.5C7 7 6.5 8.5 6.5 10z" />
+                      <path d="M3.5 7.5h13" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round" />
+                      <path d="M3.5 12.5h13" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round" />
+                    </svg>
+                    <span>语言设置</span>
+                  </div>
                 </div>
-                <div class="tools-menu-item" @click="handleLanguageSetting">
-                  <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
-                    <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z" />
-                    <path d="M6.5 10c0 1.5.5 3 1.5 4.5.5.7 1 1.2 1.5 1.5.5-.3 1-.8 1.5-1.5 1-1.5 1.5-3 1.5-4.5s-.5-3-1.5-4.5c-.5-.7-1-1.2-1.5-1.5-.5.3-1 .8-1.5 1.5C7 7 6.5 8.5 6.5 10z" />
-                    <path d="M3.5 7.5h13" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round" />
-                    <path d="M3.5 12.5h13" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round" />
-                  </svg>
-                  <span>语言设置</span>
-                </div>
-              </div>
-            </Transition>
+              </Transition>
+            </div>
+            <input
+              v-model="inputText"
+              type="text"
+              class="input-field"
+              :placeholder="isStreaming ? 'AI 正在回复…' : '输入你的问题…'"
+              :disabled="isStreaming"
+              @keyup.enter="sendMessage"
+            />
+            <button class="input-send-btn" :disabled="!inputText.trim() || isStreaming" @click="sendMessage">发送</button>
           </div>
-          <input
-            v-model="inputText"
-            type="text"
-            class="input-field"
-            :placeholder="isStreaming ? 'AI 正在回复…' : '输入你的问题…'"
-            :disabled="isStreaming"
-            @keyup.enter="sendMessage"
-          />
-          <button class="input-send-btn-circle" :disabled="!inputText.trim() || isStreaming" @click="sendMessage">
-            <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
-              <path d="M10 3a1 1 0 01.707.293l6 6a1 1 0 01-1.414 1.414L11 6.414V17a1 1 0 11-2 0V6.414l-4.293 4.293a1 1 0 01-1.414-1.414l6-6A1 1 0 0110 3z" />
-            </svg>
-          </button>
         </div>
       </div>
     </div>
@@ -532,33 +532,104 @@ onMounted(() => { chat.init() })
 /* ═══ 输入栏 ═══ */
 .chat-input-area {
   flex-shrink: 0;
-  padding: 16px 24px 28px;
+  padding: 20px 24px 32px;
   background: #fff;
 }
-.chat-input-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+
+/* ── 输入框渐变边框（Uiverse 三层旋转风格）── */
+.input-anim-container {
+  position: relative;
   max-width: 760px;
   margin: 0 auto;
-  background: #f0f5ff;
-  border-radius: 14px;
-  padding: 6px 6px 6px 18px;
-  border: 1.5px solid #d0ddf0;
-  transition: border-color 0.2s, box-shadow 0.2s;
 }
-.chat-input-wrapper:focus-within {
-  border-color: #409eff;
-  box-shadow: 0 0 0 3px rgba(64,158,255,0.12);
+
+.chat-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: none;
+  border-radius: 16px;
+  padding: 10px 8px 10px 20px;
+  background: #f0f5ff;
+  z-index: 1;
+}
+
+/* ── 两层旋转渐变（蓝 → 靛蓝紫）── */
+.input-anim-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  opacity: 0;
+  transform: rotate(0deg);
+  transition: opacity 0.35s, transform 0.5s ease;
+}
+.input-anim-layer.outer {
+  filter: blur(20px);
+}
+.input-anim-layer.mid {
+  inset: -1.5px;
+  filter: blur(3px);
+}
+
+/* 失焦时从不同方向旋转消失 */
+.input-anim-container:not(:focus-within) .input-anim-layer.outer {
+  transform: rotate(40deg) scale(0.96);
+}
+.input-anim-container:not(:focus-within) .input-anim-layer.mid {
+  transform: rotate(-40deg) scale(0.96);
+}
+.input-anim-layer::before {
+  content: "";
+  position: absolute;
+  inset: -200%;
+  width: 300%;
+  height: 300%;
+  animation: inputSpin 10s cubic-bezier(0.56, 0.15, 0.28, 0.86) infinite;
+  animation-play-state: paused;
+}
+.input-anim-layer.outer::before {
+  background: linear-gradient(90deg, #409eff, #5b4dff);
+}
+.input-anim-layer.mid::before {
+  background: linear-gradient(90deg, #66b1ff, #7c3aed);
+}
+
+.input-anim-container:hover .input-anim-layer,
+.input-anim-container:focus-within .input-anim-layer {
+  opacity: 0.65;
+}
+.input-anim-container:hover .input-anim-layer::before,
+.input-anim-container:focus-within .input-anim-layer::before {
+  animation-play-state: running;
+}
+
+/* 内层遮罩 */
+.input-anim-container::after {
+  content: "";
+  position: absolute;
+  inset: 2.5px;
+  z-index: 0;
+  border-radius: 14px;
+  background: #f0f5ff;
+}
+
+@keyframes inputSpin {
+  0% { transform: rotate(8deg); }
+  50% { transform: rotate(188deg); }
+  100% { transform: rotate(368deg); }
 }
 .input-extra-btn {
   display: flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer;
-  padding: 8px; border-radius: 8px;
+  padding: 10px; border-radius: 10px;
   color: #409eff; flex-shrink: 0;
   transition: background 0.15s;
 }
 .input-extra-btn:hover { background: rgba(64,158,255,0.1); }
+.input-extra-btn svg { width: 20px; height: 20px; }
 
 /* 工具菜单 */
 .input-extra-wrap { position: relative; }
@@ -592,18 +663,18 @@ onMounted(() => { chat.init() })
 .tools-enter-from, .tools-leave-to { opacity: 0; transform: translateY(6px); }
 .input-field {
   flex: 1; border: none; background: transparent; outline: none;
-  font-size: 15px; color: #1f1f1f; padding: 10px 0; min-height: 28px;
+  font-size: 16px; color: #1f1f1f; padding: 12px 0; min-height: 30px;
 }
-.input-field::placeholder { color: #8e9ebd; }
-.input-send-btn-circle {
-  width: 42px; height: 42px; border-radius: 50%;
+.input-field::placeholder { color: #8e9ebd; font-size: 15px; }
+.input-send-btn {
+  padding: 0 22px; height: 46px; border-radius: 12px;
   border: none; background: #409eff; color: #fff;
+  font-size: 15px; font-weight: 600; letter-spacing: 1px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.15s; flex-shrink: 0;
-  padding: 0;
 }
-.input-send-btn-circle:hover:not(:disabled) { background: #3a8ee6; }
-.input-send-btn-circle:disabled { background: #d0ddf0; cursor: not-allowed; color: #8e9ebd; }
+.input-send-btn:hover:not(:disabled) { background: #3a8ee6; }
+.input-send-btn:disabled { background: #d0ddf0; cursor: not-allowed; color: #8e9ebd; }
 
 /* 动画 */
 </style>
