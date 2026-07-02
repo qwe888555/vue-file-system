@@ -239,9 +239,6 @@ function handleClose() {
           <div class="el-upload__text">
             将文件拖到此处，或<em>点击上传</em>
           </div>
-          <div class="el-upload__tip" slot="tip">
-            支持 PDF、Word、图片、音频、视频等格式
-          </div>
         </el-upload>
         <div v-if="uploadedFile" class="uploaded-file-info" :class="{ 'file-too-large': isFileTooLarge }">
           <el-icon :size="16" :class="{ 'loading-icon': isConverting }">

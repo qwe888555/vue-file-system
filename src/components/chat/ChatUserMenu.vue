@@ -21,7 +21,7 @@ const roleLabel = computed(() => {
 <template>
   <div class="user-menu-overlay" @click.self="emit('close')">
     <Transition name="sidebar-menu">
-      <div class="user-menu">
+      <div v-if="props.show" class="user-menu">
         <div class="user-menu-header">
           <div class="um-avatar">
             <span>{{ displayName.charAt(0).toUpperCase() }}</span>
