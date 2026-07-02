@@ -244,11 +244,16 @@ function getSelectionRows() {
   return selectionRows.value
 }
 
+function clearSelection() {
+  selectionRows.value = []
+  elTableRef.value?.clearSelection()
+}
+
 function handleSelectionChange(rows: any[]) {
   selectionRows.value = rows
 }
 
-defineExpose({ refresh, handleAdd, handleEdit, getSelectionRows, triggerSearch })
+defineExpose({ refresh, handleAdd, handleEdit, getSelectionRows, triggerSearch, clearSelection })
 </script>
 
 

@@ -29,11 +29,11 @@
           />
         </el-select>
         <el-select
-          v-if="isSuperAdmin"
           v-model="collegeFilter"
           placeholder="全部学院/部门"
           clearable
           style="width: 160px"
+          :disabled="false"
         >
           <el-option label="全部学院/部门" value="__all__" />
           <el-option
@@ -82,10 +82,38 @@
           :form="form"
           :is-edit="isEdit"
           :colleges="colleges"
-          :hide-college="!isSuperAdmin"
+          :hide-college="false"
         />
       </template>
     </BaseTable>
+
+    <!-- ═══ 批量修改密码弹窗 ═══ -->
+    <el-dialog
+      v-model="batchResetVisible"
+      title="批量修改密码"
+      width="420px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form label-width="0">
+        <el-form-item
+          label=""
+          :rules="[{ required: true, min: 6, message: '密码至少6位', trigger: 'blur' }]"
+        >
+          <el-input
+            v-model="batchResetPassword"
+            type="password"
+            placeholder="请输入新密码（至少6位）"
+            show-password
+            size="large"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="batchResetVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmBatchReset">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -240,14 +268,20 @@ async function deleteLocalAccount(id: number) {
 
 // ── 搜索/重置 ──
 function handleSearch() {
-  const params: Record<string, any> = {}
-
-  // 显式传所有筛选条件（空值 = 全部），覆盖 useTableQuery 内部残留的旧值
-  if (keyword.value) params.keyword = keyword.value
-  params.role = roleFilter.value !== '__all__' ? roleFilter.value : ''
-  if (isSuperAdmin.value) {
-    params.collegeId = collegeFilter.value !== '__all__' ? collegeFilter.value : ''
+  // 每次都传完整参数，覆盖 useTableQuery 内部缓存的旧值
+  const params: Record<string, any> = {
+    keyword: keyword.value || '',
+    role: roleFilter.value !== '__all__' ? roleFilter.value : '',
+    collegeId: undefined as number | undefined,
   }
+
+  // 学院筛选
+  if (collegeFilter.value !== '__all__') {
+    params.collegeId = collegeFilter.value          // 选具体学院
+  } else if (!isSuperAdmin.value && userCollegeId.value) {
+    params.collegeId = userCollegeId.value           // 学院管理员"全部"=本院
+  }
+  // 超管"全部"→ collegeId=undefined → 不按学院过滤
 
   tableRef.value?.triggerSearch(params)
 }
@@ -283,6 +317,7 @@ async function handleBatchDelete(selection: any[]) {
     const ids = selection.map((r) => r.id)
     localAccounts.value = localAccounts.value.filter((a) => !ids.includes(a.id))
     ElMessage.success(`成功删除 ${selection.length} 个账号`)
+    tableRef.value?.clearSelection()
     tableRef.value?.refresh()
   } catch {
     // 用户取消
@@ -290,25 +325,29 @@ async function handleBatchDelete(selection: any[]) {
 }
 
 // ── 批量修改密码 ──
-async function handleBatchReset(selection: any[]) {
-  if (!selection.length) return
-  try {
-    const { value } = await ElMessageBox.prompt('请输入新密码', '批量修改密码', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputType: 'password',
-      inputPlaceholder: '请输入新密码（至少6位）',
-      inputPattern: /^.{6,}$/,
-      inputErrorMessage: '密码至少6位',
-    })
-    for (const row of selection) {
-      const idx = localAccounts.value.findIndex((a) => a.id === row.id)
-      if (idx !== -1) localAccounts.value[idx].password = value
-    }
-    ElMessage.success(`成功将 ${selection.length} 个账号的密码修改为 ${value}`)
-  } catch {
-    // 用户取消
+const batchResetVisible = ref(false)
+const batchResetPassword = ref('')
+const batchResetSelection = ref<any[]>([])
+
+function handleBatchReset(selection: any[]) {
+  batchResetSelection.value = selection
+  batchResetPassword.value = ''
+  batchResetVisible.value = true
+}
+
+async function confirmBatchReset() {
+  if (!batchResetPassword.value || batchResetPassword.value.length < 6) {
+    ElMessage.warning('密码至少6位')
+    return
   }
+  const pwd = batchResetPassword.value
+  for (const row of batchResetSelection.value) {
+    const idx = localAccounts.value.findIndex((a) => a.id === row.id)
+    if (idx !== -1) localAccounts.value[idx].password = pwd
+  }
+  ElMessage.success(`成功将 ${batchResetSelection.value.length} 个账号的密码修改为 ${pwd}`)
+  batchResetVisible.value = false
+  tableRef.value?.clearSelection()
 }
 </script>
 
