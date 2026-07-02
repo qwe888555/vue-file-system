@@ -1,50 +1,140 @@
 <script setup lang="ts">
 // ── 登录页 ──
-// 白色 + 蓝色(#409EFF) + 灰色(#909399)
 
-import { ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
+import { ssoLoginUrl, ssoCallbackApi } from '@/api/auth'
+import { setAccessToken, setRefreshToken } from '@/api/request'
+import logoImg from '@/assets/styles/logo.png'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 
 const loading = ref(false)
 const form = reactive({ username: '', password: '' })
 const formRef = ref()
 
+// ── SSO 弹窗状态 ──
+const ssoDialogVisible = ref(false)
+const ssoAccounts = ref<Array<{ code: string; display?: string; role?: string }>>([])
+const ssoLoading = ref(false)
+
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
+// ── SSO 回调处理（?code=xxx 模式） ──
+onMounted(async () => {
+  const code = route.query.code as string | undefined
+  if (!code) return
+
+  loading.value = true
+  try {
+    const res = await ssoCallbackApi(code)
+
+    setAccessToken(res.access)
+    setRefreshToken(res.refresh)
+    userStore.token = res.access
+    userStore.refreshToken = res.refresh
+    userStore.userInfo = res.user
+
+    ElMessage.success(`SSO 登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
+
+    const role = res.user?.role
+    router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
+  } catch (e: any) {
+    ElMessage.error(e?.message || 'SSO 登录失败')
+  } finally {
+    loading.value = false
+  }
+
+  window.history.replaceState({}, '', window.location.pathname)
+})
+
+// ── JWT 账号密码登录 ──
 async function handleLogin() {
-  if (!formRef.value) return
+  if (!formRef.value || loading.value) return
   try { await formRef.value.validate() } catch { return }
 
   loading.value = true
   try {
-    // 开发环境 mock 登录
-    if (import.meta.env.DEV) {
-      userStore.token = 'mock-token'
-      userStore.userInfo = {
-        id: 1,
-        username: form.username,
-        realName: '管理员',
-        avatar: '',
-        email: '',
-        role: 'superadmin',
-      }
+    const res = await userStore.login(form)
+    ElMessage.success(`登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
+
+    const role = res.user?.role
+    if (role === 'super_admin' || role === 'admin') {
+      router.push('/knowledge/list')
     } else {
-      await userStore.login(form)
+      router.push('/chat')
     }
-    ElMessage.success('登录成功')
-    router.push('/knowledge/list')
   } catch (e: any) {
-    ElMessage.error(e?.message || '登录失败')
+    ElMessage.error(e?.response?.data?.detail || e?.message || '登录失败')
   } finally {
     loading.value = false
+  }
+}
+
+// ── SSO 统一登录 ──
+async function handleSSOLogin() {
+  ssoLoading.value = true
+  try {
+    const url = ssoLoginUrl()
+
+    const response = await fetch(url, { redirect: 'manual' })
+
+    // 302 → 正式模式：跳转到学校认证页
+    if (response.status === 302) {
+      const location = response.headers.get('Location')
+      window.location.href = location || url
+      return
+    }
+
+    // 200 → Mock 模式：解析 JSON，弹窗选账号
+    if (!response.ok) {
+      throw new Error(`SSO 请求异常 (${response.status})`)
+    }
+
+    const data = await response.json()
+
+    if (data.mock_codes && Array.isArray(data.mock_codes)) {
+      ssoAccounts.value = data.mock_codes
+      ssoDialogVisible.value = true
+    } else {
+      ElMessage.warning('未获取到可用的测试账号')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || 'SSO 登录请求失败')
+  } finally {
+    ssoLoading.value = false
+  }
+}
+
+// ── SSO 选择账号后回调 ──
+async function handleSSOSelect(code: string) {
+  ssoDialogVisible.value = false
+  ssoLoading.value = true
+
+  try {
+    const res = await ssoCallbackApi(code)
+
+    setAccessToken(res.access)
+    setRefreshToken(res.refresh)
+    userStore.token = res.access
+    userStore.refreshToken = res.refresh
+    userStore.userInfo = res.user
+
+    ElMessage.success(`SSO 登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
+
+    const role = res.user?.role
+    router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
+  } catch (e: any) {
+    ElMessage.error(e?.message || 'SSO 登录失败')
+  } finally {
+    ssoLoading.value = false
   }
 }
 </script>
@@ -52,11 +142,13 @@ async function handleLogin() {
 <template>
   <div class="login-page">
     <div class="login-card">
-      <div class="login-logo">Logo</div>
+      <div class="login-logo">
+        <img :src="logoImg" alt="成都东软学院" class="login-logo-img" />
+      </div>
       <h2 class="login-title">NISU-CD 资源系统</h2>
       <p class="login-desc">请输入账号密码登录</p>
 
-      <el-form ref="formRef" :model="form" :rules="rules" @submit.prevent="handleLogin">
+      <el-form ref="formRef" :model="form" :rules="rules" @keyup.enter="handleLogin">
         <el-form-item prop="username">
           <el-input v-model="form.username" placeholder="账号" prefix-icon="User" size="large" />
         </el-form-item>
@@ -64,12 +156,45 @@ async function handleLogin() {
           <el-input v-model="form.password" type="password" placeholder="密码" prefix-icon="Lock" size="large" show-password />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="loading" class="login-btn" size="large" @click="handleLogin">
+          <el-button type="primary" :loading="loading" class="login-btn" size="large" native-type="button" @click="handleLogin">
             登 录
           </el-button>
         </el-form-item>
       </el-form>
+
+      <!-- SSO 统一登录 -->
+      <div class="sso-divider">
+        <span class="sso-divider-text">或</span>
+      </div>
+
+      <el-button :loading="ssoLoading" class="sso-btn" size="large" @click="handleSSOLogin">
+        <el-icon class="sso-btn-icon"><Link /></el-icon>
+        <span>校园 SSO 统一登录</span>
+      </el-button>
     </div>
+
+    <!-- SSO 模拟账号选择弹窗 -->
+    <el-dialog
+      v-model="ssoDialogVisible"
+      title="选择 SSO 测试账号"
+      width="360px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <div class="sso-account-list">
+        <div
+          v-for="acct in ssoAccounts"
+          :key="acct.code"
+          class="sso-account-item"
+          @click="handleSSOSelect(acct.code)"
+        >
+          <div class="sso-account-code">{{ acct.code }}</div>
+          <div v-if="acct.display || acct.role" class="sso-account-desc">
+            {{ acct.display || acct.role }}
+          </div>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -79,45 +204,227 @@ async function handleLogin() {
   align-items: center;
   justify-content: center;
   height: 100vh;
-  background: linear-gradient(135deg, #409eff 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, #e8edf5 0%, #d5dde8 50%, #e8edf5 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.login-page::before {
+  content: '';
+  position: absolute;
+  width: 400px;
+  height: 400px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(43, 95, 217, 0.08) 0%, transparent 70%);
+  top: -120px;
+  right: -80px;
+  pointer-events: none;
+}
+
+.login-page::after {
+  content: '';
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(43, 95, 217, 0.06) 0%, transparent 70%);
+  bottom: -160px;
+  left: -100px;
+  pointer-events: none;
 }
 
 .login-card {
-  width: 400px;
-  padding: 40px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+  position: relative;
+  width: 420px;
+  padding: 48px 40px 40px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 20px;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.04);
   text-align: center;
+  z-index: 1;
 }
 
 .login-logo {
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 16px;
-  background: #f0f5ff;
-  border-radius: 12px;
+  width: 200px;
+  height: 56px;
+  margin: 0 auto 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
-  font-weight: 700;
-  color: #409eff;
+}
+
+.login-logo-img {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 .login-title {
-  font-size: 22px;
-  color: #303133;
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a2332;
   margin: 0 0 8px;
+  letter-spacing: -0.01em;
 }
 
 .login-desc {
   font-size: 14px;
-  color: #909399;
-  margin: 0 0 32px;
+  color: #8e95a6;
+  margin: 0 0 36px;
+  line-height: 1.5;
 }
 
 .login-btn {
   width: 100%;
+  height: 48px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  background: #2b5fd9;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.login-btn:hover {
+  background: #1e4bb8;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(43, 95, 217, 0.3);
+}
+
+.login-btn:active {
+  transform: translateY(0);
+}
+
+.sso-divider {
+  display: flex;
+  align-items: center;
+  margin: 20px 0 16px;
+}
+
+.sso-divider::before,
+.sso-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e4e9f0;
+}
+
+.sso-divider-text {
+  padding: 0 16px;
+  font-size: 13px;
+  color: #b0b8c8;
+}
+
+.sso-btn {
+  width: 100%;
+  height: 48px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 500;
+  color: #5a6070;
+  background: #fff;
+  border: 1px solid #e4e9f0;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.sso-btn:hover {
+  color: #2b5fd9;
+  border-color: #2b5fd9;
+  background: #f5f8ff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(43, 95, 217, 0.1);
+}
+
+.sso-btn:active {
+  transform: translateY(0);
+}
+
+.sso-btn-icon {
+  font-size: 18px;
+}
+
+.sso-account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sso-account-item {
+  padding: 16px 20px;
+  border: 1px solid #e4e9f0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.sso-account-item:hover {
+  border-color: #2b5fd9;
+  background: #f5f8ff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(43, 95, 217, 0.08);
+}
+
+.sso-account-code {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a2332;
+  margin-bottom: 4px;
+}
+
+.sso-account-desc {
+  font-size: 13px;
+  color: #8e95a6;
+}
+
+:deep(.el-input__wrapper) {
+  border-radius: 12px;
+  padding: 4px 16px;
+  box-shadow: 0 0 0 1px #e4e9f0 !important;
+  background: #f8fafc;
+  transition: all 0.2s ease;
+}
+
+:deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #c8d0dd !important;
+  background: #fff;
+}
+
+:deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 2px rgba(43, 95, 217, 0.2) !important;
+  background: #fff;
+}
+
+:deep(.el-input__inner) {
+  height: 48px;
+  font-size: 14px;
+  color: #1a2332;
+}
+
+:deep(.el-input__inner::placeholder) {
+  color: #b0b8c8;
+}
+
+:deep(.el-input__prefix) {
+  margin-right: 8px;
+}
+
+:deep(.el-input__prefix .el-icon) {
+  font-size: 18px;
+  color: #b0b8c8;
+}
+
+:deep(.el-form-item) {
+  margin-bottom: 24px;
 }
 </style>

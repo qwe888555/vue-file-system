@@ -1,8 +1,6 @@
 <script setup lang="ts">
 // ── 顶部栏 ──
-// 人员 A 实现
-//
-// 功能：面包屑导航 + 用户头像下拉菜单（个人中心/修改密码/退出登录）
+// 功能：面包屑导航 + 用户头像下拉菜单
 
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -12,7 +10,7 @@ import { ElMessageBox } from 'element-plus'
 const router = useRouter()
 const userStore = useUserStore()
 
-const username = computed(() => userStore.username)
+const username = computed(() => userStore.displayName)
 const avatar = computed(() => userStore.avatar)
 
 function goToProfile() {
@@ -22,17 +20,16 @@ function goToProfile() {
 async function handleLogout() {
   try {
     await ElMessageBox.confirm('确认退出登录吗？', '提示')
-    await userStore.logout()
+    userStore.logout()
     router.push('/login')
   } catch {
-    // 取消操作，不处理
+    // 取消操作
   }
 }
 </script>
 
 <template>
   <header class="layout-header">
-    <!-- 面包屑（TODO: 根据路由 meta.title 渲染） -->
     <div class="header-left">
       <el-breadcrumb>
         <el-breadcrumb-item :to="{ path: '/' }">首页</el-breadcrumb-item>
@@ -40,7 +37,7 @@ async function handleLogout() {
     </div>
 
     <div class="header-right">
-      <el-dropdown trigger="click">
+      <el-dropdown v-if="userStore.isLoggedIn" trigger="click">
         <span class="user-info">
           <el-avatar :size="32" :src="avatar || undefined">
             {{ username?.charAt(0)?.toUpperCase() }}
@@ -69,24 +66,14 @@ async function handleLogout() {
   border-bottom: 1px solid var(--color-border, #e4e7ed);
   flex-shrink: 0;
 }
-
-.header-left {
-  display: flex;
-  align-items: center;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-}
-
+.header-left { display: flex; align-items: center; }
+.header-right { display: flex; align-items: center; }
 .user-info {
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
 }
-
 .username {
   font-size: 14px;
   color: var(--color-text, #303133);

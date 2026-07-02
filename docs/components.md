@@ -121,59 +121,85 @@
 
 ---
 
-## 后台管理模块（人员 D — src/components/admin/）
+## 后台管理模块（人员 D — src/components/account/）
 
-### CrudTable.vue
-- **路径：** `@/components/admin/CrudTable.vue`
-- **用途：** 通用 CRUD 表格组件（内置搜索栏、分页、增编弹窗、表单校验、删除确认）
+### BaseTable.vue
+- **路径：** `@/components/account/BaseTable.vue`
+- **用途：** 通用 CRUD 表格组件（搜索、分页、新增弹窗、删除确认、loading/空态）
 - **Props：**
-  - `apiFn: (params) => Promise` — 列表查询接口函数
-  - `columns: ColumnDef[]` — 表格列定义
+  - `apiFn: (params) => Promise<PaginatedResult<T>>` — 列表查询函数
+  - `columns: ColDef[]` — 列定义
   - `title?: string` — 卡片标题
+  - `createApi?: (data) => Promise` — 新增接口
+  - `deleteApi?: (id) => Promise` — 删除接口
   - `filters?: Record<string, any>` — 默认筛选条件
-  - `showActions?: boolean` — 是否显示操作列，默认 true
-- **Emits：** `delete(row)`, 预留自定义事件
-- **Slots：** `search` — 搜索栏区域; `form` — 新增/编辑弹窗表单
+  - `pageSize?: number` — 每页条数，默认 15
+  - `dialogWidth?: string` — 弹窗宽度，默认 '600px'
+  - `rowKey?: string` — 行 key，默认 'id'
+  - `paginated?: boolean` — 是否分页，默认 true
+- **ColDef 类型（`@/types`）：** `prop / label / width / minWidth / align / sortable / fixed`
+- **Slots：**
+  - `search` — 搜索栏
+  - `form` — 新增/编辑弹窗表单 `{ form, isEdit }`
+  - `[prop]` — 自定义列渲染 `{ row, $index }`
+  - `actions-prepend` — 操作列前置按钮 `{ row, $index }`
+  - `batch-actions` — 批量操作栏 `{ selection }`
+  - `empty` — 空态内容
+- **Expose：** `refresh()` / `handleAdd()` / `handleEdit(row)` / `triggerSearch(params?)` / `getSelectionRows()`
 - **使用示例：**
   ```vue
-  <CrudTable
-    ref="tableRef"
-    :api-fn="getAccountsApi"
-    :columns="columns"
-    title="用户账号管理"
-    @delete="handleDelete"
-  >
+  <BaseTable ref="tableRef" :api-fn="getLocalAccounts" :columns="columns" title="账号管理"
+    :create-api="createLocalAccount" :delete-api="deleteLocalAccount" :filters="defaultFilters">
     <template #search>
-      <el-input v-model="keyword" placeholder="搜索..." />
+      <el-input v-model="keyword" placeholder="搜索账号" />
+      <el-button @click="handleReset">重置</el-button>
     </template>
-    <template #form="{ form, isEdit }">
-      <el-form-item label="用户名" prop="username">
-        <el-input v-model="form.username" />
-      </el-form-item>
+    <template #actions-prepend="{ row }">
+      <el-button type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
     </template>
-  </CrudTable>
+  </BaseTable>
   ```
 
-### TreeTable.vue
-- **路径：** `@/components/admin/TreeTable.vue`
-- **用途：** 两级树形表格，支持展开折叠、父子关联
+### UserEdit.vue
+- **路径：** `@/components/account/UserEdit.vue`
+- **用途：** 新增/编辑用户表单（账号、密码、角色、所属学院）
 - **Props：**
-  - `data: any[]` — 树形数据（需含 children）
-  - `columns: any[]` — 列定义
-  - `loading?: boolean`
-- **Emits：** `edit(row)`, `delete(id)`, `addChild(parentId)`
+  - `form: Record<string, any>` — 表单数据
+  - `isEdit: boolean` — 编辑模式
+  - `colleges?: College[]` — 学院下拉列表
+  - `hideCollege?: boolean` — 是否隐藏学院字段
+- **注意：** 密码字段新增/编辑均显示
 - **使用示例：**
-  ```vue
-  <TreeTable :data="treeData" :columns="columns" @edit="handleEdit" @delete="handleDelete" />
-  ```
-
-### UserForm.vue
-- **路径：** `@/components/admin/UserForm.vue`
-- **用途：** 新增/编辑用户表单 + 角色/学院选择
-- **Props：** `form: any`, `isEdit: boolean`
-- **使用：** 配合 CrudTable 的 `#form` 插槽
   ```vue
   <template #form="{ form, isEdit }">
-    <UserForm :form="form" :is-edit="isEdit" />
+    <UserEdit :form="form" :is-edit="isEdit" :colleges="colleges" :hide-college="!isSuperAdmin" />
   </template>
   ```
+
+### 页面文件
+
+#### UserList.vue
+- **路径：** `@/views/account/UserList.vue`
+- **用途：** 账号管理页面（合并了学院管理功能）
+- **功能：**
+  - 搜索过滤：关键词 + 角色筛选 + 学院筛选（超级管理员可见），输入即搜
+  - 新增：弹窗填写账号/密码/角色/所属学院
+  - 编辑：点击"编辑"弹窗修改密码/角色/所属学院
+  - 删除：确认弹窗后直接删除
+  - 批量删除：确认后批量删除选中项
+  - 批量编辑密码：确认后将选中账号密码重置为 12345678
+- **数据源：** 纯前端本地数据（`localAccounts`），开发模式下使用
+
+### 配置 / 工具文件
+
+#### roles.ts
+- **路径：** `@/config/roles.ts`
+- **用途：** 集中管理角色元数据（中文名、标签颜色）
+- **角色：** `user` / `admin_csic` / `admin_dept` / `superadmin`
+- **导出：** `ROLE_CONFIG`（角色→配置映射）、`ROLE_OPTIONS`（下拉选项列表）
+
+#### mock/
+- **路径：** `@/mock/`
+- **用途：** 开发环境 Mock 数据层，拦截 axios 请求返回假数据
+- **文件：** `data.ts`（学院/账号假数据）、`index.ts`（拦截器 + 路由匹配）
+- **控制：** `.env.development` 中 `VITE_USE_MOCK='true'` 启用

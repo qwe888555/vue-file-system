@@ -2,17 +2,19 @@
 export interface UserInfo {
   id: number
   username: string
-  realName: string
-  avatar: string
   email: string
+  first_name: string
+  last_name: string
   role: UserRole
-  collegeId?: number
-  collegeName?: string
-  departmentId?: number
-  departmentName?: string
+  role_display: string
+  college: number | null
+  college_name: string | null
+  phone: string
+  avatar: string
+  date_joined: string
 }
 
-export type UserRole = 'user' | 'admin' | 'superadmin'
+export type UserRole = 'super_admin' | 'admin' | 'user'
 
 export interface LoginParams {
   username: string
@@ -20,8 +22,17 @@ export interface LoginParams {
 }
 
 export interface LoginResult {
-  token: string
+  access: string
+  refresh: string
   user: UserInfo
+}
+
+export interface RefreshParams {
+  refresh: string
+}
+
+export interface RefreshResult {
+  access: string
 }
 
 // ── 权限相关 ──
@@ -57,13 +68,6 @@ export interface PaginatedResult<T> {
   total: number
   page: number
   pageSize: number
-}
-
-// ── API 通用响应 ──
-export interface ApiResponse<T = any> {
-  code: number
-  data: T
-  message: string
 }
 
 // ── 知识库文件 ──
@@ -143,4 +147,15 @@ export interface ResourceCategory {
   level: number
   sortOrder: number
   children?: ResourceCategory[]
+}
+
+// ── BaseTable 列定义 ──
+export interface ColDef {
+  prop: string
+  label: string
+  width?: string | number
+  minWidth?: string | number
+  align?: 'left' | 'center' | 'right'
+  sortable?: boolean
+  fixed?: 'left' | 'right'
 }

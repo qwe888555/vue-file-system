@@ -1,1347 +1,680 @@
-1<script setup lang="ts">
+<script setup lang="ts">
 // ── 智能问答主页面 ──
-// 功能：实现智能问答对话界面，包含左侧导航侧边栏、顶部操作栏、
-//       右侧对话悬浮弹窗、底部输入栏和中间对话展示区
+// 豆包风格：简洁、留白、圆润
 
-// ── 1. 外部依赖导入 ──
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import logoImg from '@/assets/logo.png'
+import type { KnowledgeFile } from '@/types'
+import { useChat } from '@/composables/useChat'
+import { useSSE } from '@/composables/useSSE'
+import MessageBubble from '@/components/chat/MessageBubble.vue'
+import ChatLoginDialog from '@/components/chat/ChatLoginDialog.vue'
+import ChatLogoutConfirm from '@/components/chat/ChatLogoutConfirm.vue'
+import ChatUserMenu from '@/components/chat/ChatUserMenu.vue'
 
-// ── 2. 类型定义 ──
-interface Message {
-  id: number
-  role: 'user' | 'ai'
-  content: string
-}
-
-interface Conversation {
-  id: number
-  title: string
-  updatedAt: string
-}
-
-// ── 3. Store ──
 const userStore = useUserStore()
 const router = useRouter()
+const chat = useChat()
 
-// ── 4. 响应式数据 ──
-const sidebarCollapsed = ref(false)
-const showFloatPanel = ref(false)
-const showHistoryDropdown = ref(true)
+const sidebarOpen = ref(true)
 const showLoginDialog = ref(false)
-const loginForm = ref({ username: '', password: '' })
-const loginError = ref('')
-const loginLoading = ref(false)
-const showProfilePanel = ref(false)
 const showLogoutConfirm = ref(false)
+const showUserMenu = ref(false)
+const showToolsMenu = ref(false)
 const inputText = ref('')
-const messages = ref<Message[]>([
-  {
-    id: 1,
-    role: 'ai',
-    content: '你好！我是成都东软学院智能助手，请问有什么可以帮助你的？',
-  },
-  {
-    id: 2,
-    role: 'user',
-    content: '请问如何查找学习资料？',
-  },
-])
-const conversations = ref<Conversation[]>([
-  { id: 1, title: '示例 1', updatedAt: '2026-07-01' },
-  { id: 2, title: '示例 2', updatedAt: '2026-06-28' },
-  { id: 3, title: '示例 3', updatedAt: '2026-06-25' },
-])
 
-// ── 5. Computed ──
+// SSE
+const streamingContent = ref('')
+const isStreaming = ref(false)
+const streamingReferences = ref<KnowledgeFile[]>([])
+let currentSSE: ReturnType<typeof useSSE> | null = null
+
 const isLoggedIn = computed(() => !!userStore.token)
 const displayName = computed(() => userStore.username || '未登录')
+const hasActiveConversation = computed(() => chat.currentConversationId.value !== null)
 
-const sidebarWidth = computed(() => (sidebarCollapsed.value ? '64px' : '240px'))
 
-// ── 6. 方法 ──
-function toggleSidebar() {
-  sidebarCollapsed.value = !sidebarCollapsed.value
-}
+function toggleSidebar() { sidebarOpen.value = !sidebarOpen.value }
 
-function toggleFloatPanel() {
-  showFloatPanel.value = !showFloatPanel.value
-}
-
-/* ── 底部用户栏：整行点击入口 ── */
 function handleToggleUserPanel() {
-  if (isLoggedIn.value) {
-    // 已登录 → 弹出侧边栏用户菜单
-    showProfilePanel.value = true
-  } else {
-    // 未登录 → 弹出登录弹窗
-    showLoginDialog.value = true
-  }
+  isLoggedIn.value ? (showUserMenu.value = true) : (showLoginDialog.value = true)
 }
-
-/* ── 登录弹窗 ── */
-async function handleLoginSubmit() {
-  const { username, password } = loginForm.value
-  if (!username || !password) {
-    loginError.value = '请输入用户名和密码'
-    return
-  }
-  loginLoading.value = true
-  loginError.value = ''
-  try {
-    await userStore.login({ username, password })
-    showLoginDialog.value = false
-    loginForm.value = { username: '', password: '' }
-  } catch (e: unknown) {
-    loginError.value = (e as { message?: string })?.message || '登录失败，请检查用户名和密码'
-  } finally {
-    loginLoading.value = false
-  }
-}
-
-function handleLoginCancel() {
-  showLoginDialog.value = false
-  loginForm.value = { username: '', password: '' }
-  loginError.value = ''
-}
-
-/* ── 侧边栏用户弹窗 ── */
-function handleCloseProfile() {
-  showProfilePanel.value = false
-}
-
-/* ── 退出登录 ── */
-function handleLogoutClick() {
-  showLogoutConfirm.value = true
-}
-
+function handleLoginSuccess() { showLoginDialog.value = false; chat.fetchConversations() }
+function handleLoginCancel() { showLoginDialog.value = false }
+function handleLogoutClick() { showUserMenu.value = false; showLogoutConfirm.value = true }
 async function handleLogoutConfirm() {
-  try {
-    await userStore.logout()
-  } finally {
-    showLogoutConfirm.value = false
-    showProfilePanel.value = false
-    showLoginDialog.value = false
-  }
+  try { await userStore.logout() } finally { showLogoutConfirm.value = false; showUserMenu.value = false }
 }
+function handleLogoutCancel() { showLogoutConfirm.value = false }
+function handleUserMenuClose() { showUserMenu.value = false }
 
-function handleLogoutCancel() {
-  showLogoutConfirm.value = false
-}
+function handleNewConversation() { chat.createConversation() }
+async function handleSelectConversation(id: number) { await chat.selectConversation(id) }
+async function handleDeleteConversation(id: number) { await chat.deleteConversation(id) }
+function handleBackToList() { chat.currentConversationId.value = null }
+function toggleToolsMenu() { showToolsMenu.value = !showToolsMenu.value }
+function handleDocumentAction() { showToolsMenu.value = false; /* TODO: 文档相关操作 */ }
+function handleLanguageSetting() { showToolsMenu.value = false; /* TODO: 语言设置 */ }
 
-function handleNewConversation() {
-  messages.value = []
-  showFloatPanel.value = false
-  inputText.value = ''
-}
-
-function handleSelectConversation(conv: Conversation) {
-  showFloatPanel.value = false
-  // TODO: 加载对应对话记录
-}
-
-function toggleHistoryDropdown() {
-  showHistoryDropdown.value = !showHistoryDropdown.value
-}
-
-function sendMessage() {
+async function sendMessage() {
   const text = inputText.value.trim()
-  if (!text) return
-
-  const userMsg: Message = {
-    id: Date.now(),
-    role: 'user',
-    content: text,
+  if (!text || isStreaming.value) return
+  currentSSE?.close()
+  if (!chat.currentConversationId.value) {
+    const conv = await chat.createConversation()
+    if (!conv) return
   }
-  messages.value.push(userMsg)
+  const convId = chat.currentConversationId.value!
+  chat.appendUserMessage(text)
   inputText.value = ''
 
-  // TODO: 对接 AI 接口获取回复
-  setTimeout(() => {
-    messages.value.push({
-      id: Date.now() + 1,
-      role: 'ai',
-      content: `收到你的问题：「${text}」\n\n这是一个模拟回复，待接入 AI 接口后将返回真实答案。`,
-    })
-    nextTick(() => {
-      scrollToBottom()
-    })
-  }, 800)
+  isStreaming.value = true
+  streamingContent.value = ''
+  streamingReferences.value = []
+
+  currentSSE = useSSE(convId, text, () => {
+    chat.appendAssistantMessage(streamingContent.value, streamingReferences.value)
+    isStreaming.value = false
+    streamingContent.value = ''
+    streamingReferences.value = []
+  })
+  watch(currentSSE.content, (val) => { streamingContent.value = val })
+  watch(currentSSE.references, (val) => { streamingReferences.value = val })
 }
 
-function scrollToBottom() {
-  const container = document.querySelector('.content-area')
-  if (container) {
-    container.scrollTop = container.scrollHeight
-  }
+function handleFeedback(messageId: number, type: 'like' | 'dislike') {
+  chat.submitFeedback(messageId, type)
 }
+function navigateTo(path: string) { router.push(path) }
 
-function navigateTo(path: string) {
-  router.push(path)
-}
+onMounted(() => { chat.init() })
 </script>
 
 <template>
-  <div class="chat-page">
-    <!-- ════════════════════════ 区域 1：左侧固定侧边栏 ════════════════════════ -->
-    <aside class="sidebar" :style="{ width: sidebarWidth }">
-      <!-- 顶部校徽标题区 -->
-      <div class="sidebar-brand">
-        <div class="brand-logo">
-          <img :src="logoImg" alt="成都东软学院" class="sidebar-logo-img" />
+  <div class="chat-app">
+    <!-- ═══ 左侧边栏（对话列表）═══ -->
+    <aside class="chat-sidebar" :class="{ collapsed: !sidebarOpen }">
+      <!-- 顶部 -->
+      <div class="sidebar-top">
+        <div class="sidebar-logo-area">
+          <img :src="logoImg" alt="logo" class="sidebar-logo" />
+        </div>
+        <div class="sidebar-nav-links">
+          <span class="nav-link" @click="navigateTo('/knowledge/list')">知识库</span>
+          <span class="nav-link active">问答</span>
         </div>
       </div>
 
-      <!-- 功能导航板块 -->
-      <nav class="sidebar-nav">
-        <div
-          class="nav-item"
-          :class="{ active: false }"
-          @click="navigateTo('/knowledge/list')"
-          :title="'知识库管理'"
-        >
-          <svg class="nav-icon" viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
-            <path d="M2 4a2 2 0 012-2h5l2 2h5a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V4z" />
-          </svg>
-          <span class="nav-label" :class="{ hidden: sidebarCollapsed }">知识库管理</span>
-          <!-- 底色标识 -->
-          <span v-if="!sidebarCollapsed" class="nav-badge" />
-        </div>
+      <!-- 搜索 -->
+      <div class="sidebar-search">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+          <path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398h-.001l3.85 3.85a1 1 0 001.415-1.414l-3.85-3.85zm-5.242.156a5 5 0 110-10 5 5 0 010 10z"/>
+        </svg>
+        <input v-model="chat.searchKeyword.value" type="text" placeholder="搜索对话" />
+      </div>
 
-        <div
-          class="nav-item active"
-          @click="navigateTo('/chat')"
-          :title="'智能问答'"
-        >
-          <svg class="nav-icon" viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
-            <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
-          </svg>
-          <span class="nav-label" :class="{ hidden: sidebarCollapsed }">智能问答</span>
-        </div>
-      </nav>
+      <!-- 新建对话 -->
+      <button class="sidebar-new-chat" @click="handleNewConversation">
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+          <path d="M8 2a.75.75 0 01.75.75v4.5h4.5a.75.75 0 010 1.5h-4.5v4.5a.75.75 0 01-1.5 0v-4.5h-4.5a.75.75 0 010-1.5h4.5v-4.5A.75.75 0 018 2z"/>
+        </svg>
+        <span>新建对话</span>
+      </button>
 
-      <!-- 底部用户栏（整行可点击：头像 + 昵称 + 右箭头） -->
-      <div class="sidebar-user-row" @click="handleToggleUserPanel">
-        <div class="user-avatar">
-          <svg v-if="!isLoggedIn" viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-          </svg>
-          <span v-else class="avatar-text">{{ displayName.charAt(0).toUpperCase() }}</span>
-        </div>
-        <span v-if="!sidebarCollapsed" class="user-display-name">{{ displayName }}</span>
-        <svg
-          v-if="!sidebarCollapsed"
-          class="user-arrow"
-          viewBox="0 0 20 20"
-          width="14"
-          height="14"
-          fill="currentColor"
+      <!-- 对话列表 -->
+      <div class="sidebar-conversations">
+        <div
+          v-for="conv in chat.filteredConversations.value"
+          :key="conv.id"
+          class="conv-item"
+          :class="{ active: conv.id === chat.currentConversationId.value }"
+          @click="handleSelectConversation(conv.id)"
         >
+          <div class="conv-item-icon">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+              <path d="M2 3.5A1.5 1.5 0 013.5 2h9A1.5 1.5 0 0114 3.5v7a1.5 1.5 0 01-1.5 1.5h-3.586a1.5 1.5 0 00-1.06.44L5 15V12H3.5A1.5 1.5 0 012 10.5v-7z"/>
+            </svg>
+          </div>
+          <div class="conv-item-content">
+            <span class="conv-item-title">{{ conv.title || '新对话' }}</span>
+            <span class="conv-item-time">{{ conv.updatedAt?.slice(5, 10) }}</span>
+          </div>
+          <button class="conv-item-del" @click.stop="handleDeleteConversation(conv.id)">×</button>
+        </div>
+        <div v-if="chat.loading.value" class="sidebar-loading">
+          <span class="load-dot" /><span class="load-dot" /><span class="load-dot" />
+        </div>
+        <div v-if="chat.filteredConversations.value.length === 0 && !chat.loading.value" class="sidebar-empty">
+          暂无对话
+        </div>
+      </div>
+
+      <!-- 底部用户 -->
+      <div class="sidebar-user" @click="handleToggleUserPanel">
+        <div class="su-avatar">
+          <svg v-if="!isLoggedIn" viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
+            <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/>
+          </svg>
+          <span v-else class="su-avatar-text">{{ displayName.charAt(0).toUpperCase() }}</span>
+        </div>
+        <span class="su-name">{{ displayName }}</span>
+        <svg class="su-arrow" viewBox="0 0 20 20" width="14" height="14" fill="currentColor">
           <path d="M6 4l6 6-6 6" stroke="currentColor" stroke-width="2" fill="none" />
         </svg>
       </div>
     </aside>
 
-    <!-- ════════════════════════ 右侧主内容区 ════════════════════════ -->
-    <div class="main-container" :style="{ marginLeft: sidebarWidth }">
-      <!-- ════════════════════════ 区域 2：顶部全局操作栏 ════════════════════════ -->
-      <header class="top-bar">
-        <div class="top-bar-left">
-          <!-- 收缩侧边栏按钮 -->
-          <button class="top-bar-btn" @click="toggleSidebar" title="收缩侧边栏">
+    <!-- ═══ 右侧主区域 ═══ -->
+    <div class="chat-main" :class="{ 'sidebar-collapsed': !sidebarOpen }">
+      <!-- 顶部栏 -->
+      <header class="chat-topbar">
+        <div class="topbar-left">
+          <button class="topbar-btn" @click="toggleSidebar" title="切换侧边栏">
             <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
-              <path v-if="!sidebarCollapsed" d="M3 4h14v1.5H3V4zm0 5h14v1.5H3V9zm0 5h14v1.5H3v-1.5z" />
-              <path v-else d="M3 4h14v1.5H3V4zm3 5l4 4V9l-4-4v4zm-3 5h14v1.5H3v-1.5z" />
+              <path d="M3 4h14v1.5H3V4zm0 5h14v1.5H3V9zm0 5h14v1.5H3v-1.5z" />
+            </svg>
+          </button>
+          <h1 v-if="!hasActiveConversation" class="topbar-title">智能问答</h1>
+          <button v-else class="topbar-btn" @click="handleBackToList" title="返回">
+            <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
+              <path d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"/>
             </svg>
           </button>
         </div>
-
-        <div class="top-bar-right">
-          <!-- 搜索 / 对话菜单唤起按钮 -->
-          <button class="top-bar-btn" @click="toggleFloatPanel" title="搜索最近对话记录 / 对话菜单">
-            <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
-              <path d="M12.9 14.32a8 8 0 111.41-1.41l5.35 5.33-1.42 1.42-5.33-5.34zM8 14A6 6 0 108 2a6 6 0 000 12z" />
-            </svg>
-          </button>
+        <div class="topbar-right">
+          <span v-if="hasActiveConversation" class="topbar-conv-title">{{ chat.currentConversation?.value?.title || '新对话' }}</span>
         </div>
       </header>
 
-      <!-- ════════════════════════ 区域 5：中间对话展示区 ════════════════════════ -->
-      <div class="content-area">
-        <div class="messages-container">
-          <div
-            v-for="msg in messages"
-            :key="msg.id"
-            class="message-row"
-            :class="[msg.role === 'user' ? 'message-user' : 'message-ai']"
-          >
-            <div class="message-avatar">
-              <span v-if="msg.role === 'ai'">AI</span>
-              <span v-else>{{ displayName.charAt(0).toUpperCase() }}</span>
-            </div>
-            <div class="message-bubble">
-              <p>{{ msg.content }}</p>
-            </div>
-          </div>
+      <!-- 对话区 -->
+      <div class="chat-messages">
+        <div class="messages-inner">
+          <!-- 消息列表 -->
+          <template v-if="hasActiveConversation">
+            <MessageBubble
+              v-for="msg in chat.currentMessages.value"
+              :key="msg.id"
+              :message="msg"
+              :user-role="userStore.role ?? undefined"
+              @feedback="handleFeedback"
+            />
+            <MessageBubble
+              v-if="isStreaming"
+              :message="{
+                id: Date.now(),
+                conversationId: chat.currentConversationId.value!,
+                role: 'assistant',
+                content: streamingContent || '…',
+                createdAt: new Date().toISOString(),
+              }"
+              :streaming="true"
+              :stream-content="streamingContent"
+              :user-role="userStore.role ?? undefined"
+            />
+          </template>
 
-          <!-- 空状态占位 -->
-          <div v-if="messages.length === 0" class="empty-state">
-            <svg viewBox="0 0 80 80" width="64" height="64" fill="none" class="empty-icon">
-              <circle cx="40" cy="40" r="28" stroke="#c0c4cc" stroke-width="2" />
-              <path d="M30 35h20M30 45h14" stroke="#c0c4cc" stroke-width="2" stroke-linecap="round" />
-            </svg>
-            <p class="empty-text">开始一段新的对话</p>
+          <!-- 空状态 -->
+          <div v-else class="chat-welcome">
+            <div class="welcome-icon">
+              <svg viewBox="0 0 48 48" width="48" height="48" fill="none">
+                <circle cx="24" cy="24" r="22" stroke="#409eff" stroke-width="1.5" opacity="0.4" />
+                <path d="M18 28l6 6 8-10" stroke="#409eff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h2 class="welcome-title">你好！有什么可以帮助你的？</h2>
+            <p class="welcome-desc">智能知识问答助手，随时为你解答</p>
           </div>
         </div>
       </div>
 
-      <!-- ════════════════════════ 区域 4：底部输入栏 ════════════════════════ -->
-      <div class="input-bar-container">
-        <div class="input-bar">
-          <!-- 加号图标 -->
-          <button class="input-tool-btn" title="附加工具">
-            <svg viewBox="0 0 20 20" width="20" height="20" fill="var(--color-primary)">
-              <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />
-            </svg>
-          </button>
-
-          <!-- 输入框 -->
-          <input
-            v-model="inputText"
-            type="text"
-            class="input-field"
-            placeholder="文档、语言……(功能)"
-            @keyup.enter="sendMessage"
-          />
-
-          <!-- 发送按钮 -->
-          <button
-            class="send-btn"
-            :disabled="!inputText.trim()"
-            @click="sendMessage"
-            title="发送"
-          >
-            <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
-              <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
-              <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
-            </svg>
-          </button>
+      <!-- 输入栏 -->
+      <div class="chat-input-area">
+        <div class="input-anim-container">
+          <div class="input-anim-layer outer"></div>
+          <div class="input-anim-layer mid"></div>
+          <div class="chat-input-wrapper">
+            <div class="input-extra-wrap">
+              <button class="input-extra-btn" @click="toggleToolsMenu">
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
+                  <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />
+                </svg>
+              </button>
+              <Transition name="tools">
+                <div v-if="showToolsMenu" class="tools-menu">
+                  <div class="tools-menu-item" @click="handleDocumentAction">
+                    <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
+                      <path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z" />
+                      <path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                    </svg>
+                    <span>文档相关操作</span>
+                  </div>
+                  <div class="tools-menu-item" @click="handleLanguageSetting">
+                    <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
+                      <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z" />
+                      <path d="M6.5 10c0 1.5.5 3 1.5 4.5.5.7 1 1.2 1.5 1.5.5-.3 1-.8 1.5-1.5 1-1.5 1.5-3 1.5-4.5s-.5-3-1.5-4.5c-.5-.7-1-1.2-1.5-1.5-.5.3-1 .8-1.5 1.5C7 7 6.5 8.5 6.5 10z" />
+                      <path d="M3.5 7.5h13" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round" />
+                      <path d="M3.5 12.5h13" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round" />
+                    </svg>
+                    <span>语言设置</span>
+                  </div>
+                </div>
+              </Transition>
+            </div>
+            <input
+              v-model="inputText"
+              type="text"
+              class="input-field"
+              :placeholder="isStreaming ? 'AI 正在回复…' : '输入你的问题…'"
+              :disabled="isStreaming"
+              @keyup.enter="sendMessage"
+            />
+            <button class="input-send-btn" :disabled="!inputText.trim() || isStreaming" @click="sendMessage">发送</button>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- ════════════════════════ 区域 3：右侧对话悬浮弹窗 ════════════════════════ -->
-    <Transition name="panel">
-      <div v-if="showFloatPanel" class="float-panel">
-        <div class="panel-header">
-          <h3 class="panel-title">对话</h3>
-          <button class="panel-close" @click="showFloatPanel = false">×</button>
-        </div>
-        <div class="panel-body">
-          <!-- 新建对话 -->
-          <button class="panel-action-btn" @click="handleNewConversation">
-            <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
-              <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />
-            </svg>
-            <span>新建对话</span>
-          </button>
-
-          <!-- 最近对话 -->
-          <div class="panel-section">
-            <h4 class="section-title">最近对话</h4>
-            <ul class="conversation-list">
-              <li
-                v-for="conv in conversations"
-                :key="conv.id"
-                class="conversation-item"
-                @click="handleSelectConversation(conv)"
-              >
-                <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor" class="conv-icon">
-                  <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
-                </svg>
-                <span>{{ conv.title }}</span>
-              </li>
-            </ul>
-          </div>
-
-          <!-- 对话记录（可折叠） -->
-          <div class="panel-section">
-            <div class="section-title collapsible" @click="toggleHistoryDropdown">
-              <span>对话记录</span>
-              <svg
-                viewBox="0 0 20 20"
-                width="14"
-                height="14"
-                fill="currentColor"
-                class="chevron"
-                :class="{ rotated: showHistoryDropdown }"
-              >
-                <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-              </svg>
-            </div>
-            <Transition name="dropdown">
-              <ul v-if="showHistoryDropdown" class="conversation-list">
-                <li
-                  v-for="conv in conversations"
-                  :key="'hist-' + conv.id"
-                  class="conversation-item"
-                  @click="handleSelectConversation(conv)"
-                >
-                  <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor" class="conv-icon">
-                    <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" />
-                  </svg>
-                  <span>{{ conv.title }}</span>
-                </li>
-              </ul>
-            </Transition>
-          </div>
-        </div>
-        <!-- 滚轮指示 -->
-        <div class="panel-scroll-hint">滚轮</div>
-      </div>
-    </Transition>
-
-    <!-- ════════════════════════ 登录弹窗 ════════════════════════ -->
-    <Transition name="panel">
-      <div v-if="showLoginDialog" class="login-overlay" @click.self="handleLoginCancel">
-        <div class="login-dialog">
-          <div class="login-dialog-header">
-            <h3 class="login-dialog-title">登录</h3>
-            <button class="panel-close" @click="handleLoginCancel">×</button>
-          </div>
-          <div class="login-dialog-body">
-            <div class="login-field">
-              <label>用户名</label>
-              <input
-                v-model="loginForm.username"
-                type="text"
-                placeholder="请输入用户名"
-              />
-            </div>
-            <div class="login-field">
-              <label>密码</label>
-              <input
-                v-model="loginForm.password"
-                type="password"
-                placeholder="请输入密码"
-                @keyup.enter="handleLoginSubmit"
-              />
-            </div>
-            <p v-if="loginError" class="login-error">{{ loginError }}</p>
-            <button
-              class="login-submit-btn"
-              :disabled="loginLoading"
-              @click="handleLoginSubmit"
-            >
-              {{ loginLoading ? '登录中…' : '登 录' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- ════════════════════════ 侧边栏用户弹窗（已登录） ════════════════════════ -->
-    <Transition name="sidebar-menu">
-      <div v-if="showProfilePanel" class="sidebar-menu-overlay" @click.self="handleCloseProfile">
-        <div class="sidebar-menu">
-          <div class="sidebar-menu-header">
-            <div class="sm-avatar">
-              <span>{{ displayName.charAt(0).toUpperCase() }}</span>
-            </div>
-            <div class="sm-info">
-              <span class="sm-name">{{ displayName }}</span>
-              <span class="sm-role">{{ userStore.role === 'superadmin' ? '超级管理员' : userStore.role === 'admin' ? '管理员' : '用户' }}</span>
-            </div>
-          </div>
-          <div class="sidebar-menu-body">
-            <div class="sm-item" @click="handleLogoutClick">
-              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
-                <path d="M3 3h8v1.5H4.5v11H11V17H3V3zm11.5 2.5L17 10l-2.5 4.5L13 13.5 15 10l-2-3.5 1.5-1z" />
-                <path d="M7 9.25h7.5v1.5H7v-1.5z" />
-              </svg>
-              <span>退出登录</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- ════════════════════════ 退出确认弹窗 ════════════════════════ -->
-    <Transition name="panel">
-      <div v-if="showLogoutConfirm" class="login-overlay" @click.self="handleLogoutCancel">
-        <div class="confirm-dialog">
-          <div class="confirm-dialog-body">
-            <svg viewBox="0 0 24 24" width="40" height="40" fill="var(--color-warning, #e6a23c)">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-            </svg>
-            <p class="confirm-text">确定退出当前账号？</p>
-          </div>
-          <div class="confirm-dialog-footer">
-            <button class="confirm-btn cancel" @click="handleLogoutCancel">取消</button>
-            <button class="confirm-btn confirm" @click="handleLogoutConfirm">确定</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
+    <!-- ═══ 弹窗 ═══ -->
+    <ChatLoginDialog v-if="showLoginDialog" @success="handleLoginSuccess" @cancel="handleLoginCancel" />
+    <ChatUserMenu v-if="showUserMenu" @close="handleUserMenuClose" @logout="handleLogoutClick" />
+    <ChatLogoutConfirm v-if="showLogoutConfirm" @confirm="handleLogoutConfirm" @cancel="handleLogoutCancel" />
   </div>
 </template>
 
 <style scoped>
-/* ════════════════════════ 全局布局 ════════════════════════ */
-.chat-page {
-  position: relative;
-  width: 100vw;
+/* ═══════════════════ 全局 ═══════════════════ */
+.chat-app {
+  display: flex;
   height: 100vh;
+  width: 100vw;
   overflow: hidden;
-  background: var(--color-bg, #f5f7fa);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f5f5f5;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', Roboto, sans-serif;
+  color: #1f1f1f;
 }
 
-/* ════════════════════════ 区域 1：左侧固定侧边栏 ════════════════════════ */
-.sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  height: 100vh;
-  background: rgba(3, 84, 167, 0.4);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+/* ═══════════════════ 左侧边栏 ═══════════════════ */
+.chat-sidebar {
+  width: 280px;
+  min-width: 280px;
+  background: #fff;
   display: flex;
   flex-direction: column;
-  z-index: 100;
-  transition: width 0.3s ease;
-  overflow: hidden;
-  flex-shrink: 0;
+  border-right: 1px solid #eee;
+  transition: margin-left 0.25s ease;
+  z-index: 10;
+}
+.chat-sidebar.collapsed {
+  margin-left: -280px;
 }
 
-/* ── 顶部校徽标题区 ── */
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md, 12px);
-  padding: var(--spacing-xl, 24px) var(--spacing-lg, 16px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-  flex-shrink: 0;
-  min-height: 80px;
+/* 顶部 */
+.sidebar-top {
+  padding: 20px 16px 12px;
+  border-bottom: 1px solid #f0f0f0;
 }
-
-.brand-logo {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
+.sidebar-logo-area {
+  margin-bottom: 12px;
 }
-
-.sidebar-logo-img {
+.sidebar-logo {
   height: 44px;
   width: auto;
-  max-width: 100%;
-  object-fit: contain;
 }
+.sidebar-nav-links {
+  display: flex;
+  gap: 16px;
+  font-size: 14px;
+}
+.nav-link {
+  color: #8e8e93;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.nav-link:hover { color: #409eff; }
+.nav-link.active { color: #409eff; font-weight: 600; }
 
-/* ── 功能导航板块 ── */
-.sidebar-nav {
+/* 搜索 */
+.sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 16px;
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  color: #8e8e93;
+}
+.sidebar-search input {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--spacing-md, 12px) 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: #1f1f1f;
 }
+.sidebar-search input::placeholder { color: #aeaeb2; }
 
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md, 12px);
-  padding: var(--spacing-md, 12px) var(--spacing-lg, 16px);
-  color: rgba(255, 255, 255, 0.85);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
-  white-space: nowrap;
-  font-size: var(--font-size-base, 14px);
-}
-
-.nav-item:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-}
-
-.nav-item.active {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-  font-weight: 600;
-}
-
-.nav-icon {
-  flex-shrink: 0;
-}
-
-.nav-label {
-  transition: opacity 0.2s ease;
-}
-
-.nav-label.hidden {
-  opacity: 0;
-  width: 0;
-  overflow: hidden;
-}
-
-/* 底色标识 — 知识库管理右侧的白点 */
-.nav-badge {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #ffffff;
-  margin-left: auto;
-  flex-shrink: 0;
-  opacity: 0.8;
-}
-
-/* ── 底部用户栏（整行可点击） ── */
-.sidebar-user-row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm, 8px);
-  padding: var(--spacing-lg, 16px);
-  border-top: 1px solid rgba(255, 255, 255, 0.15);
-  cursor: pointer;
-  transition: background 0.2s ease;
-  flex-shrink: 0;
-}
-
-.sidebar-user-row:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.user-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(64, 158, 255, 0.25);
-  border: 2px solid rgba(255, 255, 255, 0.5);
+/* 新建对话按钮 */
+.sidebar-new-chat {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.avatar-text {
-  font-size: var(--font-size-base, 14px);
-  font-weight: 700;
+  gap: 6px;
+  margin: 0 16px 12px;
+  padding: 10px;
+  background: #409eff;
   color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
 }
+.sidebar-new-chat:hover { background: #3a8ee6; }
 
-.user-display-name {
+/* 对话列表 */
+.sidebar-conversations {
   flex: 1;
-  font-size: var(--font-size-sm, 13px);
-  color: rgba(255, 255, 255, 0.85);
+  overflow-y: auto;
+  padding: 0 8px;
+}
+.conv-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  position: relative;
+}
+.conv-item:hover { background: #f5f5f5; }
+.conv-item.active { background: #f0f0f0; }
+
+.conv-item-icon {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  color: #8e8e93;
+  flex-shrink: 0;
+}
+.conv-item-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.conv-item-title {
+  font-size: 13px;
+  color: #1f1f1f;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.user-arrow {
+.conv-item-time {
+  font-size: 11px;
+  color: #aeaeb2;
+}
+.conv-item-del {
+  opacity: 0;
+  background: none;
+  border: none;
+  color: #aeaeb2;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.4);
-  transition: transform 0.2s ease;
+  transition: opacity 0.15s;
 }
+.conv-item:hover .conv-item-del { opacity: 1; }
+.conv-item-del:hover { color: #f56c6c; }
 
-.sidebar-user-row:hover .user-arrow {
-  color: rgba(255, 255, 255, 0.7);
+.sidebar-loading { display: flex; justify-content: center; gap: 4px; padding: 20px; }
+.load-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: #aeaeb2; animation: dotPulse 1.2s ease-in-out infinite;
 }
+.load-dot:nth-child(2) { animation-delay: 0.2s; }
+.load-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dotPulse {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+.sidebar-empty { text-align: center; padding: 24px; font-size: 13px; color: #aeaeb2; }
 
-/* ════════════════════════ 右侧主容器 ════════════════════════ */
-.main-container {
+/* 底部用户 */
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+  border-top: 1px solid #f0f0f0;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.sidebar-user:hover { background: #f9f9f9; }
+.su-avatar {
+  width: 42px; height: 42px; border-radius: 50%;
+  background: rgba(64, 158, 255, 0.3);
+  display: flex; align-items: center; justify-content: center;
+  color: #409eff; flex-shrink: 0;
+}
+.su-avatar-text { font-size: 16px; font-weight: 700; color: #333; }
+.su-name { font-size: 15px; font-weight: 500; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.su-arrow { flex-shrink: 0; color: #bbb; width: 18px; height: 18px; }
+
+/* ═══════════════════ 右侧主区域 ═══════════════════ */
+.chat-main {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  transition: margin-left 0.3s ease;
+  min-width: 0;
+  background: #fff;
 }
 
-/* ════════════════════════ 区域 2：顶部全局操作栏 ════════════════════════ */
-.top-bar {
+/* 顶栏 */
+.chat-topbar {
   height: 56px;
   display: flex;
   align-items: center;
-  padding: 0 var(--spacing-lg, 16px);
-  background: var(--color-white, #ffffff);
-  border-bottom: 1px solid var(--color-border, #e4e7ed);
-  flex-shrink: 0;
   justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
 }
-
-.top-bar-left,
-.top-bar-right {
+.topbar-left, .topbar-right {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
+  gap: 8px;
 }
-
-.top-bar-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm, 4px);
-  cursor: pointer;
-  color: var(--color-text-secondary, #606266);
-  transition: all 0.2s ease;
+.topbar-btn {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; border-radius: 6px;
+  cursor: pointer; color: #8e8e93;
+  transition: all 0.15s;
 }
+.topbar-btn:hover { background: #ecf5ff; color: #409eff; }
+.topbar-title { font-size: 16px; font-weight: 600; margin: 0; color: #1f1f1f; }
+.topbar-conv-title { font-size: 13px; color: #8e8e93; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.top-bar-btn:hover {
-  background: var(--color-bg, #f5f7fa);
-  color: var(--color-text, #303133);
-}
-
-/* ════════════════════════ 区域 5：中间对话展示区 ════════════════════════ */
-.content-area {
+/* 对话消息区 */
+.chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: var(--spacing-xl, 24px) var(--spacing-xxl, 32px);
-  display: flex;
-  justify-content: center;
+  padding: 24px 0;
 }
-
-.messages-container {
-  width: 100%;
-  max-width: 800px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg, 16px);
-}
-
-.message-row {
-  display: flex;
-  gap: var(--spacing-md, 12px);
-  animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.message-row.message-user {
-  flex-direction: row-reverse;
-}
-
-.message-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--font-size-xs, 12px);
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.message-ai .message-avatar {
-  background: rgba(3, 84, 167, 0.15);
-  color: #0354a7;
-}
-
-.message-user .message-avatar {
-  background: var(--color-primary, #409eff);
-  color: #fff;
-}
-
-.message-bubble {
-  max-width: 70%;
-  padding: var(--spacing-md, 12px) var(--spacing-lg, 16px);
-  border-radius: var(--radius-xl, 12px);
-  font-size: var(--font-size-base, 14px);
-  line-height: 1.6;
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-
-.message-ai .message-bubble {
-  background: rgba(3, 84, 167, 0.08);
-  border: 1px solid rgba(3, 84, 167, 0.12);
-  color: var(--color-text, #303133);
-  border-bottom-left-radius: 4px;
-}
-
-.message-user .message-bubble {
-  background: var(--color-primary, #409eff);
-  color: #fff;
-  border-bottom-right-radius: 4px;
-}
-
-/* ── 空状态 ── */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 80px 20px;
-  color: var(--color-placeholder, #c0c4cc);
-}
-
-.empty-icon {
-  margin-bottom: var(--spacing-lg, 16px);
-}
-
-.empty-text {
-  font-size: var(--font-size-lg, 16px);
-}
-
-/* ════════════════════════ 区域 4：底部输入栏 ════════════════════════ */
-.input-bar-container {
-  flex-shrink: 0;
-  padding: var(--spacing-lg, 16px) var(--spacing-xxl, 32px);
-  background: var(--color-bg, #f5f7fa);
-}
-
-.input-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm, 8px);
-  max-width: 800px;
+.messages-inner {
+  max-width: 720px;
   margin: 0 auto;
-  background: #e8f0fe;
-  border-radius: 50px;
-  padding: 4px 4px 4px var(--spacing-lg, 16px);
-  border: 1px solid rgba(3, 84, 167, 0.15);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.input-bar:focus-within {
-  border-color: var(--color-primary, #409eff);
-  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.15);
-}
-
-.input-tool-btn {
   display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 24px;
+}
+
+/* 欢迎页 */
+.chat-welcome {
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 6px;
-  border-radius: 50%;
-  transition: background 0.2s ease;
+  padding: 100px 20px;
+  text-align: center;
+}
+.welcome-icon { margin-bottom: 16px; color: #409eff; }
+.welcome-title { font-size: 20px; font-weight: 600; color: #303133; margin: 0 0 8px; }
+.welcome-desc { font-size: 14px; color: #8e8e93; margin: 0; }
+
+/* ═══ 输入栏 ═══ */
+.chat-input-area {
   flex-shrink: 0;
+  padding: 20px 24px 32px;
+  background: #fff;
 }
 
-.input-tool-btn:hover {
-  background: rgba(64, 158, 255, 0.12);
+/* ── 输入框渐变边框（Uiverse 三层旋转风格）── */
+.input-anim-container {
+  position: relative;
+  max-width: 760px;
+  margin: 0 auto;
 }
 
+.chat-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: none;
+  border-radius: 16px;
+  padding: 10px 8px 10px 20px;
+  background: #f0f5ff;
+  z-index: 1;
+}
+
+/* ── 两层旋转渐变（蓝 → 靛蓝紫）── */
+.input-anim-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  opacity: 0;
+  transform: rotate(0deg);
+  transition: opacity 0.35s, transform 0.5s ease;
+}
+.input-anim-layer.outer {
+  filter: blur(20px);
+}
+.input-anim-layer.mid {
+  inset: -1.5px;
+  filter: blur(3px);
+}
+
+/* 失焦时从不同方向旋转消失 */
+.input-anim-container:not(:focus-within) .input-anim-layer.outer {
+  transform: rotate(40deg) scale(0.96);
+}
+.input-anim-container:not(:focus-within) .input-anim-layer.mid {
+  transform: rotate(-40deg) scale(0.96);
+}
+.input-anim-layer::before {
+  content: "";
+  position: absolute;
+  inset: -200%;
+  width: 300%;
+  height: 300%;
+  animation: inputSpin 10s cubic-bezier(0.56, 0.15, 0.28, 0.86) infinite;
+  animation-play-state: paused;
+}
+.input-anim-layer.outer::before {
+  background: linear-gradient(90deg, #409eff, #5b4dff);
+}
+.input-anim-layer.mid::before {
+  background: linear-gradient(90deg, #66b1ff, #7c3aed);
+}
+
+.input-anim-container:hover .input-anim-layer,
+.input-anim-container:focus-within .input-anim-layer {
+  opacity: 0.65;
+}
+.input-anim-container:hover .input-anim-layer::before,
+.input-anim-container:focus-within .input-anim-layer::before {
+  animation-play-state: running;
+}
+
+/* 内层遮罩 */
+.input-anim-container::after {
+  content: "";
+  position: absolute;
+  inset: 2.5px;
+  z-index: 0;
+  border-radius: 14px;
+  background: #f0f5ff;
+}
+
+@keyframes inputSpin {
+  0% { transform: rotate(8deg); }
+  50% { transform: rotate(188deg); }
+  100% { transform: rotate(368deg); }
+}
+.input-extra-btn {
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer;
+  padding: 10px; border-radius: 10px;
+  color: #409eff; flex-shrink: 0;
+  transition: background 0.15s;
+}
+.input-extra-btn:hover { background: rgba(64,158,255,0.1); }
+.input-extra-btn svg { width: 20px; height: 20px; }
+
+/* 工具菜单 */
+.input-extra-wrap { position: relative; }
+.tools-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: 180px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  border: 1px solid #eee;
+  overflow: hidden;
+  z-index: 50;
+}
+.tools-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: #555;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.tools-menu-item:hover { background: #f5f8ff; color: #409eff; }
+.tools-menu-item svg { color: #8e8e93; }
+.tools-menu-item:hover svg { color: #409eff; }
+.tools-menu-item + .tools-menu-item { border-top: 1px solid #f5f5f5; }
+.tools-enter-active, .tools-leave-active { transition: all 0.15s ease; }
+.tools-enter-from, .tools-leave-to { opacity: 0; transform: translateY(6px); }
 .input-field {
-  flex: 1;
-  border: none;
-  background: transparent;
-  outline: none;
-  font-size: var(--font-size-base, 14px);
-  color: var(--color-text, #303133);
-  padding: var(--spacing-sm, 8px) 0;
-  min-height: 24px;
-}
-
-.input-field::placeholder {
-  color: var(--color-placeholder, #c0c4cc);
-}
-
-.send-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: none;
-  background: var(--color-primary, #409eff);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.send-btn:hover:not(:disabled) {
-  background: var(--color-primary-dark, #3a8ee6);
-}
-
-.send-btn:disabled {
-  background: var(--color-border, #e4e7ed);
-  cursor: not-allowed;
-  color: var(--color-placeholder, #c0c4cc);
-}
-
-/* ════════════════════════ 区域 3：右侧对话悬浮弹窗 ════════════════════════ */
-.float-panel {
-  position: fixed;
-  top: 56px;
-  right: var(--spacing-lg, 16px);
-  width: 300px;
-  max-height: calc(100vh - 80px);
-  background: rgba(3, 84, 167, 0.4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-radius: var(--radius-lg, 8px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  z-index: 200;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: var(--shadow-lg, 0 4px 16px rgba(0, 0, 0, 0.12));
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-lg, 16px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-  flex-shrink: 0;
-}
-
-.panel-title {
-  font-size: var(--font-size-lg, 16px);
-  font-weight: 700;
-  color: #fff;
-  margin: 0;
-}
-
-.panel-close {
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 20px;
-  cursor: pointer;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: all 0.2s ease;
-}
-
-.panel-close:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-}
-
-.panel-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--spacing-md, 12px) var(--spacing-lg, 16px);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg, 16px);
-}
-
-/* 新建对话按钮 */
-.panel-action-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm, 8px);
-  width: 100%;
-  padding: var(--spacing-md, 12px);
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: var(--radius-base, 6px);
-  color: #fff;
-  font-size: var(--font-size-base, 14px);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.panel-action-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-/* 分组标题 */
-.panel-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm, 8px);
-}
-
-.section-title {
-  font-size: var(--font-size-sm, 13px);
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.section-title.collapsible {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-  padding: var(--spacing-xs, 4px) 0;
-}
-
-.section-title.collapsible:hover {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.chevron {
-  transition: transform 0.2s ease;
-}
-
-.chevron.rotated {
-  transform: rotate(180deg);
-}
-
-/* 对话列表 */
-.conversation-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.conversation-item {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm, 8px);
-  padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: var(--font-size-sm, 13px);
-  border-radius: var(--radius-sm, 4px);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.conversation-item:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-}
-
-.conv-icon {
-  flex-shrink: 0;
-  opacity: 0.7;
-}
-
-/* 滚轮指示 */
-.panel-scroll-hint {
-  text-align: center;
-  padding: var(--spacing-xs, 4px) 0 var(--spacing-sm, 8px);
-  font-size: var(--font-size-xs, 12px);
-  color: rgba(255, 255, 255, 0.4);
-  flex-shrink: 0;
-  letter-spacing: 2px;
-}
-
-/* ════════════════════════ 登录弹窗 ════════════════════════ */
-.login-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 500;
-  backdrop-filter: blur(2px);
-}
-
-.login-dialog {
-  width: 380px;
-  background: #fff;
-  border-radius: var(--radius-xl, 12px);
-  box-shadow: var(--shadow-lg, 0 4px 16px rgba(0, 0, 0, 0.12));
-  overflow: hidden;
-  animation: dialogIn 0.25s ease;
-}
-
-@keyframes dialogIn {
-  from { opacity: 0; transform: scale(0.92) translateY(12px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-.login-dialog-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-lg, 16px) var(--spacing-xl, 24px);
-  border-bottom: 1px solid var(--color-border, #e4e7ed);
-}
-
-.login-dialog-title {
-  margin: 0;
-  font-size: var(--font-size-lg, 16px);
-  font-weight: 700;
-  color: var(--color-text, #303133);
-}
-
-.login-dialog-body {
-  padding: var(--spacing-xl, 24px);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg, 16px);
-}
-
-.login-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs, 4px);
-}
-
-.login-field label {
-  font-size: var(--font-size-sm, 13px);
-  font-weight: 600;
-  color: var(--color-text-secondary, #606266);
-}
-
-.login-field input {
-  height: 40px;
-  padding: 0 var(--spacing-md, 12px);
-  border: 1px solid var(--color-border, #e4e7ed);
-  border-radius: var(--radius-base, 6px);
-  font-size: var(--font-size-base, 14px);
-  outline: none;
-  transition: border-color 0.2s ease;
-}
-
-.login-field input:focus {
-  border-color: var(--color-primary, #409eff);
-  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.12);
-}
-
-.login-error {
-  margin: 0;
-  font-size: var(--font-size-sm, 13px);
-  color: var(--color-danger, #f56c6c);
-  padding: var(--spacing-sm, 8px);
-  background: rgba(245, 108, 108, 0.08);
-  border-radius: var(--radius-sm, 4px);
-}
-
-.login-submit-btn {
-  height: 42px;
-  border: none;
-  border-radius: var(--radius-base, 6px);
-  background: var(--color-primary, #409eff);
-  color: #fff;
-  font-size: var(--font-size-base, 14px);
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  letter-spacing: 4px;
-}
-
-.login-submit-btn:hover:not(:disabled) {
-  background: var(--color-primary-dark, #3a8ee6);
-}
-
-.login-submit-btn:disabled {
-  background: var(--color-border, #e4e7ed);
-  cursor: not-allowed;
-}
-
-/* ════════════════════════ 侧边栏用户弹窗 ════════════════════════ */
-.sidebar-menu-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 300;
-}
-
-.sidebar-menu {
-  position: fixed;
-  bottom: 72px;
-  left: var(--spacing-md, 12px);
-  width: 220px;
-  background: #fff;
-  border-radius: var(--radius-lg, 8px);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  box-shadow: var(--shadow-lg, 0 4px 16px rgba(0, 0, 0, 0.12));
-  overflow: hidden;
-}
-
-.sidebar-menu-header {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md, 12px);
-  padding: var(--spacing-lg, 16px);
-  border-bottom: 1px solid var(--color-border, #e4e7ed);
-}
-
-.sm-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: rgba(64, 158, 255, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--font-size-lg, 16px);
-  font-weight: 700;
-  color: var(--color-primary, #409eff);
-  flex-shrink: 0;
-}
-
-.sm-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow: hidden;
-}
-
-.sm-name {
-  font-size: var(--font-size-base, 14px);
-  font-weight: 600;
-  color: var(--color-text, #303133);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sm-role {
-  font-size: var(--font-size-xs, 12px);
-  color: var(--color-info, #909399);
-}
-
-.sidebar-menu-body {
-  padding: var(--spacing-sm, 8px);
-}
-
-.sm-item {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md, 12px);
-  padding: var(--spacing-md, 12px);
-  border-radius: var(--radius-base, 6px);
-  cursor: pointer;
-  font-size: var(--font-size-sm, 13px);
-  color: var(--color-danger, #f56c6c);
-  transition: background 0.2s ease;
-}
-
-.sm-item:hover {
-  background: rgba(245, 108, 108, 0.06);
-}
-
-/* ════════════════════════ 退出确认弹窗 ════════════════════════ */
-.confirm-dialog {
-  width: 320px;
-  background: #fff;
-  border-radius: var(--radius-xl, 12px);
-  box-shadow: var(--shadow-lg, 0 4px 16px rgba(0, 0, 0, 0.12));
-  overflow: hidden;
-  animation: dialogIn 0.25s ease;
-}
-
-.confirm-dialog-body {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--spacing-md, 12px);
-  padding: var(--spacing-xxl, 32px) var(--spacing-xl, 24px);
-}
-
-.confirm-text {
-  margin: 0;
-  font-size: var(--font-size-base, 14px);
-  color: var(--color-text, #303133);
-  text-align: center;
-  line-height: 1.5;
-}
-
-.confirm-dialog-footer {
-  display: flex;
-  gap: var(--spacing-md, 12px);
-  padding: 0 var(--spacing-xl, 24px) var(--spacing-xl, 24px);
-}
-
-.confirm-btn {
-  flex: 1;
-  height: 40px;
-  border-radius: var(--radius-base, 6px);
-  font-size: var(--font-size-base, 14px);
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: none;
-}
-
-.confirm-btn.cancel {
-  background: var(--color-bg, #f5f7fa);
-  color: var(--color-text-secondary, #606266);
-}
-
-.confirm-btn.cancel:hover {
-  background: var(--color-border, #e4e7ed);
-}
-
-.confirm-btn.confirm {
-  background: var(--color-danger, #f56c6c);
-  color: #fff;
-}
-
-.confirm-btn.confirm:hover {
-  background: #e05050;
-}
-
-/* ════════════════════════ 过渡动画 ════════════════════════ */
-.panel-enter-active,
-.panel-leave-active {
-  transition: all 0.25s ease;
-}
-
-.panel-enter-from,
-.panel-leave-to {
-  opacity: 0;
-  transform: translateX(20px) scale(0.96);
-}
-
-.dropdown-enter-active,
-.dropdown-leave-active {
-  transition: all 0.2s ease;
-}
-
-.dropdown-enter-from,
-.dropdown-leave-to {
-  opacity: 0;
-  max-height: 0;
-}
-
-.dropdown-enter-to,
-.dropdown-leave-from {
-  opacity: 1;
-  max-height: 300px;
-}
-
-/* ════════════════════════ 侧边栏菜单动画 ════════════════════════ */
-.sidebar-menu-enter-active,
-.sidebar-menu-leave-active {
-  transition: all 0.2s ease;
-}
-
-.sidebar-menu-enter-from,
-.sidebar-menu-leave-to {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
-/* ════════════════════════ 滚动条美化 ════════════════════════ */
-.content-area::-webkit-scrollbar,
-.panel-body::-webkit-scrollbar {
-  width: 6px;
-}
-
-.content-area::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.content-area::-webkit-scrollbar-thumb {
-  background: var(--color-border, #e4e7ed);
-  border-radius: 3px;
-}
-
-.panel-body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 3px;
-}
+  flex: 1; border: none; background: transparent; outline: none;
+  font-size: 16px; color: #1f1f1f; padding: 12px 0; min-height: 30px;
+}
+.input-field::placeholder { color: #8e9ebd; font-size: 15px; }
+.input-send-btn {
+  padding: 0 22px; height: 46px; border-radius: 12px;
+  border: none; background: #409eff; color: #fff;
+  font-size: 15px; font-weight: 600; letter-spacing: 1px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+}
+.input-send-btn:hover:not(:disabled) { background: #3a8ee6; }
+.input-send-btn:disabled { background: #d0ddf0; cursor: not-allowed; color: #8e9ebd; }
+
+/* 动画 */
 </style>
