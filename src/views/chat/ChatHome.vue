@@ -101,10 +101,6 @@ onMounted(() => { chat.init() })
         <div class="sidebar-logo-area">
           <img :src="logoImg" alt="logo" class="sidebar-logo" />
         </div>
-        <div class="sidebar-nav-links">
-          <span class="nav-link" @click="navigateTo('/knowledge/list')">知识库</span>
-          <span class="nav-link active">问答</span>
-        </div>
       </div>
 
       <!-- 搜索 -->
@@ -149,6 +145,14 @@ onMounted(() => { chat.init() })
         <div v-if="chat.filteredConversations.value.length === 0 && !chat.loading.value" class="sidebar-empty">
           暂无对话
         </div>
+      </div>
+
+      <!-- 退出按钮 -->
+      <div class="sidebar-exit" @click="navigateTo('/knowledge/list')">
+        <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
+          <path d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"/>
+        </svg>
+        <span>退出</span>
       </div>
 
       <!-- 底部用户 -->
@@ -218,10 +222,22 @@ onMounted(() => { chat.init() })
           <!-- 空状态 -->
           <div v-else class="chat-welcome">
             <div class="welcome-icon">
-              <svg viewBox="0 0 48 48" width="48" height="48" fill="none">
-                <circle cx="24" cy="24" r="22" stroke="#409eff" stroke-width="1.5" opacity="0.4" />
-                <path d="M18 28l6 6 8-10" stroke="#409eff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <div class="loader">
+                <svg width="100" height="100" viewBox="0 0 100 100">
+                  <defs>
+                    <mask id="clipping">
+                      <polygon points="0,0 100,0 100,100 0,100" fill="black"></polygon>
+                      <polygon points="25,25 75,25 50,75" fill="white"></polygon>
+                      <polygon points="50,25 75,75 25,75" fill="white"></polygon>
+                      <polygon points="35,35 65,35 50,65" fill="white"></polygon>
+                      <polygon points="35,35 65,35 50,65" fill="white"></polygon>
+                      <polygon points="35,35 65,35 50,65" fill="white"></polygon>
+                      <polygon points="35,35 65,35 50,65" fill="white"></polygon>
+                    </mask>
+                  </defs>
+                </svg>
+                <div class="box"></div>
+              </div>
             </div>
             <h2 class="welcome-title">你好！有什么可以帮助你的？</h2>
             <p class="welcome-desc">智能知识问答助手，随时为你解答</p>
@@ -232,8 +248,6 @@ onMounted(() => { chat.init() })
       <!-- 输入栏 -->
       <div class="chat-input-area">
         <div class="input-anim-container">
-          <div class="input-anim-layer outer"></div>
-          <div class="input-anim-layer mid"></div>
           <div class="chat-input-wrapper">
             <div class="input-extra-wrap">
               <button class="input-extra-btn" @click="toggleToolsMenu">
@@ -312,7 +326,7 @@ onMounted(() => { chat.init() })
 
 /* 顶部 */
 .sidebar-top {
-  padding: 20px 16px 12px;
+  padding: 20px 16px;
   border-bottom: 1px solid #f0f0f0;
 }
 .sidebar-logo-area {
@@ -322,18 +336,23 @@ onMounted(() => { chat.init() })
   height: 44px;
   width: auto;
 }
-.sidebar-nav-links {
+/* 退出按钮 */
+.sidebar-exit {
   display: flex;
-  gap: 16px;
-  font-size: 14px;
-}
-.nav-link {
-  color: #8e8e93;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  margin: 0 8px 4px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: color 0.15s;
+  font-size: 13px;
+  color: #8e8e93;
+  transition: all 0.15s;
 }
-.nav-link:hover { color: #409eff; }
-.nav-link.active { color: #409eff; font-weight: 600; }
+.sidebar-exit:hover {
+  background: #f5f5f5;
+  color: #409eff;
+}
 
 /* 搜索 */
 .sidebar-search {
@@ -525,7 +544,84 @@ onMounted(() => { chat.init() })
   padding: 100px 20px;
   text-align: center;
 }
-.welcome-icon { margin-bottom: 16px; color: #409eff; }
+.welcome-icon {
+  margin-bottom: 20px;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 欢迎页加载动画（蓝调版） */
+.loader {
+  --color-one: #ffbf48;
+  --color-two: #be4a1d;
+  --color-three: #ffbf4780;
+  --color-four: #bf4a1d80;
+  --color-five: #ffbf4740;
+  --time-animation: 2s;
+  --size: 0.56;
+  position: relative;
+  border-radius: 50%;
+  transform: scale(var(--size));
+  box-shadow: 0 0 25px 0 var(--color-three), 0 20px 50px 0 var(--color-four);
+  animation: colorize calc(var(--time-animation) * 3) ease-in-out infinite;
+  transform-origin: center;
+}
+
+.loader::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  border-top: solid 1px var(--color-one);
+  border-bottom: solid 1px var(--color-two);
+  background: linear-gradient(180deg, var(--color-five), var(--color-four));
+  box-shadow: inset 0 10px 10px 0 var(--color-three), inset 0 -10px 10px 0 var(--color-four);
+}
+
+.loader .box {
+  width: 100px;
+  height: 100px;
+  background: linear-gradient(180deg, var(--color-one) 30%, var(--color-two) 70%);
+  mask: url(#clipping);
+  -webkit-mask: url(#clipping);
+}
+
+.loader svg { position: absolute; }
+.loader svg #clipping { filter: contrast(15); animation: roundness calc(var(--time-animation) / 2) linear infinite; }
+.loader svg #clipping polygon { filter: blur(7px); }
+.loader svg #clipping polygon:nth-child(1) { transform-origin: 75% 25%; transform: rotate(90deg); }
+.loader svg #clipping polygon:nth-child(2) { transform-origin: 50% 50%; animation: rotation var(--time-animation) linear infinite reverse; }
+.loader svg #clipping polygon:nth-child(3) { transform-origin: 50% 60%; animation: rotation var(--time-animation) linear infinite; animation-delay: calc(var(--time-animation) / -3); }
+.loader svg #clipping polygon:nth-child(4) { transform-origin: 40% 40%; animation: rotation var(--time-animation) linear infinite reverse; }
+.loader svg #clipping polygon:nth-child(5) { transform-origin: 40% 40%; animation: rotation var(--time-animation) linear infinite reverse; animation-delay: calc(var(--time-animation) / -2); }
+.loader svg #clipping polygon:nth-child(6) { transform-origin: 60% 40%; animation: rotation var(--time-animation) linear infinite; }
+.loader svg #clipping polygon:nth-child(7) { transform-origin: 60% 40%; animation: rotation var(--time-animation) linear infinite; animation-delay: calc(var(--time-animation) / -1.5); }
+
+@keyframes rotation {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes roundness {
+  0% { filter: contrast(15); }
+  20% { filter: contrast(3); }
+  40% { filter: contrast(3); }
+  60% { filter: contrast(15); }
+  100% { filter: contrast(15); }
+}
+@keyframes colorize {
+  0% { filter: hue-rotate(0deg); }
+  20% { filter: hue-rotate(-30deg); }
+  40% { filter: hue-rotate(-60deg); }
+  60% { filter: hue-rotate(-90deg); }
+  80% { filter: hue-rotate(-45deg); }
+  100% { filter: hue-rotate(0deg); }
+}
 .welcome-title { font-size: 20px; font-weight: 600; color: #303133; margin: 0 0 8px; }
 .welcome-desc { font-size: 14px; color: #8e8e93; margin: 0; }
 
@@ -555,57 +651,6 @@ onMounted(() => { chat.init() })
   z-index: 1;
 }
 
-/* ── 两层旋转渐变（蓝 → 靛蓝紫）── */
-.input-anim-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  border-radius: 16px;
-  overflow: hidden;
-  opacity: 0;
-  transform: rotate(0deg);
-  transition: opacity 0.35s, transform 0.5s ease;
-}
-.input-anim-layer.outer {
-  filter: blur(20px);
-}
-.input-anim-layer.mid {
-  inset: -1.5px;
-  filter: blur(3px);
-}
-
-/* 失焦时从不同方向旋转消失 */
-.input-anim-container:not(:focus-within) .input-anim-layer.outer {
-  transform: rotate(40deg) scale(0.96);
-}
-.input-anim-container:not(:focus-within) .input-anim-layer.mid {
-  transform: rotate(-40deg) scale(0.96);
-}
-.input-anim-layer::before {
-  content: "";
-  position: absolute;
-  inset: -200%;
-  width: 300%;
-  height: 300%;
-  animation: inputSpin 10s cubic-bezier(0.56, 0.15, 0.28, 0.86) infinite;
-  animation-play-state: paused;
-}
-.input-anim-layer.outer::before {
-  background: linear-gradient(90deg, #409eff, #5b4dff);
-}
-.input-anim-layer.mid::before {
-  background: linear-gradient(90deg, #66b1ff, #7c3aed);
-}
-
-.input-anim-container:hover .input-anim-layer,
-.input-anim-container:focus-within .input-anim-layer {
-  opacity: 0.65;
-}
-.input-anim-container:hover .input-anim-layer::before,
-.input-anim-container:focus-within .input-anim-layer::before {
-  animation-play-state: running;
-}
-
 /* 内层遮罩 */
 .input-anim-container::after {
   content: "";
@@ -616,11 +661,6 @@ onMounted(() => { chat.init() })
   background: #f0f5ff;
 }
 
-@keyframes inputSpin {
-  0% { transform: rotate(8deg); }
-  50% { transform: rotate(188deg); }
-  100% { transform: rotate(368deg); }
-}
 .input-extra-btn {
   display: flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer;
