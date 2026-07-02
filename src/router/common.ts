@@ -9,6 +9,12 @@ const authRoutes: RouteRecordRaw[] = [
     meta: { title: '登录', hidden: true },
   },
   {
+    path: '/403',
+    name: 'Forbidden',
+    component: () => import('@/components/common/Error403.vue'),
+    meta: { title: '无权限访问', hidden: true },
+  },
+  {
     path: '/404',
     name: 'NotFound',
     component: () => import('@/components/common/Error404.vue'),
