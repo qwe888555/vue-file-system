@@ -14,7 +14,7 @@ export interface UserInfo {
   date_joined: string
 }
 
-export type UserRole = 'super_admin' | 'admin' | 'user'
+export type UserRole = 'user' | 'admin_csic' | 'admin_dept' | 'superadmin'
 
 export interface LoginParams {
   username: string

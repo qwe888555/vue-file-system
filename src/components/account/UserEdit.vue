@@ -55,7 +55,7 @@ import type { College, UserRole } from '@/types'
 import { ROLE_CONFIG } from '@/config/roles'
 
 interface Props {
-  form: Record<string, any>
+  form: Partial<Record<string, unknown>>
   isEdit: boolean
   colleges?: College[]
   hideCollege?: boolean
