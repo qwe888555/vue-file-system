@@ -72,7 +72,7 @@
           批量删除
         </el-button>
         <el-button type="warning" size="small" @click="handleBatchReset(selection)">
-          批量编辑密码
+          批量修改密码
         </el-button>
       </template>
 
@@ -289,20 +289,23 @@ async function handleBatchDelete(selection: any[]) {
   }
 }
 
-// ── 批量编辑密码 ──
+// ── 批量修改密码 ──
 async function handleBatchReset(selection: any[]) {
   if (!selection.length) return
   try {
-    await ElMessageBox.confirm(
-      `确定将选中的 ${selection.length} 个账号的密码批量重置为 12345678 吗？`,
-      '批量编辑密码',
-      { confirmButtonText: '确定重置', cancelButtonText: '取消', type: 'warning' },
-    )
+    const { value } = await ElMessageBox.prompt('请输入新密码', '批量修改密码', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputType: 'password',
+      inputPlaceholder: '请输入新密码（至少6位）',
+      inputPattern: /^.{6,}$/,
+      inputErrorMessage: '密码至少6位',
+    })
     for (const row of selection) {
       const idx = localAccounts.value.findIndex((a) => a.id === row.id)
-      if (idx !== -1) localAccounts.value[idx].password = '12345678'
+      if (idx !== -1) localAccounts.value[idx].password = value
     }
-    ElMessage.success(`成功将 ${selection.length} 个账号的密码重置为 12345678`)
+    ElMessage.success(`成功将 ${selection.length} 个账号的密码修改为 ${value}`)
   } catch {
     // 用户取消
   }
