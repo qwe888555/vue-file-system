@@ -79,6 +79,7 @@ export interface KnowledgeFile {
   fileType: string
   collegeId: number
   collegeName: string
+  keywords: string[]
   status: number
   createdAt: string
   updatedAt: string

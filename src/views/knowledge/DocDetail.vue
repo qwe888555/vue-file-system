@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { KnowledgeFile } from '@/types'
@@ -27,7 +27,7 @@ const fileTypeColors: Record<string, string> = {
   archive: '#9b59b6',
 }
 
-const mockFiles: KnowledgeFile[] = [
+const defaultFiles: KnowledgeFile[] = [
   {
     id: 1,
     title: '人工智能导论课件.pdf',
@@ -40,6 +40,7 @@ const mockFiles: KnowledgeFile[] = [
     fileType: 'pdf',
     collegeId: 1,
     collegeName: '信息工程学院',
+    keywords: ['人工智能', '机器学习', '深度学习'],
     status: 1,
     createdAt: '2026-07-01 14:30:00',
     updatedAt: '2026-07-01 14:30:00',
@@ -56,6 +57,7 @@ const mockFiles: KnowledgeFile[] = [
     fileType: 'video',
     collegeId: 2,
     collegeName: '计算机学院',
+    keywords: ['大数据', '数据分析', '案例'],
     status: 1,
     createdAt: '2026-07-01 10:15:00',
     updatedAt: '2026-07-01 10:15:00',
@@ -72,6 +74,7 @@ const mockFiles: KnowledgeFile[] = [
     fileType: 'doc',
     collegeId: 1,
     collegeName: '信息工程学院',
+    keywords: ['软件工程', '实践', '项目'],
     status: 1,
     createdAt: '2026-06-30 16:45:00',
     updatedAt: '2026-06-30 16:45:00',
@@ -88,6 +91,7 @@ const mockFiles: KnowledgeFile[] = [
     fileType: 'audio',
     collegeId: 3,
     collegeName: '数字艺术学院',
+    keywords: ['校园活动', '采访', '录音'],
     status: 1,
     createdAt: '2026-06-30 09:20:00',
     updatedAt: '2026-06-30 09:20:00',
@@ -104,6 +108,7 @@ const mockFiles: KnowledgeFile[] = [
     fileType: 'pdf',
     collegeId: 2,
     collegeName: '计算机学院',
+    keywords: ['课程体系', '规划', '专业'],
     status: 1,
     createdAt: '2026-06-29 11:00:00',
     updatedAt: '2026-06-29 11:00:00',
@@ -120,11 +125,24 @@ const mockFiles: KnowledgeFile[] = [
     fileType: 'doc',
     collegeId: 1,
     collegeName: '信息工程学院',
+    keywords: ['毕业设计', '模板', '论文'],
     status: 1,
     createdAt: '2026-06-28 15:30:00',
     updatedAt: '2026-06-28 15:30:00',
   },
 ]
+
+function getFiles(): KnowledgeFile[] {
+  const stored = localStorage.getItem('knowledgeFiles')
+  if (stored) {
+    return JSON.parse(stored)
+  }
+  return defaultFiles
+}
+
+function saveFiles(files: KnowledgeFile[]) {
+  localStorage.setItem('knowledgeFiles', JSON.stringify(files))
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + ' B'
@@ -150,6 +168,12 @@ function handleRename() {
     .then(({ value }) => {
       if (value && value.trim()) {
         file.value!.title = value.trim()
+        const files = getFiles()
+        const index = files.findIndex((f) => f.id === file.value!.id)
+        if (index > -1) {
+          files[index].title = value.trim()
+          saveFiles(files)
+        }
         ElMessage.success('重命名成功')
       }
     })
@@ -164,6 +188,9 @@ function handleDelete() {
     type: 'warning',
   })
     .then(() => {
+      const files = getFiles()
+      const filtered = files.filter((f) => f.id !== file.value!.id)
+      saveFiles(filtered)
       ElMessage.success('删除成功')
       goBack()
     })
@@ -172,7 +199,8 @@ function handleDelete() {
 
 onMounted(() => {
   const id = parseInt(route.params.id as string)
-  file.value = mockFiles.find((f) => f.id === id) || mockFiles[0]
+  const files = getFiles()
+  file.value = files.find((f) => f.id === id) || files[0]
 })
 </script>
 
