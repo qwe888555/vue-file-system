@@ -51,7 +51,7 @@ function processQueue(error: any, token: string | null) {
 
 // ── 请求拦截 ──
 // 公开接口白名单：这些接口绝对不能携带 Token，否则 DRF 会优先拦截 Token 鉴权
-const noAuthPaths = ['/auth/login/', '/auth/refresh/']
+const noAuthPaths = ['/auth/login/', '/auth/refresh/', '/auth/sso/callback/']
 
 instance.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
