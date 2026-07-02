@@ -1,0 +1,1 @@
+- [修改通知规则](modification-notification.md) — 每次修改后需告知用户更改了哪些文件
