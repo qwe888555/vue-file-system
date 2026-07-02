@@ -75,7 +75,7 @@ function handleLogout() {
 
 <style scoped>
 .sidebar {
-  width: 260px;
+  width: 220px;
   height: 100%;
   background: #fff;
   display: flex;

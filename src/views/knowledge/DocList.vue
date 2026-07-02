@@ -3,44 +3,26 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { KnowledgeFile } from '@/types'
+import UploadFileForm from '@/components/knowledge/UploadFileForm.vue'
 
 const router = useRouter()
 
 const searchQuery = ref('')
 const showUploadDialog = ref(false)
 
-const categories = [
-  { label: '信息工程学院', value: '信息工程学院' },
-  { label: '计算机学院', value: '计算机学院' },
-  { label: '数字艺术学院', value: '数字艺术学院' },
-  { label: '商学院', value: '商学院' },
-  { label: '外国语学院', value: '外国语学院' },
-  { label: '继续教育学院', value: '继续教育学院' },
-  { label: '软件工程系', value: '软件工程系' },
-  { label: '网络工程系', value: '网络工程系' },
-  { label: '数字媒体系', value: '数字媒体系' },
-  { label: '经济管理系', value: '经济管理系' },
-  { label: '英语系', value: '英语系' },
-]
+const getStoredFiles = (): KnowledgeFile[] => {
+  const stored = localStorage.getItem('knowledgeFiles')
+  if (stored) {
+    return JSON.parse(stored)
+  }
+  return []
+}
 
-const fileFormats = [
-  { label: '文档', value: 'doc' },
-  { label: 'PDF', value: 'pdf' },
-  { label: '图片', value: 'image' },
-  { label: '音频', value: 'audio' },
-  { label: '视频', value: 'video' },
-  { label: '压缩包', value: 'archive' },
-]
+const saveFiles = (files: KnowledgeFile[]) => {
+  localStorage.setItem('knowledgeFiles', JSON.stringify(files))
+}
 
-const uploadForm = ref({
-  title: '',
-  category: '',
-  format: '',
-  uploadDate: '',
-  description: '',
-})
-
-const uploadedFiles = ref<KnowledgeFile[]>([
+const defaultFiles: KnowledgeFile[] = [
   {
     id: 1,
     title: '人工智能导论课件.pdf',
@@ -53,6 +35,7 @@ const uploadedFiles = ref<KnowledgeFile[]>([
     fileType: 'pdf',
     collegeId: 1,
     collegeName: '信息工程学院',
+    keywords: ['人工智能', '机器学习', '深度学习'],
     status: 1,
     createdAt: '2026-07-01 14:30:00',
     updatedAt: '2026-07-01 14:30:00',
@@ -69,6 +52,7 @@ const uploadedFiles = ref<KnowledgeFile[]>([
     fileType: 'video',
     collegeId: 2,
     collegeName: '计算机学院',
+    keywords: ['大数据', '数据分析', '案例'],
     status: 1,
     createdAt: '2026-07-01 10:15:00',
     updatedAt: '2026-07-01 10:15:00',
@@ -85,6 +69,7 @@ const uploadedFiles = ref<KnowledgeFile[]>([
     fileType: 'doc',
     collegeId: 1,
     collegeName: '信息工程学院',
+    keywords: ['软件工程', '实践', '项目'],
     status: 1,
     createdAt: '2026-06-30 16:45:00',
     updatedAt: '2026-06-30 16:45:00',
@@ -101,6 +86,7 @@ const uploadedFiles = ref<KnowledgeFile[]>([
     fileType: 'audio',
     collegeId: 3,
     collegeName: '数字艺术学院',
+    keywords: ['校园活动', '采访', '录音'],
     status: 1,
     createdAt: '2026-06-30 09:20:00',
     updatedAt: '2026-06-30 09:20:00',
@@ -117,6 +103,7 @@ const uploadedFiles = ref<KnowledgeFile[]>([
     fileType: 'pdf',
     collegeId: 2,
     collegeName: '计算机学院',
+    keywords: ['课程体系', '规划', '专业'],
     status: 1,
     createdAt: '2026-06-29 11:00:00',
     updatedAt: '2026-06-29 11:00:00',
@@ -133,11 +120,17 @@ const uploadedFiles = ref<KnowledgeFile[]>([
     fileType: 'doc',
     collegeId: 1,
     collegeName: '信息工程学院',
+    keywords: ['毕业设计', '模板', '论文'],
     status: 1,
     createdAt: '2026-06-28 15:30:00',
     updatedAt: '2026-06-28 15:30:00',
   },
-])
+]
+
+const storedFiles = getStoredFiles()
+const uploadedFiles = ref<KnowledgeFile[]>(
+  storedFiles.length > 0 ? storedFiles : defaultFiles
+)
 
 const filteredFiles = computed(() => {
   if (!searchQuery.value) return uploadedFiles.value
@@ -147,7 +140,8 @@ const filteredFiles = computed(() => {
       file.title.toLowerCase().includes(query) ||
       file.summary.toLowerCase().includes(query) ||
       file.author.toLowerCase().includes(query) ||
-      file.collegeName.toLowerCase().includes(query)
+      file.collegeName.toLowerCase().includes(query) ||
+      (file.keywords && file.keywords.some((kw) => kw.toLowerCase().includes(query)))
   )
 })
 
@@ -194,6 +188,7 @@ function handleRename(file: KnowledgeFile) {
     .then(({ value }) => {
       if (value && value.trim()) {
         file.title = value.trim()
+        saveFiles(uploadedFiles.value)
         ElMessage.success('重命名成功')
       }
     })
@@ -210,45 +205,85 @@ function handleDelete(file: KnowledgeFile) {
       const index = uploadedFiles.value.findIndex((f) => f.id === file.id)
       if (index > -1) {
         uploadedFiles.value.splice(index, 1)
+        saveFiles(uploadedFiles.value)
         ElMessage.success('删除成功')
       }
     })
     .catch(() => {})
 }
 
-function handleUpload() {
-  if (!uploadForm.value.title || !uploadForm.value.category) {
-    ElMessage.warning('请填写必填项')
-    return
+function handleFormSubmit(data: { title: string; category: string; author: string; keywords: string; description: string; content: string; fileName: string; fileSize: number; fileData: string }) {
+  const keywords = data.keywords
+    .split(/[,，、\s]+/)
+    .map((kw) => kw.trim())
+    .filter((kw) => kw)
+
+  const hasContent = data.content && data.content.trim()
+  let title = data.title
+  let size = data.fileSize
+  let fileType = 'doc'
+
+  if (hasContent) {
+    if (!data.title.includes('.md')) {
+      title += '.md'
+    }
+    size = data.content.length * 2
+    fileType = 'doc'
+  } else {
+    const ext = data.fileName.split('.').pop()?.toLowerCase() || ''
+    if (!data.title.includes(`.${ext}`)) {
+      title += `.${ext}`
+    }
+    
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(ext)) {
+      fileType = 'image'
+    } else if (['mp3', 'wav'].includes(ext)) {
+      fileType = 'audio'
+    } else if (['mp4', 'avi', 'mkv'].includes(ext)) {
+      fileType = 'video'
+    } else if (['pdf'].includes(ext)) {
+      fileType = 'pdf'
+    } else if (['doc', 'docx'].includes(ext)) {
+      fileType = 'doc'
+    } else if (['txt'].includes(ext)) {
+      fileType = 'doc'
+    } else if (['zip', 'rar'].includes(ext)) {
+      fileType = 'archive'
+    }
   }
 
   const newFile: KnowledgeFile = {
     id: Date.now(),
-    title: uploadForm.value.title,
-    category: uploadForm.value.category,
-    categoryName: uploadForm.value.category,
-    author: '当前用户',
-    summary: uploadForm.value.description,
+    title,
+    category: data.category || '未分类',
+    categoryName: data.category || '未分类',
+    author: data.author,
+    summary: data.description,
     fileUrl: '',
-    fileSize: Math.floor(Math.random() * 10000000) + 100000,
-    fileType: uploadForm.value.format || 'doc',
-    collegeId: categories.findIndex((c) => c.value === uploadForm.value.category) + 1,
-    collegeName: uploadForm.value.category,
+    fileSize: size,
+    fileType,
+    collegeId: 0,
+    collegeName: data.category || '未分类',
+    keywords,
     status: 1,
     createdAt: new Date().toLocaleString('zh-CN'),
     updatedAt: new Date().toLocaleString('zh-CN'),
+    content: hasContent ? data.content : '',
+    fileData: data.fileData,
   }
 
   uploadedFiles.value.unshift(newFile)
-  showUploadDialog.value = false
-  uploadForm.value = {
-    title: '',
-    category: '',
-    format: '',
-    uploadDate: '',
-    description: '',
+  try {
+    saveFiles(uploadedFiles.value)
+    showUploadDialog.value = false
+    setTimeout(() => {
+      ElMessage.success(hasContent ? '创建成功' : '上传成功')
+    }, 1000)
+  } catch (error) {
+    uploadedFiles.value.shift()
+    showUploadDialog.value = false
+    ElMessage.error('存储失败，文件过大或浏览器存储已满，请尝试上传更小的文件')
   }
-  ElMessage.success('上传成功')
 }
 </script>
 
@@ -268,7 +303,7 @@ function handleUpload() {
     <div class="search-section">
       <el-input
         v-model="searchQuery"
-        placeholder="搜索文件名、描述、作者..."
+        placeholder="搜索文件名、学院/部门、作者、关键词、文件描述..."
         prefix-icon="Search"
         class="search-input"
       />
@@ -328,6 +363,7 @@ function handleUpload() {
             <p class="card-summary">{{ file.summary }}</p>
             <div class="card-meta">
               <el-tag size="small" type="primary">{{ file.collegeName }}</el-tag>
+              <el-tag v-for="kw in (file.keywords || []).slice(0, 3)" :key="kw" size="small" type="info">{{ kw }}</el-tag>
               <el-tag size="small">{{ formatFileSize(file.fileSize) }}</el-tag>
             </div>
             <div class="card-footer">
@@ -347,61 +383,11 @@ function handleUpload() {
       </div>
     </div>
 
-    <el-dialog
-      v-model="showUploadDialog"
-      title="上传文件"
-      width="500px"
-      :close-on-click-modal="false"
-    >
-      <el-form :model="uploadForm" label-width="100px" class="upload-form">
-        <el-form-item label="文件名" required>
-          <el-input v-model="uploadForm.title" placeholder="请输入文件名" />
-        </el-form-item>
-
-        <el-form-item label="分类" required>
-          <el-select v-model="uploadForm.category" placeholder="请选择学院/部门">
-            <el-option v-for="cat in categories" :key="cat.value" :label="cat.label" :value="cat.value" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="文件格式">
-          <el-select v-model="uploadForm.format" placeholder="请选择格式">
-            <el-option v-for="fmt in fileFormats" :key="fmt.value" :label="fmt.label" :value="fmt.value" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="上传日期">
-          <el-date-picker v-model="uploadForm.uploadDate" type="date" placeholder="选择日期" />
-        </el-form-item>
-
-        <el-form-item label="文件描述">
-          <el-input v-model="uploadForm.description" type="textarea" :rows="3" placeholder="请输入文件描述..." />
-        </el-form-item>
-
-        <el-form-item label="文件上传">
-          <el-upload
-            :auto-upload="false"
-            :on-change="() => {}"
-            drag
-            accept=".pdf,.doc,.docx,.txt,.jpg,.png,.gif,.mp3,.wav,.mp4,.avi,.mkv,.zip,.rar"
-            class="upload-dragger"
-          >
-            <el-icon :size="48" color="#c0c4cc"><Upload /></el-icon>
-            <div class="el-upload__text">
-              将文件拖到此处，或<em>点击上传</em>
-            </div>
-            <div class="el-upload__tip" slot="tip">
-              支持 PDF、Word、图片、音频、视频等格式
-            </div>
-          </el-upload>
-        </el-form-item>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="showUploadDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleUpload">确认上传</el-button>
-      </template>
-    </el-dialog>
+    <UploadFileForm
+      :visible="showUploadDialog"
+      @close="showUploadDialog = false"
+      @submit="handleFormSubmit"
+    />
   </div>
 </template>
 

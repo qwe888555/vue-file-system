@@ -5,6 +5,14 @@ import type { MenuItem, UserRole } from '@/types'
 import { useUserStore } from './user'
 import { allMenus, roleMenuMap } from '@/config/permission'
 
+// ── 角色 → 按钮操作映射 ──
+const roleActions: Record<UserRole, string[]> = {
+  superadmin: ['create', 'edit', 'delete', 'reset-password', 'batch-delete', 'batch-reset'],
+  admin_csic: ['create', 'edit', 'reset-password'],
+  admin_dept: ['create', 'edit', 'reset-password'],
+  user: [],
+}
+
 export const usePermissionStore = defineStore('permission', () => {
   const menus = ref<MenuItem[]>([])
 

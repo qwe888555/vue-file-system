@@ -27,7 +27,7 @@ const profileRoutes: RouteRecordRaw[] = [
 
 // ── 合并所有路由 ──
 const routes: RouteRecordRaw[] = [
-  { path: '/', redirect: '/chat' },
+  { path: '/', redirect: '/knowledge/list' },
   ...authRoutes,
   ...chatRoutes,
   ...profileRoutes,

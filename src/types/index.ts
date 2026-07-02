@@ -83,9 +83,12 @@ export interface KnowledgeFile {
   fileType: string
   collegeId: number
   collegeName: string
+  keywords: string[]
   status: number
   createdAt: string
   updatedAt: string
+  content?: string
+  fileData?: string
 }
 
 // ── 会话消息 ──
@@ -144,4 +147,15 @@ export interface ResourceCategory {
   level: number
   sortOrder: number
   children?: ResourceCategory[]
+}
+
+// ── BaseTable 列定义 ──
+export interface ColDef {
+  prop: string
+  label: string
+  width?: string | number
+  minWidth?: string | number
+  align?: 'left' | 'center' | 'right'
+  sortable?: boolean
+  fixed?: 'left' | 'right'
 }
