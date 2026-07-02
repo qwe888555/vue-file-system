@@ -24,7 +24,7 @@ export function updateProfileApi(data: Partial<UserInfo>): Promise<UserInfo> {
 }
 
 /** 修改密码 */
-export function changePasswordApi(data: { oldPassword: string; newPassword: string }): Promise<void> {
+export function changePasswordApi(data: { old_password: string; new_password: string }): Promise<{ detail: string }> {
   return request.post('/auth/change-password/', data)
 }
 

@@ -124,26 +124,11 @@ async function handleLogin() {
   loading.value = true
   errorMsg.value = ''
   try {
-    if (import.meta.env.DEV) {
-      userStore.token = 'mock-token'
-      userStore.userInfo = {
-        id: 1,
-        username: form.username,
-        first_name: '管理员',
-        avatar: '',
-        email: '',
-        role: 'super_admin',
-      }
-      ElMessage.success('登录成功')
-      emit('update:visible', false)
-      router.push('/chat')
-    } else {
-      const res = await userStore.login(form)
-      ElMessage.success(`登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
-      emit('update:visible', false)
-      const role = res.user?.role
-      router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
-    }
+    const res = await userStore.login(form)
+    ElMessage.success(`登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
+    emit('update:visible', false)
+    const role = res.user?.role
+    router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
   } catch (e: any) {
     errorMsg.value = e?.response?.data?.detail || e?.message || '登录失败'
   } finally {
