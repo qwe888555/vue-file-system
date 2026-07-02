@@ -17,7 +17,9 @@
     "axios": "^1.18.1",
     "dayjs": "^1.11.21",
     "element-plus": "^2.14.2",
+    "highlight.js": "^11.11.1",
     "js-cookie": "^3.0.8",
+    "marked": "^18.0.5",
     "pinia": "^3.0.4",
     "vue": "^3.5.38",
     "vue-router": "^4.6.4"

@@ -6,6 +6,7 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
+import logoImg from '@/assets/styles/logo.png'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -40,7 +41,7 @@ async function handleLogin() {
       await userStore.login(form)
     }
     ElMessage.success('登录成功')
-    router.push('/chat')
+    router.push('/knowledge/list')
   } catch (e: any) {
     ElMessage.error(e?.message || '登录失败')
   } finally {
@@ -52,7 +53,9 @@ async function handleLogin() {
 <template>
   <div class="login-page">
     <div class="login-card">
-      <div class="login-logo">Logo</div>
+      <div class="login-logo">
+        <img :src="logoImg" alt="成都东软学院" class="login-logo-img" />
+      </div>
       <h2 class="login-title">NISU-CD 资源系统</h2>
       <p class="login-desc">请输入账号密码登录</p>
 
@@ -79,45 +82,144 @@ async function handleLogin() {
   align-items: center;
   justify-content: center;
   height: 100vh;
-  background: linear-gradient(135deg, #409eff 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, #e8edf5 0%, #d5dde8 50%, #e8edf5 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 装饰性背景光晕 */
+.login-page::before {
+  content: '';
+  position: absolute;
+  width: 400px;
+  height: 400px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(43, 95, 217, 0.08) 0%, transparent 70%);
+  top: -120px;
+  right: -80px;
+  pointer-events: none;
+}
+
+.login-page::after {
+  content: '';
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(43, 95, 217, 0.06) 0%, transparent 70%);
+  bottom: -160px;
+  left: -100px;
+  pointer-events: none;
 }
 
 .login-card {
-  width: 400px;
-  padding: 40px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+  position: relative;
+  width: 420px;
+  padding: 48px 40px 40px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 20px;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.04);
   text-align: center;
+  z-index: 1;
 }
 
 .login-logo {
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 16px;
-  background: #f0f5ff;
-  border-radius: 12px;
+  width: 200px;
+  height: 56px;
+  margin: 0 auto 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
-  font-weight: 700;
-  color: #409eff;
+}
+
+.login-logo-img {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 .login-title {
-  font-size: 22px;
-  color: #303133;
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a2332;
   margin: 0 0 8px;
+  letter-spacing: -0.01em;
 }
 
 .login-desc {
   font-size: 14px;
-  color: #909399;
-  margin: 0 0 32px;
+  color: #8e95a6;
+  margin: 0 0 36px;
+  line-height: 1.5;
 }
 
 .login-btn {
   width: 100%;
+  height: 48px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  background: #2b5fd9;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.login-btn:hover {
+  background: #1e4bb8;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(43, 95, 217, 0.3);
+}
+
+.login-btn:active {
+  transform: translateY(0);
+}
+
+/* 覆盖 Element Plus 输入框样式 */
+:deep(.el-input__wrapper) {
+  border-radius: 12px;
+  padding: 4px 16px;
+  box-shadow: 0 0 0 1px #e4e9f0 !important;
+  background: #f8fafc;
+  transition: all 0.2s ease;
+}
+
+:deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #c8d0dd !important;
+  background: #fff;
+}
+
+:deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 2px rgba(43, 95, 217, 0.2) !important;
+  background: #fff;
+}
+
+:deep(.el-input__inner) {
+  height: 48px;
+  font-size: 14px;
+  color: #1a2332;
+}
+
+:deep(.el-input__inner::placeholder) {
+  color: #b0b8c8;
+}
+
+:deep(.el-input__prefix) {
+  margin-right: 8px;
+}
+
+:deep(.el-input__prefix .el-icon) {
+  font-size: 18px;
+  color: #b0b8c8;
+}
+
+/* 表单项间距 */
+:deep(.el-form-item) {
+  margin-bottom: 24px;
 }
 </style>
