@@ -83,6 +83,8 @@ export interface KnowledgeFile {
   status: number
   createdAt: string
   updatedAt: string
+  content?: string
+  fileData?: string
 }
 
 // ── 会话消息 ──

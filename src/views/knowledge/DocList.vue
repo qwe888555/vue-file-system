@@ -212,48 +212,78 @@ function handleDelete(file: KnowledgeFile) {
     .catch(() => {})
 }
 
-function handleFormSubmit(data: { title: string; category: string; author: string; keywords: string; description: string }) {
+function handleFormSubmit(data: { title: string; category: string; author: string; keywords: string; description: string; content: string; fileName: string; fileSize: number; fileData: string }) {
   const keywords = data.keywords
     .split(/[,，、\s]+/)
     .map((kw) => kw.trim())
     .filter((kw) => kw)
 
-  const categories = [
-    '信息工程学院',
-    '计算机学院',
-    '数字艺术学院',
-    '商学院',
-    '外国语学院',
-    '继续教育学院',
-    '软件工程系',
-    '网络工程系',
-    '数字媒体系',
-    '经济管理系',
-    '英语系',
-  ]
+  const hasContent = data.content && data.content.trim()
+  let title = data.title
+  let size = data.fileSize
+  let fileType = 'doc'
+
+  if (hasContent) {
+    if (!data.title.includes('.md')) {
+      title += '.md'
+    }
+    size = data.content.length * 2
+    fileType = 'doc'
+  } else {
+    const ext = data.fileName.split('.').pop()?.toLowerCase() || ''
+    if (!data.title.includes(`.${ext}`)) {
+      title += `.${ext}`
+    }
+    
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(ext)) {
+      fileType = 'image'
+    } else if (['mp3', 'wav'].includes(ext)) {
+      fileType = 'audio'
+    } else if (['mp4', 'avi', 'mkv'].includes(ext)) {
+      fileType = 'video'
+    } else if (['pdf'].includes(ext)) {
+      fileType = 'pdf'
+    } else if (['doc', 'docx'].includes(ext)) {
+      fileType = 'doc'
+    } else if (['txt'].includes(ext)) {
+      fileType = 'doc'
+    } else if (['zip', 'rar'].includes(ext)) {
+      fileType = 'archive'
+    }
+  }
 
   const newFile: KnowledgeFile = {
     id: Date.now(),
-    title: data.title,
-    category: data.category,
-    categoryName: data.category,
+    title,
+    category: data.category || '未分类',
+    categoryName: data.category || '未分类',
     author: data.author,
     summary: data.description,
     fileUrl: '',
-    fileSize: Math.floor(Math.random() * 10000000) + 100000,
-    fileType: 'doc',
-    collegeId: categories.indexOf(data.category) + 1,
-    collegeName: data.category,
+    fileSize: size,
+    fileType,
+    collegeId: 0,
+    collegeName: data.category || '未分类',
     keywords,
     status: 1,
     createdAt: new Date().toLocaleString('zh-CN'),
     updatedAt: new Date().toLocaleString('zh-CN'),
+    content: hasContent ? data.content : '',
+    fileData: data.fileData,
   }
 
   uploadedFiles.value.unshift(newFile)
-  saveFiles(uploadedFiles.value)
-  showUploadDialog.value = false
-  ElMessage.success('上传成功')
+  try {
+    saveFiles(uploadedFiles.value)
+    showUploadDialog.value = false
+    setTimeout(() => {
+      ElMessage.success(hasContent ? '创建成功' : '上传成功')
+    }, 1000)
+  } catch (error) {
+    uploadedFiles.value.shift()
+    showUploadDialog.value = false
+    ElMessage.error('存储失败，文件过大或浏览器存储已满，请尝试上传更小的文件')
+  }
 }
 </script>
 
