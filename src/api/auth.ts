@@ -31,10 +31,10 @@ export function changePasswordApi(data: { oldPassword: string; newPassword: stri
 /** SSO 登录接口地址 */
 export function ssoLoginUrl(): string {
   const base = import.meta.env.VITE_SSO_BASE_URL || import.meta.env.VITE_API_URL || ''
-  // fetch GET 到该地址后：
-  //   Mock 模式 → 返回 JSON（含 mock_codes 数组），前端弹窗选账号
-  //   正式模式 → 302 重定向到学校真实认证页
-  return `${base}/api/auth/sso/login/`
+  // VITE_API_URL 已包含 /api 前缀，无需再拼
+  // 开发环境：/api/auth/sso/login/ → Vite 代理 → 后端
+  // 生产环境：http://后端/auth/sso/login/ → 直连后端
+  return `${base}/auth/sso/login/`
 }
 
 /** SSO 回调：用选中的 code 换取 JWT 令牌 */

@@ -45,7 +45,7 @@ onMounted(async () => {
     ElMessage.success(`SSO 登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
 
     const role = res.user?.role
-    router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
+    router.push(role === 'superadmin' || role === 'admin_csic' || role === 'admin_dept' ? '/knowledge/list' : '/chat')
   } catch (e: any) {
     ElMessage.error(e?.message || 'SSO 登录失败')
   } finally {
@@ -66,7 +66,7 @@ async function handleLogin() {
     ElMessage.success(`登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
 
     const role = res.user?.role
-    if (role === 'super_admin' || role === 'admin') {
+    if (role === 'superadmin' || role === 'admin_csic' || role === 'admin_dept') {
       router.push('/knowledge/list')
     } else {
       router.push('/chat')
@@ -130,7 +130,7 @@ async function handleSSOSelect(code: string) {
     ElMessage.success(`SSO 登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
 
     const role = res.user?.role
-    router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
+    router.push(role === 'superadmin' || role === 'admin_csic' || role === 'admin_dept' ? '/knowledge/list' : '/chat')
   } catch (e: any) {
     ElMessage.error(e?.message || 'SSO 登录失败')
   } finally {
