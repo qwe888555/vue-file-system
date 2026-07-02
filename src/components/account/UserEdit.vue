@@ -4,7 +4,7 @@
     prop="username"
     :rules="[{ required: true, min: 3, max: 20, message: '请输入3-20个字符的账号', trigger: 'blur' }]"
   >
-    <el-input v-model="form.username" :disabled="isEdit" placeholder="请输入账号" />
+    <el-input v-model="localForm.username" :disabled="isEdit" placeholder="请输入账号" />
   </el-form-item>
 
   <el-form-item
@@ -12,7 +12,7 @@
     prop="password"
     :rules="[{ required: true, min: 6, message: '密码至少6位', trigger: 'blur' }]"
   >
-    <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password />
+    <el-input v-model="localForm.password" type="password" placeholder="请输入密码" show-password />
   </el-form-item>
 
   <el-form-item
@@ -20,7 +20,7 @@
     prop="role"
     :rules="[{ required: true, message: '请选择角色', trigger: 'change' }]"
   >
-    <el-select v-model="form.role" placeholder="请选择角色">
+    <el-select v-model="localForm.role" placeholder="请选择角色">
       <el-option
         v-for="opt in roleOptions"
         :key="opt.value"
@@ -36,7 +36,7 @@
     prop="collegeId"
     :rules="[{ required: true, message: '请选择所属学院/部门', trigger: 'change' }]"
   >
-    <el-select v-model="form.collegeId" placeholder="请选择所属学院/部门">
+    <el-select v-model="localForm.collegeId" placeholder="请选择所属学院/部门">
       <el-option
         v-for="col in colleges"
         :key="col.id"
@@ -50,8 +50,7 @@
 
 <script setup lang="ts">
 // ── 用户新增/编辑弹窗表单 ──
-// 配合 BaseTable 的 #form 插槽使用
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { College, UserRole } from '@/types'
 import { ROLE_CONFIG } from '@/config/roles'
 
@@ -66,6 +65,12 @@ const props = withDefaults(defineProps<Props>(), {
   colleges: () => [],
   hideCollege: false,
 })
+
+const localForm = ref({ ...props.form })
+
+watch(() => props.form, (newVal) => {
+  localForm.value = { ...newVal }
+}, { deep: true })
 
 /** 角色下拉选项（超级管理员受 hideCollege 控制） */
 const roleOptions = computed(() =>

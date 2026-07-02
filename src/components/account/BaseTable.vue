@@ -182,9 +182,6 @@ function triggerSearch(params?: Record<string, any>) {
 }
 
 // ── 重置筛选到默认值 ──
-function resetFilters() {
-  Object.keys(formModel).forEach((k) => delete formModel[k])
-}
 
 // ── 弹窗操作 ──
 function handleAdd() {

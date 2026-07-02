@@ -41,7 +41,7 @@ function handleCancel() {
 
 <template>
   <Transition name="panel">
-    <div class="login-overlay" @click.self="handleCancel">
+    <div v-if="props.show" class="login-overlay" @click.self="handleCancel">
       <div class="login-dialog">
         <div class="login-dialog-header">
           <h3 class="login-dialog-title">登录</h3>
