@@ -31,11 +31,7 @@ const allMenus: MenuItem[] = [
     title: '账号管理',
     icon: 'Setting',
     children: [
-      { path: '/admin/users', name: 'UserManage', title: '用户账号' },
-      { path: '/admin/colleges', name: 'CollegeManage', title: '学院部门' },
-      { path: '/admin/disciplines', name: 'DisciplineManage', title: '学科管理' },
-      { path: '/admin/categories', name: 'CategoryManage', title: '资源类型' },
-      { path: '/admin/feedback-pending', name: 'FeedbackPending', title: '兜底问答' },
+      { path: '/admin/users', name: 'UserList', title: '账号管理' },
     ],
   },
   {
@@ -49,8 +45,17 @@ const allMenus: MenuItem[] = [
 // ── 角色 → 可访问菜单 path 映射 ──
 const roleMenuMap: Record<UserRole, string[]> = {
   user: ['/chat', '/profile'],
-  admin: ['/chat', '/knowledge', '/profile'],
+  admin_csic: ['/chat', '/knowledge', '/admin', '/profile'],
+  admin_dept: ['/chat', '/knowledge', '/admin', '/profile'],
   superadmin: ['/chat', '/knowledge', '/admin', '/profile'],
+}
+
+// ── 角色 → 按钮操作映射 ──
+const roleActions: Record<UserRole, string[]> = {
+  superadmin: ['create', 'edit', 'delete', 'reset-password', 'batch-delete', 'batch-reset'],
+  admin_csic: ['create', 'edit', 'reset-password'],
+  admin_dept: ['create', 'edit', 'reset-password'],
+  user: [],
 }
 
 export const usePermissionStore = defineStore('permission', () => {
@@ -75,9 +80,12 @@ export const usePermissionStore = defineStore('permission', () => {
   }
 
   /** 判断按钮是否可见（v-permission 指令使用） */
-  function hasPermission(_action: string): boolean {
-    // 按需实现：根据 role + 后端返回的按钮权限集合做判断
-    return true
+  function hasPermission(action: string): boolean {
+    const userStore = useUserStore()
+    const role = userStore.role
+    if (!role) return false
+    const allowed = roleActions[role] || []
+    return allowed.includes(action)
   }
 
   function loadMenus() {

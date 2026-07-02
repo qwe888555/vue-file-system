@@ -42,7 +42,8 @@ const router = createRouter({
 // ── 路由守卫：权限拦截 + 登录校验 ──
 const roleMenuMap: Record<UserRole, string[]> = {
   user: ['/chat', '/profile'],
-  admin: ['/chat', '/knowledge', '/profile'],
+  admin_csic: ['/chat', '/knowledge', '/admin', '/profile'],
+  admin_dept: ['/chat', '/knowledge', '/admin', '/profile'],
   superadmin: ['/chat', '/knowledge', '/admin', '/profile'],
 }
 

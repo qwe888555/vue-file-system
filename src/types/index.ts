@@ -12,7 +12,7 @@ export interface UserInfo {
   departmentName?: string
 }
 
-export type UserRole = 'user' | 'admin' | 'superadmin'
+export type UserRole = 'user' | 'admin_csic' | 'admin_dept' | 'superadmin'
 
 export interface LoginParams {
   username: string
@@ -140,4 +140,15 @@ export interface ResourceCategory {
   level: number
   sortOrder: number
   children?: ResourceCategory[]
+}
+
+// ── BaseTable 列定义 ──
+export interface ColDef {
+  prop: string
+  label: string
+  width?: string | number
+  minWidth?: string | number
+  align?: 'left' | 'center' | 'right'
+  sortable?: boolean
+  fixed?: 'left' | 'right'
 }

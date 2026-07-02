@@ -40,15 +40,62 @@
 body {
   margin: 0;
   font-size: 14px;
-}
-@import 'tailwindcss';
-
-/* 全局自定义样式可以写在这里 */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-body {
   font-family: 'Microsoft Yahei', sans-serif;
+}
+
+/* ── 确认弹窗美化 ── */
+.el-message-box {
+  border-radius: 12px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15) !important;
+}
+
+.el-message-box__header {
+  padding: 20px 24px 0 !important;
+}
+
+.el-message-box__title {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: #1a1a2e !important;
+}
+
+.el-message-box__content {
+  padding: 16px 24px 20px !important;
+}
+
+.el-message-box__message {
+  font-size: 14px !important;
+  color: #4a4a5a !important;
+  line-height: 1.6 !important;
+}
+
+.el-message-box__btns {
+  padding: 0 24px 20px !important;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.el-message-box__btns .el-button {
+  padding: 8px 20px !important;
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+}
+
+.el-message-box__btns .el-button--primary {
+  border: none !important;
+}
+
+.el-message-box__btns .el-button--primary:hover {
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.35);
+}
+
+.el-message-box__btns .el-button--default:hover {
+  background: #f5f7fa !important;
+  border-color: #d9d9d9 !important;
+}
+
+/* ── 操作按钮统一圆角 ── */
+.el-button--small {
+  border-radius: 6px !important;
 }
