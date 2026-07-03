@@ -86,8 +86,8 @@ async function handleLogout() {
     <div v-if="isLoggedIn" class="sidebar-user-area">
       <!-- 上拉菜单（非超级管理员） -->
       <Transition name="menu-up">
-        <div v-if="showUserMenu && userStore.role !== 'super_admin'" class="user-popup">
-          <div class="user-popup-item" @click="showUserMenu = false; showPersonalCenter = true">
+        <div v-if="showUserMenu" class="user-popup">
+          <div v-if="userStore.role !== 'super_admin'" class="user-popup-item" @click="showUserMenu = false; showPersonalCenter = true">
             <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
             <span>个人中心</span>
           </div>
@@ -97,7 +97,7 @@ async function handleLogout() {
           </div>
         </div>
       </Transition>
-      <div class="sidebar-user" @click="userStore.role === 'super_admin' ? handleLogout() : (showUserMenu = !showUserMenu)">
+      <div class="sidebar-user" @click="showUserMenu = !showUserMenu">
         <div class="su-avatar">
           <span class="su-avatar-text">{{ (userDisplayRole || userStore.userInfo?.username || '?').charAt(0).toUpperCase() }}</span>
         </div>

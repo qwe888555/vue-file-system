@@ -240,8 +240,11 @@ onMounted(() => { chat.init(); loadHotQuestions() })
             </svg>
           </button>
         </div>
-        <div v-if="isLoggedIn && isAdminUser" class="topbar-right">
-          <button class="topbar-exit-btn" @click="router.push('/knowledge/list')" title="退出问答">
+        <div v-if="isLoggedIn" class="topbar-right">
+          <button v-if="isAdminUser" class="topbar-exit-btn" @click="router.push('/knowledge/list')" title="退出问答">
+            <span>退出问答</span>
+          </button>
+          <button v-else class="topbar-exit-btn" @click="router.push('/faq')" title="常见问题">
             <span>退出问答</span>
           </button>
         </div>
