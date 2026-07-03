@@ -21,6 +21,7 @@ const chat = useChat()
 const sidebarOpen = ref(true)
 const showLoginDialog = ref(false)
 const showPersonalCenter = ref(false)
+const showUserMenu = ref(false)
 const showToolsMenu = ref(false)
 const inputText = ref('')
 
@@ -31,7 +32,7 @@ const streamingReferences = ref<KnowledgeFile[]>([])
 let currentSSE: ReturnType<typeof useSSE> | null = null
 
 const isLoggedIn = computed(() => !!userStore.token)
-const isAdminUser = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin')
+const isAdminUser = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin' || userStore.role === 'admin_csic' || userStore.role === 'admin_dept' || userStore.role === 'college_admin')
 const displayName = computed(() => {
   if (!userStore.userInfo) return ''
   return userStore.userInfo.role_display || userStore.userInfo.username || ''
@@ -95,7 +96,13 @@ function quickQuestion(text: string) {
 
 function toggleSidebar() { sidebarOpen.value = !sidebarOpen.value }
 
-function handleLoginSuccess() { showLoginDialog.value = false; chat.fetchConversations() }
+function handleLoginSuccess() {
+  showLoginDialog.value = false
+  if (userStore.role === 'super_admin' || userStore.role === 'admin' || userStore.role === 'admin_csic' || userStore.role === 'admin_dept' || userStore.role === 'college_admin') {
+    router.push('/knowledge/list')
+  }
+  chat.fetchConversations()
+}
 function handleLoginCancel() { showLoginDialog.value = false }
 async function handleLogout() {
   try {
@@ -202,24 +209,31 @@ onMounted(() => { chat.init(); loadHotQuestions() })
         </div>
       </div>
 
-      <!-- 个人中心（管理员和普通用户） -->
-      <div v-if="isLoggedIn && userStore.role !== 'super_admin'" class="chat-pc" @click="showPersonalCenter = true">
-        <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
-          <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/>
-        </svg>
-        <span>个人中心</span>
-      </div>
-
       <!-- 底部用户 -->
-      <div v-if="isLoggedIn" class="sidebar-user" @click="handleLogout">
-        <div class="su-avatar">
-          <span class="su-avatar-text">{{ displayName.charAt(0).toUpperCase() }}</span>
+      <div v-if="isLoggedIn" class="sidebar-user-area">
+        <!-- 上拉菜单（非超级管理员） -->
+        <Transition name="menu-up">
+          <div v-if="showUserMenu && userStore.role !== 'super_admin'" class="user-popup">
+            <div class="user-popup-item" @click="showUserMenu = false; showPersonalCenter = true">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
+              <span>个人中心</span>
+            </div>
+            <div class="user-popup-item" @click="showUserMenu = false; handleLogout()">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M3 3h6v2H5v10h4v2H3V3zm12.5 5H11V6h4.5L19 10l-3.5 4H11v-2h4.5L16 10l-1.5-2z"/></svg>
+              <span>退出登录</span>
+            </div>
+          </div>
+        </Transition>
+        <div class="sidebar-user" @click="userStore.role === 'super_admin' ? handleLogout() : (showUserMenu = !showUserMenu)">
+          <div class="su-avatar">
+            <span class="su-avatar-text">{{ displayName.charAt(0).toUpperCase() }}</span>
+          </div>
+          <div class="su-info">
+            <span class="su-name">{{ userStore.userInfo?.username || '' }}</span>
+            <span class="su-role">{{ userStore.role === 'admin' || userStore.role === 'admin_csic' || userStore.role === 'admin_dept' || userStore.role === 'college_admin' ? '普通管理员' : (userStore.userInfo?.role_display || '') }}</span>
+          </div>
+          <span class="su-status">已登录</span>
         </div>
-        <div class="su-info">
-          <span class="su-name">{{ userStore.userInfo?.username || '' }}</span>
-          <span class="su-role">{{ userStore.role === 'admin' ? '普通管理员' : (userStore.userInfo?.role_display || '') }}</span>
-        </div>
-        <span class="su-status">已登录</span>
       </div>
       <div v-else class="sidebar-user" @click="showLoginDialog = true">
         <div class="su-avatar">
@@ -575,15 +589,23 @@ onMounted(() => { chat.init(); loadHotQuestions() })
   cursor: pointer;
   transition: background 0.15s;
 }
+.sidebar-user-area { position: relative; }
 .sidebar-user:hover { background: #f0f4fe; }
-.chat-pc {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 20px; cursor: pointer;
-  font-size: 13px; color: #8e8e93;
-  border-top: 1px solid #f0f0f0;
-  transition: all 0.15s;
+.user-popup {
+  position: absolute; bottom: calc(100% + 4px); left: 8px; right: 8px;
+  background: #fff; border-radius: 10px;
+  box-shadow: 0 -2px 16px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.06);
+  overflow: hidden; z-index: 20;
 }
-.chat-pc:hover { background: #f0f4fe; color: #2b5fd9; }
+.user-popup-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; cursor: pointer; font-size: 14px; color: #1a2332;
+  transition: background 0.15s;
+}
+.user-popup-item:hover { background: #f0f4fe; color: #2b5fd9; }
+.user-popup-item:first-child { border-bottom: 1px solid #f0f0f0; }
+.menu-up-enter-active, .menu-up-leave-active { transition: all 0.2s ease; }
+.menu-up-enter-from, .menu-up-leave-to { opacity: 0; transform: translateY(8px); }
 .su-avatar {
   width: 36px; height: 36px; border-radius: 50%;
   background: rgba(64, 158, 255, 0.15);

@@ -5,7 +5,7 @@ const adminRoutes: RouteRecordRaw[] = [
     path: '/admin',
     name: 'Admin',
     component: () => import('@/views/layouts/Layout.vue'),
-    meta: { title: '账号管理', icon: 'Setting', roles: ['super_admin', 'college_admin'] },
+    meta: { title: '账号管理', icon: 'Setting', roles: ['super_admin', 'admin', 'admin_csic', 'admin_dept', 'college_admin'] },
     children: [
       {
         path: 'users',

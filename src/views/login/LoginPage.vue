@@ -40,9 +40,13 @@ onMounted(async () => {
     userStore.token = res.access
     userStore.refreshToken = res.refresh
     userStore.userInfo = res.user
-    ElMessage.success(`SSO 登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
-    const role = res.user?.role
-    router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
+    if (!userStore.role) {
+      try { await userStore.getUserInfo() } catch {}
+    }
+    const role = userStore.role
+    const welcomeRole = role === 'super_admin' ? '超级管理员' : role === 'admin' || role === 'admin_csic' || role === 'admin_dept' || role === 'college_admin' ? '普通管理员' : '普通用户'
+    ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
+    router.push(role === 'super_admin' || role === 'admin' || role === 'admin_csic' || role === 'admin_dept' || role === 'college_admin' ? '/knowledge/list' : '/chat')
   } catch (e: any) {
     ElMessage.error(e?.message || 'SSO 登录失败')
   } finally {
@@ -59,11 +63,15 @@ async function handleLogin() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const res = await userStore.login(form)
-    const welcomeRole = res.user?.role === 'super_admin' ? '超级管理员' : res.user?.role === 'admin' ? '普通管理员' : '普通用户'
+    await userStore.login(form)
+    // 登录接口可能未返回 role，通过 getUserInfo 补取
+    if (!userStore.role) {
+      try { await userStore.getUserInfo() } catch {}
+    }
+    const role = userStore.role
+    const welcomeRole = role === 'super_admin' ? '超级管理员' : role === 'admin' || role === 'admin_csic' || role === 'admin_dept' || role === 'college_admin' ? '普通管理员' : '普通用户'
     ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
-    const role = res.user?.role
-    router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
+    router.push(role === 'super_admin' || role === 'admin' || role === 'admin_csic' || role === 'admin_dept' || role === 'college_admin' ? '/knowledge/list' : '/chat')
   } catch (e: any) {
     errorMsg.value = e?.response?.data?.detail || e?.message || '登录失败，请检查账号密码'
   } finally {
@@ -107,9 +115,13 @@ async function handleSSOSelect(code: string) {
     userStore.token = res.access
     userStore.refreshToken = res.refresh
     userStore.userInfo = res.user
-    ElMessage.success(`SSO 登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
-    const role = res.user?.role
-    router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
+    if (!userStore.role) {
+      try { await userStore.getUserInfo() } catch {}
+    }
+    const role = userStore.role
+    const welcomeRole = role === 'super_admin' ? '超级管理员' : role === 'admin' || role === 'admin_csic' || role === 'admin_dept' || role === 'college_admin' ? '普通管理员' : '普通用户'
+    ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
+    router.push(role === 'super_admin' || role === 'admin' || role === 'admin_csic' || role === 'admin_dept' || role === 'college_admin' ? '/knowledge/list' : '/chat')
   } catch {
     ElMessage.error('SSO 登录失败')
   } finally {
