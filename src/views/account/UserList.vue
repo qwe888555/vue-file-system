@@ -118,55 +118,40 @@
 </template>
 
 <script setup lang="ts">
-// ── 账号管理页面（合并版，纯前端本地数据） ──
-import { ref, computed, watch } from 'vue'
+// ── 账号管理页面（对接后端 API） ──
+import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BaseTable from '@/components/account/BaseTable.vue'
 import UserEdit from '@/components/account/UserEdit.vue'
 import { useUserStore } from '@/store/user'
 import { ROLE_CONFIG } from '@/config/roles'
-import type { UserRole } from '@/types'
+import type { UserRole, College } from '@/types'
+import {
+  getAccountsApi,
+  createAccountApi,
+  updateAccountApi,
+  deleteAccountApi,
+  batchResetPasswordApi,
+  batchDeleteAccountsApi,
+  getCollegesApi,
+} from '@/api/admin'
 
-// ── 本地学院数据 ──
-const colleges = [
-  { id: 1, name: '计算机科学与技术学院', code: 'CS', sortOrder: 1, status: 1 },
-  { id: 2, name: '数学与统计学院', code: 'MATH', sortOrder: 2, status: 1 },
-]
+// ── 学院列表（从后端加载） ──
+const colleges = ref<College[]>([])
 
-// ── 本地账号数据 ──
-interface LocalAccount {
-  id: number
-  username: string
-  password: string
-  role: UserRole
-  collegeId: number
-  collegeName: string
-  status: number
-  createdAt: string
-}
-
-const localAccounts = ref<LocalAccount[]>([
-  {
-    id: 1, username: 'zhangsan', password: '123456',
-    role: 'admin_csic', collegeId: 1, collegeName: '计算机科学与技术学院',
-    status: 1, createdAt: '2025-09-01',
-  },
-  {
-    id: 2, username: 'lisi', password: '123456',
-    role: 'user', collegeId: 2, collegeName: '数学与统计学院',
-    status: 1, createdAt: '2025-09-15',
-  },
-  {
-    id: 3, username: 'wangwu', password: '123456',
-    role: 'admin_dept', collegeId: 1, collegeName: '计算机科学与技术学院',
-    status: 1, createdAt: '2025-10-01',
-  },
-])
+onMounted(async () => {
+  try {
+    const res = await getCollegesApi()
+    colleges.value = res.results
+  } catch {
+    // 静默失败
+  }
+})
 
 // ── 用户角色 ──
 const userStore = useUserStore()
-const isSuperAdmin = computed(() => userStore.role === 'superadmin')
-const userCollegeId = computed(() => userStore.userInfo?.collegeId)
+const isSuperAdmin = computed(() => userStore.role === 'super_admin')
+const userCollege = computed(() => userStore.userInfo?.college)
 const tableRef = ref<InstanceType<typeof BaseTable>>()
 
 // ── 搜索栏状态 ──
@@ -174,114 +159,106 @@ const keyword = ref('')
 const roleFilter = ref('__all__')
 const collegeFilter = ref<number | '__all__'>('__all__')
 
-let nextId = 100
-
-// ── 列定义（"用户名" → "账号"） ──
+// ── 列定义 ──
 const columns = [
   { prop: 'username', label: '账号', width: '200' },
   { prop: 'role', label: '角色', width: '200', align: 'center' as const },
-  { prop: 'collegeName', label: '所属学院/部门', minWidth: '200' },
+  { prop: 'college_name', label: '所属学院/部门', minWidth: '200' },
   { prop: '_password', label: '密码', width: '200', align: 'center' as const },
 ]
 
 // ── 角色筛选选项 ──
 const roleOptions = computed(() =>
   (Object.keys(ROLE_CONFIG) as UserRole[])
-    .filter((role) => (isSuperAdmin.value ? true : role !== 'superadmin'))
+    .filter((role) => (isSuperAdmin.value ? true : role !== 'super_admin'))
     .map((role) => ({ value: role, label: ROLE_CONFIG[role].label })),
 )
 
-// ── 默认筛选条件 ──
+// ── 默认筛选条件（学院管理员自动限定本院） ──
 const defaultFilters = computed(() => {
   const f: Record<string, any> = {}
-  if (!isSuperAdmin.value && userCollegeId.value) {
-    f.collegeId = userCollegeId.value
+  if (!isSuperAdmin.value && userCollege.value) {
+    f.college = userCollege.value
   }
   return f
 })
 
-// ── 本地 API 方法 ──
-
-/** 查询账号（本地过滤+分页） */
+// ── 从后端获取用户列表（前端 keyword 过滤 + 分页） ──
 async function getLocalAccounts(params: {
   page: number
   pageSize: number
-  keyword?: string
   role?: string
-  collegeId?: number
+  college?: number
+  keyword?: string
 }) {
-  let list = [...localAccounts.value]
+  const res = await getAccountsApi({
+    role: params.role,
+    college: params.college,
+  })
+  const list = res.results
 
+  let filtered = list
   if (params.keyword) {
-    const kw = String(params.keyword).toLowerCase()
-    list = list.filter((a) => a.username.toLowerCase().includes(kw))
-  }
-  if (params.role) {
-    list = list.filter((a) => a.role === params.role)
-  }
-  if (params.collegeId) {
-    list = list.filter((a) => a.collegeId === params.collegeId)
+    const kw = params.keyword.toLowerCase()
+    filtered = list.filter(
+      (a) =>
+        a.username.toLowerCase().includes(kw) ||
+        a.first_name.toLowerCase().includes(kw) ||
+        a.last_name.toLowerCase().includes(kw) ||
+        a.email.toLowerCase().includes(kw),
+    )
   }
 
-  const total = list.length
+  const total = filtered.length
   const start = (params.page - 1) * params.pageSize
-  const sliced = list.slice(start, start + params.pageSize)
+  const sliced = filtered.slice(start, start + params.pageSize)
   return { list: sliced, total, page: params.page, pageSize: params.pageSize }
 }
 
-/** 新增账号 */
+/** 新增账号 → 调后端 */
 async function createLocalAccount(data: any) {
-  const college = colleges.find((c) => c.id === data.collegeId)
-  localAccounts.value.push({
-    id: nextId++,
+  await createAccountApi({
     username: data.username,
-    password: data.password || '123456',
+    email: data.email || '',
+    password: data.password,
+    password_confirm: data.password,
+    first_name: data.first_name || '',
+    last_name: data.last_name || '',
     role: data.role,
-    collegeId: data.collegeId,
-    collegeName: college?.name || '',
-    status: 1,
-    createdAt: new Date().toISOString().slice(0, 10),
+    college: data.college,
   })
-  ElMessage.success('新增成功')
+  // 成功后刷新列表
+  tableRef.value?.refresh()
 }
 
-/** 编辑账号（密码/角色/所属学院） */
+/** 编辑账号 → 调后端 */
 async function updateLocalAccount(id: number, data: any) {
-  const idx = localAccounts.value.findIndex((a) => a.id === id)
-  if (idx === -1) return
-  const college = colleges.find((c) => c.id === data.collegeId)
-  localAccounts.value[idx] = {
-    ...localAccounts.value[idx],
-    password: data.password ?? localAccounts.value[idx].password,
-    role: data.role ?? localAccounts.value[idx].role,
-    collegeId: data.collegeId ?? localAccounts.value[idx].collegeId,
-    collegeName: college?.name ?? localAccounts.value[idx].collegeName,
-  }
-  ElMessage.success('编辑成功')
+  await updateAccountApi(id, {
+    first_name: data.first_name,
+    last_name: data.last_name,
+    role: data.role,
+    college: data.college,
+  })
 }
 
-/** 删除账号 */
+/** 删除账号 → 调后端 */
 async function deleteLocalAccount(id: number) {
-  localAccounts.value = localAccounts.value.filter((a) => a.id !== id)
-  ElMessage.success('删除成功')
+  await deleteAccountApi(id)
 }
 
 // ── 搜索/重置 ──
 function handleSearch() {
-  // 每次都传完整参数，覆盖 useTableQuery 内部缓存的旧值
   const params: Record<string, any> = {
     keyword: keyword.value || '',
     role: roleFilter.value !== '__all__' ? roleFilter.value : '',
-    collegeId: undefined as number | undefined,
+    college: undefined as number | undefined,
   }
 
-  // 学院筛选
   if (collegeFilter.value !== '__all__') {
-    params.collegeId = collegeFilter.value          // 选具体学院
-  } else if (!isSuperAdmin.value && userCollegeId.value) {
-    params.collegeId = userCollegeId.value           // 学院管理员"全部"=本院
+    params.college = collegeFilter.value
+  } else if (!isSuperAdmin.value && userCollege.value) {
+    params.college = userCollege.value
   }
-  // 超管"全部"→ collegeId=undefined → 不按学院过滤
 
   tableRef.value?.triggerSearch(params)
 }
@@ -290,19 +267,15 @@ function handleReset() {
   keyword.value = ''
   roleFilter.value = '__all__'
   collegeFilter.value = '__all__'
-  // watch 自动触发搜索
 }
 
-// ── 筛选条件变化时自动搜索 ──
 watch([keyword, roleFilter, collegeFilter], () => {
   handleSearch()
 })
 
-// ── 编辑按钮（调用 BaseTable 的内置编辑弹窗） ──
+// ── 编辑按钮 ──
 function handleEdit(row: any) {
-  // 把本地 password 也传到表单
-  const account = localAccounts.value.find((a) => a.id === row.id)
-  tableRef.value?.handleEdit({ ...row, password: account?.password || '' })
+  tableRef.value?.handleEdit({ ...row, password: '' })
 }
 
 // ── 批量删除 ──
@@ -314,9 +287,8 @@ async function handleBatchDelete(selection: any[]) {
       '批量删除',
       { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
     )
-    const ids = selection.map((r) => r.id)
-    localAccounts.value = localAccounts.value.filter((a) => !ids.includes(a.id))
-    ElMessage.success(`成功删除 ${selection.length} 个账号`)
+    const res = await batchDeleteAccountsApi({ user_ids: selection.map((r) => r.id) })
+    ElMessage.success(res.detail || `成功删除 ${selection.length} 个账号`)
     tableRef.value?.clearSelection()
     tableRef.value?.refresh()
   } catch {
@@ -340,14 +312,17 @@ async function confirmBatchReset() {
     ElMessage.warning('密码至少6位')
     return
   }
-  const pwd = batchResetPassword.value
-  for (const row of batchResetSelection.value) {
-    const idx = localAccounts.value.findIndex((a) => a.id === row.id)
-    if (idx !== -1) localAccounts.value[idx].password = pwd
+  try {
+    const res = await batchResetPasswordApi({
+      user_ids: batchResetSelection.value.map((r: any) => r.id),
+      new_password: batchResetPassword.value,
+    })
+    ElMessage.success(res.detail || `成功修改 ${batchResetSelection.value.length} 个账号的密码`)
+    batchResetVisible.value = false
+    tableRef.value?.clearSelection()
+  } catch {
+    // API 报错已在拦截器中提示
   }
-  ElMessage.success(`成功将 ${batchResetSelection.value.length} 个账号的密码修改为 ${pwd}`)
-  batchResetVisible.value = false
-  tableRef.value?.clearSelection()
 }
 </script>
 

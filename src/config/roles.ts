@@ -10,9 +10,8 @@ export interface RoleMeta {
 /** 角色 → 中文名 / 标签颜色 */
 export const ROLE_CONFIG: Record<UserRole, RoleMeta> = {
   user:        { label: '普通用户',   tagType: 'info' },
-  admin_csic:  { label: '学院管理员', tagType: 'warning' },
-  admin_dept:  { label: '部门管理员', tagType: 'warning' },
-  superadmin:  { label: '超级管理员', tagType: 'danger' },
+  admin:       { label: '管理员',     tagType: 'warning' },
+  super_admin: { label: '超级管理员', tagType: 'danger' },
 }
 
 /** 角色选项列表（供 el-select 等使用，不含"全部"） */

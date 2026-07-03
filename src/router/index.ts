@@ -11,7 +11,6 @@ import { useUserStore } from '@/store/user'
 
 // ── 合并所有路由 ──
 const routes: RouteRecordRaw[] = [
-  { path: '/', redirect: '/chat' },
   ...authRoutes,
   ...chatRoutes,
   ...knowledgeRoutes,

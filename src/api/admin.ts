@@ -1,80 +1,104 @@
 // ── 后台账号管理接口 ──
-// 人员 D 实现
+// 对接后端路径：/api/admin/*
 import request from './request'
-import type { Account, College, Discipline, ResourceCategory, PaginatedResult } from '@/types'
+import type { Account, College } from '@/types'
 
-/** 用户账号 CRUD */
+// ══════════════════════════════════════
+//  用户管理 — /api/admin/users/
+// ══════════════════════════════════════
+
+/** 获取用户列表（后端 DRF 分页格式） */
 export function getAccountsApi(params: {
-  page: number
-  pageSize: number
+  page?: number
+  pageSize?: number
   role?: string
-  collegeId?: number
+  college?: number
   keyword?: string
-}): Promise<PaginatedResult<Account>> {
-  return request.get('/admin/accounts', { params })
-}
-export function createAccountApi(data: Partial<Account>): Promise<void> {
-  return request.post('/admin/accounts', data)
-}
-export function updateAccountApi(id: number, data: Partial<Account>): Promise<void> {
-  return request.put(`/admin/accounts/${id}`, data)
-}
-export function resetPasswordApi(id: number): Promise<void> {
-  return request.put(`/admin/accounts/${id}/reset-password`)
-}
-export function deleteAccountApi(id: number): Promise<void> {
-  return request.delete(`/admin/accounts/${id}`)
+}): Promise<{ count: number; results: Account[] }> {
+  return request.get('/admin/users/', {
+    params: {
+      page: params.page,
+      page_size: params.pageSize,
+      role: params.role || undefined,
+      college_id: params.college || undefined,
+    },
+  })
 }
 
-/** 学院/部门管理 */
-export function getCollegesApi(): Promise<College[]> {
-  return request.get('/admin/colleges')
-}
-export function createCollegeApi(data: Partial<College>): Promise<void> {
-  return request.post('/admin/colleges', data)
-}
-export function updateCollegeApi(id: number, data: Partial<College>): Promise<void> {
-  return request.put(`/admin/colleges/${id}`, data)
-}
-export function deleteCollegeApi(id: number): Promise<void> {
-  return request.delete(`/admin/colleges/${id}`)
-}
-
-/** 学科管理 */
-export function getDisciplinesApi(params?: { collegeId?: number }): Promise<Discipline[]> {
-  return request.get('/admin/disciplines', { params })
-}
-export function createDisciplineApi(data: Partial<Discipline>): Promise<void> {
-  return request.post('/admin/disciplines', data)
-}
-export function updateDisciplineApi(id: number, data: Partial<Discipline>): Promise<void> {
-  return request.put(`/admin/disciplines/${id}`, data)
-}
-export function deleteDisciplineApi(id: number): Promise<void> {
-  return request.delete(`/admin/disciplines/${id}`)
+/** 新建用户 */
+export function createAccountApi(data: {
+  username: string
+  email: string
+  password: string
+  password_confirm: string
+  first_name?: string
+  last_name?: string
+  role?: string
+  college?: number
+  phone?: string
+}): Promise<Account> {
+  return request.post('/admin/users/', data)
 }
 
-/** 资源类型管理 */
-export function getCategoriesApi(): Promise<ResourceCategory[]> {
-  return request.get('/admin/categories')
-}
-export function createCategoryApi(data: Partial<ResourceCategory>): Promise<void> {
-  return request.post('/admin/categories', data)
-}
-export function updateCategoryApi(id: number, data: Partial<ResourceCategory>): Promise<void> {
-  return request.put(`/admin/categories/${id}`, data)
-}
-export function deleteCategoryApi(id: number): Promise<void> {
-  return request.delete(`/admin/categories/${id}`)
+/** 编辑用户 */
+export function updateAccountApi(
+  id: number,
+  data: {
+    email?: string
+    first_name?: string
+    last_name?: string
+    role?: string
+    college?: number
+    phone?: string
+    is_active?: boolean
+  },
+): Promise<Account> {
+  return request.put(`/admin/users/${id}/`, data)
 }
 
-/** 兜底问答（待回答列表） */
-export function getPendingFeedbackApi(params: {
-  page: number
-  pageSize: number
-}): Promise<PaginatedResult<any>> {
-  return request.get('/admin/feedback/pending', { params })
+/** 删除用户 */
+export function deleteAccountApi(id: number): Promise<{ detail: string }> {
+  return request.delete(`/admin/users/${id}/`)
 }
-export function submitAnswerApi(id: number, answer: string): Promise<void> {
-  return request.put(`/admin/feedback/${id}/answer`, { answer })
+
+/** 重置单个密码 */
+export function resetPasswordApi(
+  id: number,
+  data: { new_password: string; password_confirm: string },
+): Promise<{ detail: string }> {
+  return request.post(`/admin/users/${id}/reset_password/`, data)
+}
+
+/** 批量重置密码 */
+export function batchResetPasswordApi(data: {
+  user_ids: number[]
+  new_password: string
+}): Promise<{
+  detail: string
+  success_count: number
+  fail_count: number
+  fail_reasons: Array<{ id: number; username?: string; reason: string }> | null
+}> {
+  return request.post('/admin/users/batch_reset_password/', data)
+}
+
+/** 批量删除用户 */
+export function batchDeleteAccountsApi(data: {
+  user_ids: number[]
+}): Promise<{
+  detail: string
+  success_count: number
+  fail_count: number
+  fail_reasons: Array<{ id: number; username?: string; reason: string }> | null
+}> {
+  return request.post('/admin/users/batch_delete/', data)
+}
+
+// ══════════════════════════════════════
+//  学院管理 — /api/admin/colleges/
+// ══════════════════════════════════════
+
+/** 获取学院列表 */
+export function getCollegesApi(): Promise<{ count: number; results: College[] }> {
+  return request.get('/admin/colleges/')
 }

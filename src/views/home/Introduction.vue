@@ -198,8 +198,6 @@
         <p class="footer-copy">© 2026 成都东软学院</p>
       </div>
     </footer>
-    <!-- ═══ 登录弹窗 ═══ -->
-    <LoginDialog v-model:visible="loginVisible" />
   </div>
   <!-- ═══ 回到顶部（在 landing 外部，避免被 overflow 裁剪） ═══ -->
   <button v-show="showBackToTop" class="back-top" @click="scrollToTop" aria-label="回到顶部">
@@ -210,8 +208,7 @@
 <script setup lang="ts">
 // ── 介绍页 Landing Page ──
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
-import LoginDialog from '@/views/login/LoginDialog.vue'
+import { useRouter } from 'vue-router'
 
 import heroBg from '@/assets/images/hero1.jpg'
 import logolight from '@/assets/images/logo2.jpg'
@@ -256,7 +253,7 @@ const countUp = reactive({
   countries: 0,
   bases: 0,
 })
-const countUpTargets = { area: 53, units: 13, students: 2, enterprises: 300, countries: 20, bases: 3 }
+const countUpTargets = { area: 53, units: 13, students: 3, enterprises: 300, countries: 20, bases: 3 }
 
 function startCountUp() {
   const duration = 1600
@@ -274,8 +271,7 @@ function startCountUp() {
 
 // ── 初始化观察器 ──
 onMounted(() => {
-  // /login 路由进入时自动弹登录窗
-  if (route.meta?.openLogin) loginVisible.value = true
+  // 页面加载完成（预留）
 
   // scroll 监听（导航栏）
   window.addEventListener('scroll', onScroll, { passive: true })
@@ -315,12 +311,10 @@ onUnmounted(() => {
   window.removeEventListener('scroll', onScroll)
 })
 
-// ── 登录弹窗状态 ──
-const loginVisible = ref(false)
-const route = useRoute()
+const router = useRouter()
 
 function goLogin() {
-  loginVisible.value = true
+  router.push('/login')
 }
 
 // ── 平滑滚动至锚点 ──
