@@ -5,6 +5,7 @@ import { getAllowedPaths } from '@/config/permission'
 
 import authRoutes from './common'
 import chatRoutes from './chat'
+import faqRoutes from './faq'
 import knowledgeRoutes from './knowledge'
 import adminRoutes from './account'
 import { useUserStore } from '@/store/user'
@@ -13,6 +14,7 @@ import { useUserStore } from '@/store/user'
 const routes: RouteRecordRaw[] = [
   ...authRoutes,
   ...chatRoutes,
+  ...faqRoutes,
   ...knowledgeRoutes,
   ...adminRoutes,
 ]

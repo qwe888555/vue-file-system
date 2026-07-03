@@ -1,0 +1,303 @@
+<template>
+  <div class="page-container">
+    <!-- 标题 -->
+    <div class="fm-header">
+      <h2 class="fm-title">FAQ 管理</h2>
+      <p class="fm-desc">审核、编辑和管理常见问题</p>
+    </div>
+
+    <!-- 搜索 + 筛选 -->
+    <div class="fm-toolbar">
+      <el-input v-model="keyword" placeholder="搜索问题..." clearable size="default" style="width:240px" @input="loadData" @clear="loadData" />
+      <el-select v-model="categoryFilter" placeholder="全部分类" clearable size="default" style="width:140px" @change="loadData">
+        <el-option label="全部分类" value="" />
+        <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
+      </el-select>
+    </div>
+
+    <!-- 状态 Tabs -->
+    <div class="fm-tabs">
+      <span v-for="tab in tabs" :key="tab.value" class="fm-tab" :class="{ active: activeTab === tab.value }" @click="activeTab = tab.value; loadData()">
+        {{ tab.label }}
+      </span>
+    </div>
+
+    <!-- 列表 -->
+    <div class="fm-list" v-loading="loading">
+      <div v-for="item in list" :key="item.id" class="fm-card" :class="['fm-status--' + item.status, { expanded: expandedId === item.id }]">
+        <div class="fm-card-top">
+          <div class="fm-card-info" @click="toggleItem(item.id)">
+            <div class="fm-card-head">
+              <span class="fm-card-q">{{ item.question }}</span>
+              <el-tag :type="item.status === 'published' ? 'success' : item.status === 'draft' ? 'warning' : 'info'" size="small">
+                {{ item.status === 'published' ? '已发布' : item.status === 'draft' ? '草稿' : '已驳回' }}
+              </el-tag>
+            </div>
+            <div class="fm-card-meta">
+              <span>{{ item.category_name }}</span>
+              <span v-if="item.frequency !== undefined">· 频率 {{ item.frequency }}</span>
+              <span v-if="item.college_name">· {{ item.college_name }}</span>
+            </div>
+          </div>
+          <div class="fm-card-actions">
+            <el-button v-if="item.status === 'draft'" type="primary" size="small" @click.stop="handlePublish(item)">发布</el-button>
+            <el-button v-if="item.status === 'draft'" type="warning" size="small" @click.stop="handleReject(item)">驳回</el-button>
+            <el-button v-if="item.status === 'draft'" size="small" @click.stop="openEdit(item)">编辑</el-button>
+            <el-button type="danger" size="small" @click.stop="handleDelete(item)">删除</el-button>
+          </div>
+        </div>
+
+        <!-- 展开详情 -->
+        <div class="fm-card-detail">
+          <div class="fm-answer">{{ item.answer }}</div>
+          <div v-if="item.tags?.length" class="fm-tags">
+            <span v-for="tag in item.tags" :key="tag" class="fm-tag">{{ tag }}</span>
+          </div>
+          <div v-if="item.updated_at" class="fm-time">更新于 {{ item.updated_at.slice(0, 10) }}</div>
+        </div>
+      </div>
+
+      <div v-if="!loading && list.length === 0" class="fm-empty">
+        <p>暂无数据</p>
+      </div>
+    </div>
+
+    <!-- 编辑弹窗 -->
+    <el-dialog v-model="editVisible" title="编辑草稿" width="560px" destroy-on-close>
+      <el-form :model="editForm" label-width="80px">
+        <el-form-item label="问题" required>
+          <el-input v-model="editForm.question" />
+        </el-form-item>
+        <el-form-item label="答案" required>
+          <el-input v-model="editForm.answer" type="textarea" :rows="5" />
+        </el-form-item>
+        <el-form-item label="分类">
+          <el-select v-model="editForm.category" placeholder="选择分类" style="width:100%">
+            <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="标签">
+          <el-select v-model="editForm.tags" multiple filterable allow-create default-first-option placeholder="输入标签后回车" style="width:100%">
+            <el-option v-for="tag in existingTags" :key="tag" :label="tag" :value="tag" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editVisible = false">取消</el-button>
+        <el-button type="primary" :loading="editLoading" @click="confirmEdit">保存</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getFaqManageItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, updateFaqDraftApi } from '@/api/faq'
+import type { FaqCategory, FaqManageItem } from '@/api/faq'
+
+const keyword = ref('')
+const categoryFilter = ref<number | ''>('')
+const activeTab = ref('')
+const categories = ref<FaqCategory[]>([])
+const list = ref<FaqManageItem[]>([])
+const loading = ref(false)
+const expandedId = ref<number | null>(null)
+
+const tabs = [
+  { value: '', label: '全部' },
+  { value: 'draft', label: '草稿' },
+  { value: 'published', label: '已发布' },
+  { value: 'rejected', label: '已驳回' },
+]
+
+// 编辑
+const editVisible = ref(false)
+const editLoading = ref(false)
+const editForm = ref({ question: '', answer: '', category: null as number | null, tags: [] as string[] })
+const editingId = ref<number | null>(null)
+const existingTags = ref<string[]>([])
+
+onMounted(async () => {
+  try {
+    categories.value = await getFaqCategoriesApi()
+  } catch { /* */ }
+  await loadData()
+})
+
+async function loadData() {
+  loading.value = true
+  try {
+    const res = await getFaqManageItemsApi({
+      status: activeTab.value || undefined,
+      category: categoryFilter.value || undefined,
+      keyword: keyword.value || undefined,
+    })
+    list.value = res.results || []
+  } catch {
+    list.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+function toggleItem(id: number) {
+  expandedId.value = expandedId.value === id ? null : id
+}
+
+async function handlePublish(row: FaqManageItem) {
+  try {
+    await ElMessageBox.confirm(`确定发布「${row.question}」吗？`, '发布确认')
+    await actionFaqDraftApi(row.id, 'publish')
+    ElMessage.success('发布成功')
+    await loadData()
+  } catch { /* */ }
+}
+
+async function handleReject(row: FaqManageItem) {
+  try {
+    await ElMessageBox.confirm(`确定驳回「${row.question}」吗？`, '驳回确认')
+    await actionFaqDraftApi(row.id, 'reject')
+    ElMessage.success('已驳回')
+    await loadData()
+  } catch { /* */ }
+}
+
+async function handleDelete(row: FaqManageItem) {
+  try {
+    await ElMessageBox.confirm(`确定删除「${row.question}」吗？此操作不可撤销。`, '删除确认', { type: 'warning' })
+    await deleteFaqItemApi(row.id)
+    ElMessage.success('删除成功')
+    await loadData()
+  } catch { /* */ }
+}
+
+function openEdit(row: FaqManageItem) {
+  editingId.value = row.id
+  editForm.value = {
+    question: row.question,
+    answer: row.answer,
+    category: row.category,
+    tags: [...(row.tags || [])],
+  }
+  existingTags.value = row.tags || []
+  editVisible.value = true
+}
+
+async function confirmEdit() {
+  if (!editingId.value) return
+  editLoading.value = true
+  try {
+    await updateFaqDraftApi(editingId.value, {
+      question: editForm.value.question,
+      answer: editForm.value.answer,
+      category: editForm.value.category || undefined,
+      tags: editForm.value.tags,
+    })
+    ElMessage.success('保存成功')
+    editVisible.value = false
+    await loadData()
+  } catch { /* */ } finally {
+    editLoading.value = false
+  }
+}
+</script>
+
+<style scoped>
+.page-container { padding: var(--spacing-lg, 16px); }
+
+/* ── 头部 ── */
+.fm-header { margin-bottom: 20px; }
+.fm-title { font-size: 20px; font-weight: 700; color: #1a2332; margin: 0; }
+.fm-desc { font-size: 13px; color: #8e95a6; margin: 4px 0 0; }
+
+/* ── 工具栏 ── */
+.fm-toolbar { display: flex; gap: 10px; margin-bottom: 20px; }
+
+/* ── Tabs ── */
+.fm-tabs { display: flex; gap: 4px; margin-bottom: 20px; }
+.fm-tab {
+  padding: 7px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #5a6070;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s;
+  user-select: none;
+}
+.fm-tab:hover { background: #f0f4fe; color: #2b5fd9; }
+.fm-tab.active { background: #eef3fe; color: #2b5fd9; font-weight: 600; }
+
+/* ── 列表 ── */
+.fm-list { display: flex; flex-direction: column; gap: 10px; }
+
+/* ── 卡片 ── */
+.fm-card {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #edf0f5;
+  overflow: hidden;
+  position: relative;
+  transition: all 0.25s ease;
+}
+.fm-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  transition: opacity 0.2s;
+}
+.fm-card.fm-status--published::before { background: #67c23a; }
+.fm-card.fm-status--draft::before { background: #e6a23c; }
+.fm-card.fm-status--rejected::before { background: #909399; }
+.fm-card:hover {
+  border-color: #d5dbe8;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+
+.fm-card-top {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 16px 20px; gap: 16px;
+}
+.fm-card-info { flex: 1; min-width: 0; cursor: pointer; }
+.fm-card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fm-card-q { font-size: 14.5px; font-weight: 500; color: #1a2332; line-height: 1.4; }
+.fm-card-meta { font-size: 12px; color: #b0b8c8; margin-top: 4px; display: flex; gap: 6px; }
+.fm-card-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+
+.fm-card-actions .el-button { border-radius: 8px; transition: all 0.2s; }
+.fm-card-actions .el-button:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+
+/* ── 展开详情 ── */
+.fm-card-detail {
+  max-height: 0; overflow: hidden; opacity: 0;
+  transition: max-height 0.35s ease, opacity 0.3s ease, padding 0.3s ease;
+  padding: 0 20px;
+  border-top: 1px solid transparent;
+}
+.fm-card.expanded .fm-card-detail {
+  max-height: 600px; opacity: 1;
+  padding: 14px 20px 18px;
+  border-top-color: #f0f2f5;
+}
+
+.fm-answer {
+  font-size: 13.5px; color: #4b5563; line-height: 1.7;
+  background: #f8fafc; border-radius: 8px; padding: 12px 14px;
+  white-space: pre-line;
+}
+
+.fm-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.fm-tag {
+  padding: 3px 10px; border-radius: 12px; font-size: 11px;
+  color: #6b7280; background: #f0f2f5; transition: all 0.2s; cursor: default;
+}
+.fm-tag:hover { background: #e4e9f0; color: #2b5fd9; }
+.fm-time { font-size: 12px; color: #c8cdd6; margin-top: 10px; }
+
+.fm-empty { text-align: center; padding: 60px 0; color: #8e95a6; font-size: 14px; }
+</style>
