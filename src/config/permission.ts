@@ -6,6 +6,7 @@ export const roleMenuMap: Record<UserRole, string[]> = {
   user: ['/chat', '/profile'],
   admin: ['/chat', '/knowledge', '/admin', '/profile'],
   super_admin: ['/chat', '/knowledge', '/admin', '/profile'],
+  superadmin: ['/chat', '/knowledge', '/admin', '/profile'],
 }
 
 export const allMenus: MenuItem[] = [
