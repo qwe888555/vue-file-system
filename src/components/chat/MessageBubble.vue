@@ -92,13 +92,17 @@ function handleDislike() {
   gap: 12px;
   animation: msgIn 0.3s ease;
 }
-@keyframes msgIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 .msg-row-user {
   flex-direction: row-reverse;
+}
+
+/* AI 气泡整体向左收窄一点 */
+.msg-row-ai {
+  margin-left: -150px;
+  padding-right: 60px;
+}
+.msg-row-ai .msg-content-area {
+  max-width: 85%;
 }
 
 /* AI 头像 */
@@ -136,7 +140,7 @@ function handleDislike() {
 }
 
 .msg-bubble-user {
-  background: #409eff;
+  background: #73b8ff;
   color: #fff;
   border-radius: 18px;
   border-bottom-right-radius: 4px;

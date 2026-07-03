@@ -13,10 +13,6 @@ const userStore = useUserStore()
 const username = computed(() => userStore.displayName)
 const avatar = computed(() => userStore.avatar)
 
-function goToProfile() {
-  router.push('/profile')
-}
-
 async function handleLogout() {
   try {
     await ElMessageBox.confirm('确认退出登录吗？', '提示')
@@ -46,8 +42,7 @@ async function handleLogout() {
         </span>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item @click="goToProfile">个人中心</el-dropdown-item>
-            <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
+            <el-dropdown-item @click="handleLogout">退出登录</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>

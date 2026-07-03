@@ -14,7 +14,7 @@ export interface UserInfo {
   date_joined: string
 }
 
-export type UserRole = 'user' | 'admin' | 'super_admin'
+export type UserRole = 'user' | 'admin' | 'super_admin' | 'superadmin'
 
 export interface LoginParams {
   username: string
@@ -118,25 +118,30 @@ export interface Conversation {
   updatedAt: string
 }
 
-// ── 账号管理 ──
+// ── 账号管理（对接后端字段） ──
 export interface Account {
   id: number
   username: string
-  realName: string
   email: string
+  first_name: string
+  last_name: string
   role: UserRole
-  collegeId?: number
-  collegeName?: string
-  status: number
-  createdAt: string
+  role_display: string
+  college: number | null
+  college_name: string | null
+  phone: string
+  avatar: string | null
+  is_active: boolean
+  date_joined: string
+  last_login: string | null
+  resource_count: number
 }
 
 export interface College {
   id: number
   name: string
   code: string
-  sortOrder: number
-  status: number
+  sort_order: number
 }
 
 export interface Discipline {

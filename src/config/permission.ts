@@ -3,9 +3,10 @@
 import type { UserRole, MenuItem } from '@/types'
 
 export const roleMenuMap: Record<UserRole, string[]> = {
-  user: ['/chat', '/profile'],
-  admin: ['/chat', '/knowledge', '/admin', '/profile'],
-  super_admin: ['/chat', '/knowledge', '/admin', '/profile'],
+  user: ['/chat'],
+  admin: ['/chat', '/knowledge', '/admin'],
+  super_admin: ['/chat', '/knowledge', '/admin'],
+  superadmin: ['/chat', '/knowledge', '/admin'],
 }
 
 export const allMenus: MenuItem[] = [
@@ -38,12 +39,6 @@ export const allMenus: MenuItem[] = [
       { path: '/admin/categories', name: 'CategoryManage', title: '资源类型' },
       { path: '/admin/feedback-pending', name: 'FeedbackPending', title: '兜底问答' },
     ],
-  },
-  {
-    path: '/profile',
-    name: 'Profile',
-    title: '个人中心',
-    icon: 'User',
   },
 ]
 
