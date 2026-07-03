@@ -212,11 +212,6 @@ onMounted(() => { chat.init(); loadHotQuestions() })
           </div>
           <span class="su-status">已登录</span>
         </div>
-        <div class="su-info">
-          <span class="su-name">{{ userStore.userInfo?.username || '' }}</span>
-          <span class="su-role">{{ userStore.role === 'admin' || userStore.role === 'college_admin' || userStore.role === 'dept_admin' ? '普通管理员' : (userStore.userInfo?.role_display || '') }}</span>
-        </div>
-        <span class="su-status">已登录</span>
       </div>
       <div v-else class="sidebar-user" @click="showLoginDialog = true">
         <div class="su-avatar">
