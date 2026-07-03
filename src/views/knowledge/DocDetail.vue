@@ -6,6 +6,7 @@ import { Document, Files, Picture, Headset, VideoCamera, FolderOpened } from '@e
 import MarkdownIt from 'markdown-it'
 import * as mammoth from 'mammoth'
 import type { KnowledgeFile } from '@/types'
+import { getDocDetailApi, deleteDocApi, downloadDocApi, previewDocApi, updateDocApi } from '@/api/knowledge'
 
 const route = useRoute()
 const router = useRouter()
@@ -210,115 +211,150 @@ async function loadFileContent() {
   
   isLoading.value = true
   
-  if (file.value.content) {
-    if (previewType.value === 'markdown') {
-      previewContent.value = md.render(file.value.content)
-    } else {
-      previewContent.value = file.value.content
-    }
-  } else if (file.value.fileData) {
-    if (previewType.value === 'text') {
-      const base64Data = file.value.fileData.split(',')[1]
-      const decoded = atob(base64Data)
-      previewContent.value = decoded
-    } else if (['doc', 'docx'].includes(fileExtension.value)) {
-      try {
-        const base64Data = file.value.fileData.split(',')[1]
-        const binaryData = atob(base64Data)
-        const arrayBuffer = new ArrayBuffer(binaryData.length)
-        const uint8Array = new Uint8Array(arrayBuffer)
-        for (let i = 0; i < binaryData.length; i++) {
-          uint8Array[i] = binaryData.charCodeAt(i)
-        }
-        const result = await mammoth.extractRawText({ arrayBuffer })
-        previewContent.value = result.value
-      } catch (error) {
-        console.error('Failed to extract text from Word document:', error)
-        previewContent.value = '无法解析Word文档内容，请下载查看'
+  try {
+    const result = await previewDocApi(file.value.id)
+    
+    if (result.content) {
+      if (previewType.value === 'markdown') {
+        previewContent.value = md.render(result.content)
+      } else {
+        previewContent.value = result.content
       }
+    } else {
+      previewContent.value = ''
     }
-  } else {
-    previewContent.value = ''
+  } catch (error) {
+    console.error('获取文件预览失败:', error)
+    
+    if (file.value.content) {
+      if (previewType.value === 'markdown') {
+        previewContent.value = md.render(file.value.content)
+      } else {
+        previewContent.value = file.value.content
+      }
+    } else if (file.value.fileData) {
+      if (previewType.value === 'text') {
+        const base64Data = file.value.fileData.split(',')[1]
+        const decoded = atob(base64Data)
+        previewContent.value = decoded
+      } else if (['doc', 'docx'].includes(fileExtension.value)) {
+        try {
+          const base64Data = file.value.fileData.split(',')[1]
+          const binaryData = atob(base64Data)
+          const arrayBuffer = new ArrayBuffer(binaryData.length)
+          const uint8Array = new Uint8Array(arrayBuffer)
+          for (let i = 0; i < binaryData.length; i++) {
+            uint8Array[i] = binaryData.charCodeAt(i)
+          }
+          const result = await mammoth.extractRawText({ arrayBuffer })
+          previewContent.value = result.value
+        } catch (err) {
+          console.error('Failed to extract text from Word document:', err)
+          previewContent.value = '无法解析Word文档内容，请下载查看'
+        }
+      }
+    } else {
+      previewContent.value = ''
+    }
+  } finally {
+    isLoading.value = false
   }
-  
-  isLoading.value = false
 }
 
 function goBack() {
   router.push('/knowledge/list')
 }
 
-function handleDownload() {
+async function handleDownload() {
   if (!file.value) return
   
-  if (file.value.fileData) {
+  try {
+    const blob = await downloadDocApi(file.value.id)
+    const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
-    link.href = file.value.fileData
+    link.href = url
     link.download = file.value.title
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-    ElMessage.success('下载成功')
-  } else if (file.value.content) {
-    const blob = new Blob([file.value.content], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = file.value.title
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
     URL.revokeObjectURL(url)
     ElMessage.success('下载成功')
-  } else {
-    ElMessage.info('下载功能开发中')
+  } catch (error) {
+    console.error('下载文件失败:', error)
+    ElMessage.error('下载文件失败')
   }
 }
 
-function handleRename() {
+async function handleRename() {
   if (!file.value) return
   ElMessageBox.prompt('请输入新文件名', '重命名', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     inputValue: file.value.title,
   })
-    .then(({ value }) => {
+    .then(async ({ value }) => {
       if (value && value.trim()) {
-        file.value!.title = value.trim()
-        const files = getFiles()
-        const index = files.findIndex((f) => f.id === file.value!.id)
-        if (index > -1) {
-          files[index].title = value.trim()
-          saveFiles(files)
+        try {
+          await updateDocApi(file.value!.id, { title: value.trim() })
+          file.value!.title = value.trim()
+          const files = getFiles()
+          const index = files.findIndex((f) => f.id === file.value!.id)
+          if (index > -1) {
+            files[index].title = value.trim()
+            saveFiles(files)
+          }
+          ElMessage.success('重命名成功')
+        } catch {
+          ElMessage.error('重命名失败，请重试')
         }
-        ElMessage.success('重命名成功')
       }
     })
     .catch(() => {})
 }
 
-function handleDelete() {
+async function handleDelete() {
   if (!file.value) return
   ElMessageBox.confirm('确定要删除该文件吗？', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning',
   })
-    .then(() => {
-      const files = getFiles()
-      const filtered = files.filter((f) => f.id !== file.value!.id)
-      saveFiles(filtered)
-      ElMessage.success('删除成功')
-      goBack()
+    .then(async () => {
+      try {
+        await deleteDocApi(file.value!.id)
+        const files = getFiles()
+        const filtered = files.filter((f) => f.id !== file.value!.id)
+        saveFiles(filtered)
+        ElMessage.success('删除成功')
+        goBack()
+      } catch (error) {
+        console.error('删除文件失败:', error)
+        ElMessage.error('删除文件失败')
+      }
     })
     .catch(() => {})
 }
 
+async function fetchDocDetail(id: number) {
+  try {
+    isLoading.value = true
+    const result = await getDocDetailApi(id)
+    file.value = result
+    loadFileContent()
+  } catch (error) {
+    console.error('获取文档详情失败:', error)
+    ElMessage.error('获取文档详情失败')
+    const files = getFiles()
+    file.value = files.find((f) => f.id === id) || files[0]
+    loadFileContent()
+  } finally {
+    isLoading.value = false
+  }
+}
+
 onMounted(() => {
   const id = parseInt(route.params.id as string)
-  const files = getFiles()
-  file.value = files.find((f) => f.id === id) || files[0]
-  loadFileContent()
+  fetchDocDetail(id)
 })
 </script>
 

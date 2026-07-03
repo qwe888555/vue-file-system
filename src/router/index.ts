@@ -49,11 +49,14 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
-  const currentRole = userStore.role
+  let currentRole = userStore.role
   if (!currentRole) {
     next({ path: '/login' })
     return
   }
+
+  // 兼容：后端可能返回 superadmin（无下划线），统一为 super_admin
+  if ((currentRole as string) === 'superadmin') currentRole = 'super_admin' as UserRole
 
   // 权限校验
   if (to.meta.roles) {

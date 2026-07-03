@@ -11,17 +11,11 @@ import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import 'element-plus/dist/index.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import { vPermission } from './directives/permission'
-import { setupMock } from './mock'
 
 const app = createApp(App)
 const pinia = createPinia()
 
-app.use(pinia) // Pinia 必须先装，后续 mock/路由守卫才可用
-
-// ── 开发 Mock：无后端时启用 ──
-if (import.meta.env.VITE_USE_MOCK === 'true') {
-  setupMock()
-}
+app.use(pinia)
 
 // 全局注册所有 Element 图标
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {

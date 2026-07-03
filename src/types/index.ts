@@ -1,4 +1,4 @@
-// ── 用户相关 ──
+// ── 用户相关（对齐后端 /api/admin/me/） ──
 export interface UserInfo {
   id: number
   username: string
@@ -7,14 +7,20 @@ export interface UserInfo {
   last_name: string
   role: UserRole
   role_display: string
-  college: number | null
+  college_id: number | null
   college_name: string | null
-  phone: string
-  avatar: string
-  date_joined: string
+  department_id: number | null
+  department_name: string | null
+  is_staff: boolean
+  is_superuser: boolean
+  permissions: {
+    manage_users: boolean
+    manage_resources: boolean
+    manage_scope: 'all' | 'college' | 'department' | 'self'
+  }
 }
 
-export type UserRole = 'user' | 'admin' | 'super_admin'
+export type UserRole = 'user' | 'admin' | 'college_admin' | 'dept_admin' | 'super_admin'
 
 export interface LoginParams {
   username: string
@@ -118,7 +124,7 @@ export interface Conversation {
   updatedAt: string
 }
 
-// ── 账号管理（对接后端字段） ──
+// ── 账号管理（对齐后端 /api/admin/users/） ──
 export interface Account {
   id: number
   username: string
@@ -127,10 +133,10 @@ export interface Account {
   last_name: string
   role: UserRole
   role_display: string
-  college: number | null
+  college_id: number | null
   college_name: string | null
-  phone: string
-  avatar: string | null
+  department_id: number | null
+  department_name: string | null
   is_active: boolean
   date_joined: string
   last_login: string | null

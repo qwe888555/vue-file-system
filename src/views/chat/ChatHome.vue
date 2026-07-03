@@ -105,7 +105,9 @@ async function handleLogout() {
   } catch {}
 }
 
-function handleNewConversation() { chat.createConversation() }
+function handleNewConversation() {
+  chat.createConversation()
+}
 async function handleSelectConversation(id: number) { await chat.selectConversation(id) }
 async function handleDeleteConversation(id: number) { await chat.deleteConversation(id) }
 function handleBackToList() { chat.currentConversationId.value = null }
@@ -256,8 +258,8 @@ onMounted(() => { chat.init(); loadHotQuestions() })
       <!-- 对话区 -->
       <div class="chat-messages">
         <div class="messages-inner">
-          <!-- 消息列表 -->
-          <template v-if="hasActiveConversation">
+          <!-- 消息列表（有对话且有消息时显示） -->
+          <template v-if="hasActiveConversation && chat.currentMessages.value.length > 0">
             <MessageBubble
               v-for="msg in chat.currentMessages.value"
               :key="msg.id"
@@ -280,7 +282,7 @@ onMounted(() => { chat.init(); loadHotQuestions() })
             />
           </template>
 
-          <!-- 空状态 -->
+          <!-- 欢迎页（无对话或对话为空时显示） -->
           <div v-else class="chat-welcome">
             <div class="welcome-icon">
               <div class="loader">

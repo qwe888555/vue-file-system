@@ -110,6 +110,11 @@ export function askQuestionApi(conversationId: number, question: string): Promis
 }
 
 /** 点赞/点踩 */
-export function feedbackApi(messageId: number, type: 'like' | 'dislike', reason?: string): Promise<void> {
-  return request.post(`/chat/messages/${messageId}/feedback/`, { type, reason })
+export function rateMessageApi(messageId: number, type: 'like' | 'dislike'): Promise<void> {
+  return request.post(`/chat/message/${messageId}/rate/`, { type })
+}
+
+/** 获取消息引用文件 */
+export function getMessageReferencesApi(messageId: number): Promise<any> {
+  return request.get(`/chat/message/${messageId}/references/`)
 }

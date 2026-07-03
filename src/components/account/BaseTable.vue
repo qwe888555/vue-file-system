@@ -212,9 +212,8 @@ async function handleSubmit() {
     }
     dialogVisible.value = false
     search()
-  } catch (e: any) {
-    // 表单校验不通过或 API 报错
-    if (e?.message) ElMessage.error(e.message)
+  } catch {
+    // 表单校验不通过或 API 报错（已在 request.ts 拦截器中统一提示）
   }
 }
 
