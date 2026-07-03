@@ -32,7 +32,13 @@ const streamingReferences = ref<KnowledgeFile[]>([])
 let currentSSE: ReturnType<typeof useSSE> | null = null
 
 const isLoggedIn = computed(() => !!userStore.token)
-const displayName = computed(() => userStore.username || '未登录')
+const displayName = computed(() => {
+  if (!userStore.userInfo) return '未登录'
+  if (userStore.role === 'super_admin' || userStore.role === 'superadmin' || userStore.role === 'admin') {
+    return userStore.userInfo.role_display || '管理员'
+  }
+  return userStore.userInfo.username
+})
 const hasActiveConversation = computed(() => chat.currentConversationId.value !== null)
 
 // ── 热门问题统计（localStorage 持久化）──
@@ -141,7 +147,7 @@ async function sendMessage() {
 function handleFeedback(messageId: number, type: 'like' | 'dislike') {
   chat.submitFeedback(messageId, type)
 }
-function navigateTo(path: string) { router.push(path) }
+function goToKnowledge() { router.push('/knowledge/list') }
 
 onMounted(() => { chat.init(); loadHotQuestions() })
 </script>
@@ -201,14 +207,6 @@ onMounted(() => { chat.init(); loadHotQuestions() })
         </div>
       </div>
 
-      <!-- 退出按钮 -->
-      <div class="sidebar-exit" @click="navigateTo('/knowledge/list')">
-        <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
-          <path d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"/>
-        </svg>
-        <span>退出</span>
-      </div>
-
       <!-- 底部用户 -->
       <div class="sidebar-user" @click="handleToggleUserPanel">
         <div class="su-avatar">
@@ -217,10 +215,7 @@ onMounted(() => { chat.init(); loadHotQuestions() })
           </svg>
           <span v-else class="su-avatar-text">{{ displayName.charAt(0).toUpperCase() }}</span>
         </div>
-        <span class="su-name">{{ displayName }}</span>
-        <svg class="su-arrow" viewBox="0 0 20 20" width="14" height="14" fill="currentColor">
-          <path d="M6 4l6 6-6 6" stroke="currentColor" stroke-width="2" fill="none" />
-        </svg>
+        <span class="su-name">{{ displayName || '未登录' }}</span>
       </div>
     </aside>
 
@@ -242,7 +237,9 @@ onMounted(() => { chat.init(); loadHotQuestions() })
           </button>
         </div>
         <div class="topbar-right">
-          <span v-if="hasActiveConversation" class="topbar-conv-title">{{ chat.currentConversation?.value?.title || '新对话' }}</span>
+          <button class="topbar-exit-btn" @click="goToKnowledge" title="退出问答模式">
+            <span>退出问答</span>
+          </button>
         </div>
       </header>
 
@@ -392,8 +389,8 @@ onMounted(() => { chat.init(); loadHotQuestions() })
 
 /* ═══════════════════ 左侧边栏 ═══════════════════ */
 .chat-sidebar {
-  width: 280px;
-  min-width: 280px;
+  width: 222px;
+  min-width: 222px;
   background: #fff;
   display: flex;
   flex-direction: column;
@@ -574,8 +571,6 @@ onMounted(() => { chat.init(); loadHotQuestions() })
 }
 .su-avatar-text { font-size: 16px; font-weight: 700; color: #333; }
 .su-name { font-size: 15px; font-weight: 500; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.su-arrow { flex-shrink: 0; color: #bbb; width: 18px; height: 18px; }
-
 /* ═══════════════════ 右侧主区域 ═══════════════════ */
 .chat-main {
   flex: 1;
@@ -625,6 +620,15 @@ onMounted(() => { chat.init(); loadHotQuestions() })
 .topbar-btn:hover { background: #ecf5ff; color: #409eff; }
 .topbar-title { font-size: 16px; font-weight: 600; margin: 0; color: #1f1f1f; }
 .topbar-conv-title { font-size: 13px; color: #8e8e93; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-exit-btn {
+  height: 32px; padding: 0 12px;
+  display: flex; align-items: center; gap: 4px;
+  background: transparent; border: none; border-radius: 6px;
+  font-size: 15px; font-weight: 600; cursor: pointer; color: #8e8e93;
+  transition: all 0.15s;
+}
+.topbar-exit-btn { color: #1f1f1f; }
+.topbar-exit-btn:hover { background: #fef0f0; color: #e74c3c; }
 
 /* 对话消息区 */
 .chat-messages {
