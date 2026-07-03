@@ -9,28 +9,11 @@ import knowledgeRoutes from './knowledge'
 import adminRoutes from './account'
 import { useUserStore } from '@/store/user'
 
-// ── 用户专属路由（个人中心） ──
-const profileRoutes: RouteRecordRaw[] = [
-  {
-    path: '/profile',
-    component: () => import('@/views/layouts/Layout.vue'),
-    meta: { title: '个人中心', icon: 'User' },
-    children: [
-      {
-        path: '',
-        name: 'Profile',
-        component: () => import('@/views/profile/Profile.vue'),
-      },
-    ],
-  },
-]
-
 // ── 合并所有路由 ──
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/chat' },
   ...authRoutes,
   ...chatRoutes,
-  ...profileRoutes,
   ...knowledgeRoutes,
   ...adminRoutes,
 ]

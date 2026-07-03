@@ -147,7 +147,15 @@ async function sendMessage() {
 function handleFeedback(messageId: number, type: 'like' | 'dislike') {
   chat.submitFeedback(messageId, type)
 }
-function goToKnowledge() { router.push('/knowledge/list') }
+function handleTopBtn() {
+  if (userStore.role === 'super_admin' || userStore.role === 'superadmin' || userStore.role === 'admin') {
+    router.push('/knowledge/list')
+  } else {
+    userStore.logout()
+    router.push('/login')
+  }
+}
+const isAdmin = computed(() => userStore.role === 'super_admin' || userStore.role === 'superadmin' || userStore.role === 'admin')
 
 onMounted(() => { chat.init(); loadHotQuestions() })
 </script>
@@ -237,8 +245,8 @@ onMounted(() => { chat.init(); loadHotQuestions() })
           </button>
         </div>
         <div class="topbar-right">
-          <button class="topbar-exit-btn" @click="goToKnowledge" title="退出问答模式">
-            <span>退出问答</span>
+          <button class="topbar-exit-btn" @click="handleTopBtn" :title="isAdmin ? '退出问答模式' : '退出登录'">
+            <span>{{ isAdmin ? '退出问答' : '退出登录' }}</span>
           </button>
         </div>
       </header>
