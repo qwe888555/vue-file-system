@@ -92,7 +92,7 @@ export function toggleFavoriteApi(id: number): Promise<void> {
 
 /** 获取某会话的消息列表 */
 export function getMessagesApi(conversationId: number): Promise<Message[]> {
-  return request.get(`/chat/conversations/${conversationId}/messages/`)
+  return request.get('/chat/message/', { params: { conversation_id: conversationId } })
 }
 
 /** 流式问答 POST 请求（返回 ReadableStream 供 parseSSE 消费） */
@@ -109,7 +109,7 @@ export function askQuestionApi(conversationId: number, question: string): Promis
   })
 }
 
-/** 点赞/点踩 */
+/** 赞/踩消息 */
 export function rateMessageApi(messageId: number, type: 'like' | 'dislike'): Promise<void> {
   return request.post(`/chat/message/${messageId}/rate/`, { type })
 }
@@ -117,4 +117,9 @@ export function rateMessageApi(messageId: number, type: 'like' | 'dislike'): Pro
 /** 获取消息引用文件 */
 export function getMessageReferencesApi(messageId: number): Promise<any> {
   return request.get(`/chat/message/${messageId}/references/`)
+}
+
+/** 获取热点问题 */
+export function getHotQuestionsApi(params?: { days?: number; top_k?: number }): Promise<Array<{ question: string; count: number }>> {
+  return request.get('/chat/hot-questions/', { params })
 }
