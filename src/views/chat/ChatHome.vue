@@ -29,7 +29,7 @@ const streamingReferences = ref<KnowledgeFile[]>([])
 let currentSSE: ReturnType<typeof useSSE> | null = null
 
 const isLoggedIn = computed(() => !!userStore.token)
-const isAdminUser = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin')
+const isAdminUser = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin' || userStore.role === 'college_admin')
 const displayName = computed(() => {
   if (!userStore.userInfo) return ''
   return userStore.userInfo.role_display || userStore.userInfo.username || ''
@@ -185,7 +185,7 @@ onMounted(() => { chat.init(); loadHotQuestions() })
         </div>
         <div class="su-info">
           <span class="su-name">{{ userStore.userInfo?.username || '' }}</span>
-          <span class="su-role">{{ userStore.role === 'admin' ? '普通管理员' : (userStore.userInfo?.role_display || '') }}</span>
+          <span class="su-role">{{ userStore.role === 'admin' || userStore.role === 'college_admin' || userStore.role === 'dept_admin' ? '普通管理员' : (userStore.userInfo?.role_display || '') }}</span>
         </div>
         <span class="su-status">已登录</span>
       </div>
