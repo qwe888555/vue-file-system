@@ -198,181 +198,13 @@ async function handleSSOSelect(code: string) {
   </div>
 </template>
 
-<script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { useUserStore } from '@/store/user'
-import { ElMessage } from 'element-plus'
-import { ssoLoginUrl, ssoCallbackApi } from '@/api/auth'
-import { setAccessToken, setRefreshToken } from '@/api/request'
-import logodark from '@/assets/images/logo.jpg'
-
-const emit = defineEmits<{
-  (e: 'update:visible', v: boolean): void
-}>()
-
-defineProps<{ visible: boolean }>()
-
-const router = useRouter()
-const route = useRoute()
-const userStore = useUserStore()
-
-const loading = ref(false)
-const errorMsg = ref('')
-const formRef = ref()
-const form = reactive({ username: '', password: '' })
-
-// SSO 弹窗状态
-const ssoDialogVisible = ref(false)
-const ssoAccounts = ref<Array<{ code: string; display?: string; role?: string }>>([])
-const ssoLoading = ref(false)
-
-const rules = {
-  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
-}
-
-function handleClose() {
-  emit('update:visible', false)
-}
-
-// SSO 回调处理
-onMounted(async () => {
-  const code = route.query.code as string | undefined
-  if (!code) return
-
-  loading.value = true
-  try {
-    const res = await ssoCallbackApi(code)
-    setAccessToken(res.access)
-    setRefreshToken(res.refresh)
-    userStore.token = res.access
-    userStore.refreshToken = res.refresh
-    userStore.userInfo = res.user
-    ElMessage.success(`SSO 登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
-    const role = res.user?.role
-    emit('update:visible', false)
-    router.push(role === 'super_admin' || role === 'superadmin' || role === 'admin' ? '/knowledge/list' : '/chat')
-  } catch (e: any) {
-    ElMessage.error(e?.message || 'SSO 登录失败')
-  } finally {
-    loading.value = false
-  }
-  window.history.replaceState({}, '', window.location.pathname)
-})
-
-// JWT 账号密码登录
-async function handleLogin() {
-  if (!formRef.value || loading.value) return
-  try { await formRef.value.validate() } catch { return }
-
-  loading.value = true
-  errorMsg.value = ''
-  try {
-    const res = await userStore.login(form)
-    ElMessage.success(`登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
-    emit('update:visible', false)
-    const role = res.user?.role
-    router.push(role === 'super_admin' || role === 'superadmin' || role === 'admin' ? '/knowledge/list' : '/chat')
-  } catch {
-    // 后端关停时 mock 登录
-    userStore.token = 'mock-token'
-    userStore.userInfo = {
-      id: 1,
-      username: form.username || 'admin',
-      email: 'admin@nisu.edu.cn',
-      first_name: '管理',
-      last_name: '员',
-      role: 'super_admin',
-      role_display: '超级管理员',
-      college: null,
-      college_name: null,
-      phone: '',
-      avatar: '',
-      date_joined: new Date().toISOString(),
-    }
-    ElMessage.success('Mock 登录成功')
-    emit('update:visible', false)
-    router.push('/knowledge/list')
-  } finally {
-    loading.value = false
-  }
-}
-
-// SSO 统一登录
-async function handleSSOLogin() {
-  ssoLoading.value = true
-  try {
-    const url = ssoLoginUrl()
-    const response = await fetch(url, { redirect: 'manual' })
-    if (response.status === 302) {
-      const location = response.headers.get('Location')
-      window.location.href = location || url
-      return
-    }
-    if (!response.ok) throw new Error(`SSO 请求异常 (${response.status})`)
-    const data = await response.json()
-    if (data.mock_codes && Array.isArray(data.mock_codes)) {
-      ssoAccounts.value = data.mock_codes
-      ssoDialogVisible.value = true
-    } else {
-      ElMessage.warning('未获取到可用的测试账号')
-    }
-  } catch {
-    // 后端关停时 mock SSO 登录
-    userStore.token = 'mock-token'
-    userStore.userInfo = {
-      id: 1,
-      username: 'admin',
-      email: 'admin@nisu.edu.cn',
-      first_name: '管理',
-      last_name: '员',
-      role: 'super_admin',
-      role_display: '超级管理员',
-      college: null,
-      college_name: null,
-      phone: '',
-      avatar: '',
-      date_joined: new Date().toISOString(),
-    }
-    ElMessage.success('Mock 登录成功')
-    emit('update:visible', false)
-    router.push('/knowledge/list')
-  } finally {
-    ssoLoading.value = false
-  }
-}
-
-// SSO 选择账号后回调
-async function handleSSOSelect(code: string) {
-  ssoDialogVisible.value = false
-  ssoLoading.value = true
-  try {
-    const res = await ssoCallbackApi(code)
-    setAccessToken(res.access)
-    setRefreshToken(res.refresh)
-    userStore.token = res.access
-    userStore.refreshToken = res.refresh
-    userStore.userInfo = res.user
-    ElMessage.success(`SSO 登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
-    const role = res.user?.role
-    emit('update:visible', false)
-    router.push(role === 'super_admin' || role === 'superadmin' || role === 'admin' ? '/knowledge/list' : '/chat')
-  } catch (e: any) {
-    ElMessage.error(e?.message || 'SSO 登录失败')
-  } finally {
-    ssoLoading.value = false
-  }
-}
-</script>
-
 <style scoped>
 .login-page {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100vh;
-  background: #f0f2f58c;
+  background: #f0f2f5;
 }
 
 .login-card {
@@ -381,7 +213,7 @@ async function handleSSOSelect(code: string) {
   padding: 40px 40px 32px;
   background: #fff;
   border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.178);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   text-align: center;
   animation: card-in 0.3s ease;
 }
@@ -418,9 +250,10 @@ async function handleSSOSelect(code: string) {
 .login-logo {
   height: 48px;
   width: auto;
+
   border-radius: 6px;
   display: block;
-  margin: 0 auto 20px ;
+  margin: 20px auto;
 }
 
 .login-title {
@@ -461,7 +294,6 @@ async function handleSSOSelect(code: string) {
   box-shadow: 0 4px 16px rgba(43, 95, 217, 0.3);
 }
 
-/* SSO */
 .sso-divider {
   display: flex;
   align-items: center;
