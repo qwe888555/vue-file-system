@@ -135,8 +135,8 @@ async function sendMessage() {
   streamingReferences.value = []
 
   currentSSE = useSSE(convId, text, () => {
-    chat.appendAssistantMessage(streamingContent.value, streamingReferences.value)
     isStreaming.value = false
+    chat.appendAssistantMessage(streamingContent.value, streamingReferences.value)
     streamingContent.value = ''
     streamingReferences.value = []
   })
