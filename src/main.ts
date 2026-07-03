@@ -29,6 +29,6 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 }
 
 app.directive('permission', vPermission)
-app.use(router)
 app.use(ElementPlus, { locale: zhCn })
+app.use(router)
 app.mount('#app')

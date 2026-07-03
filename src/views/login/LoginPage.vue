@@ -28,7 +28,7 @@ async function handleLogin() {
   errorMsg.value = ''
   try {
     const res = await userStore.login(form)
-    ElMessage.success(`登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
+    ElMessage.success(`登录成功，欢迎 ${res.user?.role === 'admin' ? '普通管理员' : (res.user?.role_display ?? '用户')}`)
     const role = res.user?.role
     router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
   } catch (e: any) {
