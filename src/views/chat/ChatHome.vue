@@ -5,14 +5,13 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
+import { ElMessageBox } from 'element-plus'
 import logoImg from '@/assets/logo.png'
 import type { KnowledgeFile } from '@/types'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ChatLoginDialog from '@/components/chat/ChatLoginDialog.vue'
-import ChatLogoutConfirm from '@/components/chat/ChatLogoutConfirm.vue'
-import ChatUserMenu from '@/components/chat/ChatUserMenu.vue'
 
 const userStore = useUserStore()
 const router = useRouter()
@@ -20,8 +19,6 @@ const chat = useChat()
 
 const sidebarOpen = ref(true)
 const showLoginDialog = ref(false)
-const showLogoutConfirm = ref(false)
-const showUserMenu = ref(false)
 const showToolsMenu = ref(false)
 const inputText = ref('')
 
@@ -32,12 +29,10 @@ const streamingReferences = ref<KnowledgeFile[]>([])
 let currentSSE: ReturnType<typeof useSSE> | null = null
 
 const isLoggedIn = computed(() => !!userStore.token)
+const isAdminUser = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin')
 const displayName = computed(() => {
-  if (!userStore.userInfo) return '未登录'
-  if (userStore.role === 'super_admin' || userStore.role === 'superadmin' || userStore.role === 'admin') {
-    return userStore.userInfo.role_display || '管理员'
-  }
-  return userStore.userInfo.username
+  if (!userStore.userInfo) return ''
+  return userStore.userInfo.role_display || userStore.userInfo.username || ''
 })
 const hasActiveConversation = computed(() => chat.currentConversationId.value !== null)
 
@@ -98,17 +93,15 @@ function quickQuestion(text: string) {
 
 function toggleSidebar() { sidebarOpen.value = !sidebarOpen.value }
 
-function handleToggleUserPanel() {
-  isLoggedIn.value ? (showUserMenu.value = true) : (showLoginDialog.value = true)
-}
 function handleLoginSuccess() { showLoginDialog.value = false; chat.fetchConversations() }
 function handleLoginCancel() { showLoginDialog.value = false }
-function handleLogoutClick() { showUserMenu.value = false; showLogoutConfirm.value = true }
-async function handleLogoutConfirm() {
-  try { await userStore.logout() } finally { showLogoutConfirm.value = false; showUserMenu.value = false }
+async function handleLogout() {
+  try {
+    await ElMessageBox.confirm('确定要退出登录吗？', '提示')
+    userStore.logout()
+    router.push('/login')
+  } catch {}
 }
-function handleLogoutCancel() { showLogoutConfirm.value = false }
-function handleUserMenuClose() { showUserMenu.value = false }
 
 function handleNewConversation() { chat.createConversation() }
 async function handleSelectConversation(id: number) { await chat.selectConversation(id) }
@@ -147,16 +140,6 @@ async function sendMessage() {
 function handleFeedback(messageId: number, type: 'like' | 'dislike') {
   chat.submitFeedback(messageId, type)
 }
-function handleTopBtn() {
-  if (userStore.role === 'super_admin' || userStore.role === 'superadmin' || userStore.role === 'admin') {
-    router.push('/knowledge/list')
-  } else {
-    userStore.logout()
-    router.push('/login')
-  }
-}
-const isAdmin = computed(() => userStore.role === 'super_admin' || userStore.role === 'superadmin' || userStore.role === 'admin')
-
 onMounted(() => { chat.init(); loadHotQuestions() })
 </script>
 
@@ -216,14 +199,23 @@ onMounted(() => { chat.init(); loadHotQuestions() })
       </div>
 
       <!-- 底部用户 -->
-      <div class="sidebar-user" @click="handleToggleUserPanel">
+      <div v-if="isLoggedIn" class="sidebar-user" @click="handleLogout">
         <div class="su-avatar">
-          <svg v-if="!isLoggedIn" viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
+          <span class="su-avatar-text">{{ displayName.charAt(0).toUpperCase() }}</span>
+        </div>
+        <div class="su-info">
+          <span class="su-name">{{ userStore.userInfo?.username || '' }}</span>
+          <span class="su-role">{{ userStore.role === 'admin' ? '普通管理员' : (userStore.userInfo?.role_display || '') }}</span>
+        </div>
+        <span class="su-status">已登录</span>
+      </div>
+      <div v-else class="sidebar-user" @click="showLoginDialog = true">
+        <div class="su-avatar">
+          <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
             <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/>
           </svg>
-          <span v-else class="su-avatar-text">{{ displayName.charAt(0).toUpperCase() }}</span>
         </div>
-        <span class="su-name">{{ displayName || '未登录' }}</span>
+        <span class="su-name">未登录</span>
       </div>
     </aside>
 
@@ -244,9 +236,9 @@ onMounted(() => { chat.init(); loadHotQuestions() })
             </svg>
           </button>
         </div>
-        <div class="topbar-right">
-          <button class="topbar-exit-btn" @click="handleTopBtn" :title="isAdmin ? '退出问答模式' : '退出登录'">
-            <span>{{ isAdmin ? '退出问答' : '退出登录' }}</span>
+        <div v-if="isLoggedIn && isAdminUser" class="topbar-right">
+          <button class="topbar-exit-btn" @click="router.push('/knowledge/list')" title="退出问答">
+            <span>退出问答</span>
           </button>
         </div>
       </header>
@@ -375,8 +367,6 @@ onMounted(() => { chat.init(); loadHotQuestions() })
 
     <!-- ═══ 弹窗 ═══ -->
     <ChatLoginDialog v-if="showLoginDialog" @success="handleLoginSuccess" @cancel="handleLoginCancel" />
-    <ChatUserMenu v-if="showUserMenu" @close="handleUserMenuClose" @logout="handleLogoutClick" />
-    <ChatLogoutConfirm v-if="showLogoutConfirm" @confirm="handleLogoutConfirm" @cancel="handleLogoutCancel" />
   </div>
 </template>
 
@@ -561,19 +551,23 @@ onMounted(() => { chat.init(); loadHotQuestions() })
 .sidebar-user {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 18px 20px;
+  gap: 10px;
+  padding: 14px 16px;
   border-top: 1px solid #f0f0f0;
   cursor: pointer;
   transition: background 0.15s;
 }
-.sidebar-user:hover { background: #f9f9f9; }
+.sidebar-user:hover { background: #f0f4fe; }
 .su-avatar {
-  width: 42px; height: 42px; border-radius: 50%;
-  background: rgba(64, 158, 255, 0.3);
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(64, 158, 255, 0.15);
   display: flex; align-items: center; justify-content: center;
-  color: #409eff; flex-shrink: 0;
+  color: #409eff; flex-shrink: 0; font-size: 15px; font-weight: 600;
 }
+.su-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.su-name { font-size: 13px; font-weight: 600; color: #1f1f1f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.su-role { font-size: 11px; color: #8e8e93; }
+.su-status { font-size: 11px; color: #67c23a; background: #f0f9eb; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
 .su-avatar-text { font-size: 16px; font-weight: 700; color: #333; }
 .su-name { font-size: 15px; font-weight: 500; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* ═══════════════════ 右侧主区域 ═══════════════════ */
@@ -624,16 +618,16 @@ onMounted(() => { chat.init(); loadHotQuestions() })
 }
 .topbar-btn:hover { background: #ecf5ff; color: #409eff; }
 .topbar-title { font-size: 16px; font-weight: 600; margin: 0; color: #1f1f1f; }
-.topbar-conv-title { font-size: 13px; color: #8e8e93; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-exit-btn {
-  height: 32px; padding: 0 12px;
+  height: 33px; padding: 0 12px;
   display: flex; align-items: center; gap: 4px;
   background: transparent; border: none; border-radius: 6px;
-  font-size: 15px; font-weight: 600; cursor: pointer; color: #8e8e93;
+  font-size: 15px; font-weight: 600; cursor: pointer; color: #1f1f1f;
   transition: all 0.15s;
 }
-.topbar-exit-btn { color: #1f1f1f; }
 .topbar-exit-btn:hover { background: #fef0f0; color: #e74c3c; }
+.topbar-conv-title { font-size: 13px; color: #8e8e93; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 
 /* 对话消息区 */
 .chat-messages {

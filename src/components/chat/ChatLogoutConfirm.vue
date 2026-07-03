@@ -8,7 +8,7 @@ const emit = defineEmits<{
 
 <template>
   <Transition name="panel">
-    <div v-if="props.show" class="confirm-overlay" @click.self="emit('cancel')">
+    <div class="confirm-overlay" @click.self="emit('cancel')">
       <div class="confirm-dialog">
         <div class="confirm-dialog-body">
           <svg viewBox="0 0 24 24" width="40" height="40" fill="var(--color-warning, #e6a23c)">
