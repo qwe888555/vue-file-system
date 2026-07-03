@@ -394,7 +394,7 @@ onMounted(() => { chat.init(); loadHotQuestions() })
 .chat-sidebar {
   width: 280px;
   min-width: 280px;
-  background: rgba(3, 84, 167, 0.04);
+  background: #fff;
   display: flex;
   flex-direction: column;
   border-right: 1px solid rgba(64, 158, 255, 0.12);
