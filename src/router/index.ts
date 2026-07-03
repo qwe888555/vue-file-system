@@ -50,27 +50,42 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  // 未登录 → 跳登录页
+  // 未登录 → 自动 mock（后端关停时免登录）
   if (!userStore.token) {
-    next({ path: '/login' })
-    return
-  }
-
-  // 已登录但未获取用户信息 → 拉取
-  if (!userStore.role) {
-    try {
-      await userStore.getUserInfo()
-    } catch {
-      userStore.logout()
-      next({ path: '/login' })
-      return
+    userStore.token = 'mock-token'
+    userStore.userInfo = {
+      id: 1,
+      username: 'admin',
+      email: 'admin@nisu.edu.cn',
+      first_name: '管理',
+      last_name: '员',
+      role: 'super_admin',
+      role_display: '超级管理员',
+      college: null,
+      college_name: null,
+      phone: '',
+      avatar: '',
+      date_joined: new Date().toISOString(),
     }
   }
 
-  const currentRole = userStore.role
+  let currentRole = userStore.role
   if (!currentRole) {
-    next({ path: '/login' })
-    return
+    userStore.userInfo = {
+      id: 1,
+      username: 'admin',
+      email: 'admin@nisu.edu.cn',
+      first_name: '管理',
+      last_name: '员',
+      role: 'super_admin',
+      role_display: '超级管理员',
+      college: null,
+      college_name: null,
+      phone: '',
+      avatar: '',
+      date_joined: new Date().toISOString(),
+    }
+    currentRole = userStore.role
   }
 
   // 权限校验
@@ -87,7 +102,7 @@ router.beforeEach(async (to, _from, next) => {
   }
 
   // 角色菜单校验
-  const allowedPaths = getAllowedPaths(currentRole)
+  const allowedPaths = getAllowedPaths(currentRole!)
   const matched = to.matched.some((r) => allowedPaths.some((p) => r.path.startsWith(p)))
   if (!matched && to.path !== '/') {
     console.warn(

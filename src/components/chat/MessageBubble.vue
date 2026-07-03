@@ -130,8 +130,8 @@ function handleDislike() {
 /* 气泡 */
 .msg-bubble {
   padding: 12px 16px;
-  font-size: 14px;
-  line-height: 1.7;
+  font-size: 15px;
+  line-height: 1.8;
   word-break: break-word;
 }
 

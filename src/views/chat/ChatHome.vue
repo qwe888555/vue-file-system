@@ -35,6 +35,60 @@ const isLoggedIn = computed(() => !!userStore.token)
 const displayName = computed(() => userStore.username || '未登录')
 const hasActiveConversation = computed(() => chat.currentConversationId.value !== null)
 
+// ── 热门问题统计（localStorage 持久化）──
+const HOT_KEY = 'chat_hot_questions'
+const SEED_QUESTIONS = [
+  { text: '如何查找学习资料', icon: '📚' },
+  { text: '论文格式要求是什么', icon: '📝' },
+  { text: '校园网怎么连接', icon: '🌐' },
+  { text: '课程表在哪里查', icon: '📅' },
+  { text: '图书馆借书流程', icon: '📖' },
+  { text: '奖学金申请条件', icon: '🏆' },
+  { text: '如何选课', icon: '🎯' },
+  { text: '学校邮箱怎么注册', icon: '📧' },
+  { text: '实习机会有哪些', icon: '💼' },
+]
+interface QuestionStat { text: string; icon: string; count: number }
+
+const hotQuestions = ref<QuestionStat[]>([])
+
+function loadHotQuestions() {
+  try {
+    const raw = localStorage.getItem(HOT_KEY)
+    if (raw) {
+      hotQuestions.value = JSON.parse(raw)
+      return
+    }
+  } catch {}
+  // 首次使用：种子数据带随机初始次数
+  hotQuestions.value = SEED_QUESTIONS.map((q, i) => ({
+    ...q,
+    count: Math.floor(Math.random() * 8) + (8 - i),
+  }))
+  saveHotQuestions()
+}
+function saveHotQuestions() {
+  try { localStorage.setItem(HOT_KEY, JSON.stringify(hotQuestions.value)) } catch {}
+}
+function recordQuestion(text: string) {
+  const found = hotQuestions.value.find(q => q.text === text)
+  if (found) {
+    found.count++
+  } else {
+    hotQuestions.value.push({ text, icon: '💬', count: 1 })
+  }
+  saveHotQuestions()
+}
+// 取 top 9
+const topQuestions = computed(() =>
+  [...hotQuestions.value].sort((a, b) => b.count - a.count).slice(0, 9)
+)
+
+function quickQuestion(text: string) {
+  recordQuestion(text)
+  inputText.value = text
+  sendMessage()
+}
 
 function toggleSidebar() { sidebarOpen.value = !sidebarOpen.value }
 
@@ -89,7 +143,7 @@ function handleFeedback(messageId: number, type: 'like' | 'dislike') {
 }
 function navigateTo(path: string) { router.push(path) }
 
-onMounted(() => { chat.init() })
+onMounted(() => { chat.init(); loadHotQuestions() })
 </script>
 
 <template>
@@ -194,6 +248,9 @@ onMounted(() => { chat.init() })
 
       <!-- 对话区 -->
       <div class="chat-messages">
+        <!-- 科技感背景装饰 -->
+        <div class="tech-blob tech-blob-top" />
+        <div class="tech-blob tech-blob-bottom" />
         <div class="messages-inner">
           <!-- 消息列表 -->
           <template v-if="hasActiveConversation">
@@ -240,7 +297,14 @@ onMounted(() => { chat.init() })
               </div>
             </div>
             <h2 class="welcome-title">你好！有什么可以帮助你的？</h2>
-            <p class="welcome-desc">智能知识问答助手，随时为你解答</p>
+            <div v-if="topQuestions.length" class="quick-questions">
+              <button
+                v-for="q in topQuestions"
+                :key="q.text"
+                class="qq-btn"
+                @click="quickQuestion(q.text)"
+              >{{ q.icon }} {{ q.text }}</button>
+            </div>
           </div>
         </div>
       </div>
@@ -248,7 +312,23 @@ onMounted(() => { chat.init() })
       <!-- 输入栏 -->
       <div class="chat-input-area">
         <div class="input-anim-container">
-          <div class="chat-input-wrapper">
+          <svg style="position: absolute; width: 0; height: 0;">
+            <filter width="300%" x="-100%" height="300%" y="-100%" id="unopaq">
+              <feColorMatrix values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 9 0" />
+            </filter>
+            <filter width="300%" x="-100%" height="300%" y="-100%" id="unopaq2">
+              <feColorMatrix values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 3 0" />
+            </filter>
+            <filter width="300%" x="-100%" height="300%" y="-100%" id="unopaq3">
+              <feColorMatrix values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 2 0" />
+            </filter>
+          </svg>
+          <div class="spin spin-blur"></div>
+          <div class="spin spin-intense"></div>
+          <div class="input-backdrop"></div>
+          <div class="input-anim-border">
+            <div class="spin spin-inside"></div>
+            <div class="chat-input-wrapper">
             <div class="input-extra-wrap">
               <button class="input-extra-btn" @click="toggleToolsMenu">
                 <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
@@ -286,6 +366,7 @@ onMounted(() => { chat.init() })
             />
             <button class="input-send-btn" :disabled="!inputText.trim() || isStreaming" @click="sendMessage">发送</button>
           </div>
+          </div>
         </div>
       </div>
     </div>
@@ -313,10 +394,10 @@ onMounted(() => { chat.init() })
 .chat-sidebar {
   width: 280px;
   min-width: 280px;
-  background: #fff;
+  background: rgba(3, 84, 167, 0.04);
   display: flex;
   flex-direction: column;
-  border-right: 1px solid #eee;
+  border-right: 1px solid rgba(64, 158, 255, 0.12);
   transition: margin-left 0.25s ease;
   z-index: 10;
 }
@@ -328,6 +409,16 @@ onMounted(() => { chat.init() })
 .sidebar-top {
   padding: 20px 16px;
   border-bottom: 1px solid #f0f0f0;
+  position: relative;
+}
+.sidebar-top::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(64, 158, 255, 0.3), transparent);
 }
 .sidebar-logo-area {
   margin-bottom: 12px;
@@ -350,7 +441,7 @@ onMounted(() => { chat.init() })
   transition: all 0.15s;
 }
 .sidebar-exit:hover {
-  background: #f5f5f5;
+  background: rgba(64, 158, 255, 0.06);
   color: #409eff;
 }
 
@@ -361,7 +452,7 @@ onMounted(() => { chat.init() })
   gap: 6px;
   margin: 12px 16px;
   padding: 8px 12px;
-  background: #f5f5f5;
+  background: rgba(64, 158, 255, 0.06);
   border-radius: 8px;
   color: #8e8e93;
 }
@@ -503,6 +594,21 @@ onMounted(() => { chat.init() })
   padding: 0 16px;
   border-bottom: 1px solid #f0f0f0;
   flex-shrink: 0;
+  position: relative;
+}
+.chat-topbar::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(64, 158, 255, 0.4) 20%, rgba(64, 158, 255, 0.6) 50%, rgba(64, 158, 255, 0.4) 80%, transparent 100%);
+  animation: topbarGlow 4s ease-in-out infinite;
+}
+@keyframes topbarGlow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
 }
 .topbar-left, .topbar-right {
   display: flex;
@@ -525,6 +631,31 @@ onMounted(() => { chat.init() })
   flex: 1;
   overflow-y: auto;
   padding: 24px 0;
+  position: relative;
+}
+
+/* 科技感蓝色光晕背景 */
+.tech-blob {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+.tech-blob-top {
+  width: 500px;
+  height: 500px;
+  background: rgba(30, 58, 138, 0.15);
+  filter: blur(100px);
+  top: -100px;
+  right: -80px;
+}
+.tech-blob-bottom {
+  width: 360px;
+  height: 360px;
+  background: rgba(64, 158, 255, 0.08);
+  filter: blur(80px);
+  bottom: 60px;
+  left: -60px;
 }
 .messages-inner {
   max-width: 720px;
@@ -545,12 +676,17 @@ onMounted(() => { chat.init() })
   text-align: center;
 }
 .welcome-icon {
-  margin-bottom: 20px;
-  width: 56px;
-  height: 56px;
+  margin-bottom: 24px;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(64, 158, 255, 0.06);
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 0 40px rgba(64, 158, 255, 0.08), inset 0 0 20px rgba(64, 158, 255, 0.04);
 }
 
 /* 欢迎页加载动画（蓝调版） */
@@ -622,8 +758,52 @@ onMounted(() => { chat.init() })
   80% { filter: hue-rotate(-45deg); }
   100% { filter: hue-rotate(0deg); }
 }
-.welcome-title { font-size: 20px; font-weight: 600; color: #303133; margin: 0 0 8px; }
-.welcome-desc { font-size: 14px; color: #8e8e93; margin: 0; }
+.welcome-title {
+  font-size: 22px;
+  font-weight: 400;
+  color: #1f1f1f;
+  margin: 0 0 10px;
+  letter-spacing: -0.04em;
+  position: relative;
+  z-index: 1;
+}
+.welcome-desc {
+  font-size: 14px;
+  font-weight: 400;
+  color: #555;
+  margin: 0 0 24px;
+  letter-spacing: 0.05em;
+  position: relative;
+  z-index: 1;
+}
+
+/* 快捷提问胶囊按钮 */
+.quick-questions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  max-width: 600px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+.qq-btn {
+  padding: 10px 16px;
+  background: #f0f0f5;
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  color: #444;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qq-btn:hover {
+  background: #e0e3ed;
+  color: #409eff;
+}
 
 /* ═══ 输入栏 ═══ */
 .chat-input-area {
@@ -632,11 +812,18 @@ onMounted(() => { chat.init() })
   background: #fff;
 }
 
-/* ── 输入框渐变边框（Uiverse 三层旋转风格）── */
+/* ── 输入框旋转渐变（蓝橙配色）── */
 .input-anim-container {
   position: relative;
   max-width: 760px;
   margin: 0 auto;
+}
+
+.input-anim-border {
+  padding: 3px;
+  inset: 0;
+  background: #0005;
+  border-radius: 16px;
 }
 
 .chat-input-wrapper {
@@ -645,20 +832,93 @@ onMounted(() => { chat.init() })
   align-items: center;
   gap: 12px;
   border: none;
-  border-radius: 16px;
+  border-radius: 0.875em;
   padding: 10px 8px 10px 20px;
   background: #f0f5ff;
   z-index: 1;
+  overflow: hidden;
 }
 
-/* 内层遮罩 */
-.input-anim-container::after {
+.input-backdrop {
+  position: absolute;
+  inset: -9900%;
+  background: radial-gradient(circle at 50% 50%, #0000 0, #0000 20%, #111111aa 50%);
+  background-size: 3px 3px;
+  z-index: -1;
+}
+
+.spin {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  opacity: 0;
+  overflow: hidden;
+  transition: opacity 0.35s;
+}
+
+.input-anim-container:focus-within .spin,
+.input-anim-container:hover .spin,
+.input-anim-container:focus-within .input-anim-border .spin,
+.input-anim-container:hover .input-anim-border .spin {
+  opacity: 0.6;
+}
+
+.spin-blur {
+  filter: blur(2em) url(#unopaq);
+}
+
+.spin-intense {
+  inset: -0.125em;
+  filter: blur(0.25em) url(#unopaq2);
+  border-radius: 0.75em;
+}
+
+.spin-inside {
+  inset: -2px;
+  border-radius: inherit;
+  filter: blur(2px) url(#unopaq3);
+  z-index: 0;
+}
+
+.spin::before {
   content: "";
   position: absolute;
-  inset: 2.5px;
-  z-index: 0;
-  border-radius: 14px;
-  background: #f0f5ff;
+  inset: -150%;
+  animation: speen 8s cubic-bezier(0.56, 0.15, 0.28, 0.86) infinite, woah 4s ease infinite;
+  animation-play-state: paused;
+}
+
+.input-anim-container:focus-within .spin::before,
+.input-anim-container:hover .spin::before,
+.input-anim-container:focus-within .input-anim-border .spin::before,
+.input-anim-container:hover .input-anim-border .spin::before {
+  animation-play-state: running;
+}
+
+.spin-blur::before {
+  background: linear-gradient(90deg, #4a9eff, #7bb8ff, #f5b8d0);
+  background-size: 200% 100%;
+}
+
+.spin-intense::before {
+  background: linear-gradient(90deg, #5ca8ff, #90c6ff, #f7c8da);
+  background-size: 200% 100%;
+}
+
+.spin-inside::before {
+  background: linear-gradient(90deg, #7bb8ff, #b0d4ff, #fad4e4);
+  background-size: 200% 100%;
+}
+
+@keyframes speen {
+  0% { rotate: 10deg; }
+  50% { rotate: 190deg; }
+  to { rotate: 370deg; }
+}
+
+@keyframes woah {
+  0%, to { scale: 1; }
+  50% { scale: 0.75; }
 }
 
 .input-extra-btn {
@@ -709,11 +969,11 @@ onMounted(() => { chat.init() })
 .input-send-btn {
   padding: 0 22px; height: 46px; border-radius: 12px;
   border: none; background: #409eff; color: #fff;
-  font-size: 15px; font-weight: 600; letter-spacing: 1px;
+  font-size: 16px; font-weight: 600; letter-spacing: 1px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.15s; flex-shrink: 0;
 }
-.input-send-btn:hover:not(:disabled) { background: #3a8ee6; }
+.input-send-btn:hover:not(:disabled) { background: #3a8ee6; box-shadow: 0 0 20px rgba(64,158,255,0.3); }
 .input-send-btn:disabled { background: #d0ddf0; cursor: not-allowed; color: #8e9ebd; }
 
 /* 动画 */
