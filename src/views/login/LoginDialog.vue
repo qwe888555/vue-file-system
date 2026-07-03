@@ -107,7 +107,7 @@ onMounted(async () => {
     ElMessage.success(`SSO 登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
     const role = res.user?.role
     emit('update:visible', false)
-    router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
+    router.push(role === 'super_admin' || role === 'superadmin' || role === 'admin' ? '/knowledge/list' : '/chat')
   } catch (e: any) {
     ElMessage.error(e?.message || 'SSO 登录失败')
   } finally {
@@ -128,7 +128,7 @@ async function handleLogin() {
     ElMessage.success(`登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
     emit('update:visible', false)
     const role = res.user?.role
-    router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
+    router.push(role === 'super_admin' || role === 'superadmin' || role === 'admin' ? '/knowledge/list' : '/chat')
   } catch {
     // 后端关停时 mock 登录
     userStore.token = 'mock-token'
@@ -212,7 +212,7 @@ async function handleSSOSelect(code: string) {
     ElMessage.success(`SSO 登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
     const role = res.user?.role
     emit('update:visible', false)
-    router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
+    router.push(role === 'super_admin' || role === 'superadmin' || role === 'admin' ? '/knowledge/list' : '/chat')
   } catch (e: any) {
     ElMessage.error(e?.message || 'SSO 登录失败')
   } finally {
