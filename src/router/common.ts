@@ -11,8 +11,8 @@ const authRoutes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'Login',
-    component: () => import('@/views/home/Introduction.vue'),
-    meta: { title: '登录', hidden: true, openLogin: true },
+    component: () => import('@/views/login/LoginPage.vue'),
+    meta: { title: '登录', hidden: true },
   },
   {
     path: '/403',
