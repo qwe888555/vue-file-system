@@ -40,13 +40,9 @@ onMounted(async () => {
     userStore.token = res.access
     userStore.refreshToken = res.refresh
     userStore.userInfo = res.user
-    if (!userStore.role) {
-      try { await userStore.getUserInfo() } catch {}
-    }
-    const role = userStore.role
-    const welcomeRole = role === 'super_admin' ? '超级管理员' : role === 'admin' || role === 'admin_csic' || role === 'admin_dept' || role === 'college_admin' ? '普通管理员' : '普通用户'
-    ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
-    router.push(role === 'super_admin' || role === 'admin' || role === 'admin_csic' || role === 'admin_dept' || role === 'college_admin' ? '/knowledge/list' : '/chat')
+    ElMessage.success(`SSO 登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
+    const role = res.user?.role
+    router.push(role === 'super_admin' || role === 'admin' || role === 'college_admin' || role === 'dept_admin' ? '/knowledge/list' : '/chat')
   } catch (e: any) {
     ElMessage.error(e?.message || 'SSO 登录失败')
   } finally {
@@ -69,9 +65,9 @@ async function handleLogin() {
       try { await userStore.getUserInfo() } catch {}
     }
     const role = userStore.role
-    const welcomeRole = role === 'super_admin' ? '超级管理员' : role === 'admin' || role === 'admin_csic' || role === 'admin_dept' || role === 'college_admin' ? '普通管理员' : '普通用户'
+    const welcomeRole = role === 'super_admin' ? '超级管理员' : role === 'admin' || role === 'college_admin' || role === 'dept_admin' ? '普通管理员' : '普通用户'
     ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
-    router.push(role === 'super_admin' || role === 'admin' || role === 'admin_csic' || role === 'admin_dept' || role === 'college_admin' ? '/knowledge/list' : '/chat')
+    router.push(role === 'super_admin' || role === 'admin' || role === 'college_admin' || role === 'dept_admin' ? '/knowledge/list' : '/chat')
   } catch (e: any) {
     errorMsg.value = e?.response?.data?.detail || e?.message || '登录失败，请检查账号密码'
   } finally {
@@ -115,13 +111,9 @@ async function handleSSOSelect(code: string) {
     userStore.token = res.access
     userStore.refreshToken = res.refresh
     userStore.userInfo = res.user
-    if (!userStore.role) {
-      try { await userStore.getUserInfo() } catch {}
-    }
-    const role = userStore.role
-    const welcomeRole = role === 'super_admin' ? '超级管理员' : role === 'admin' || role === 'admin_csic' || role === 'admin_dept' || role === 'college_admin' ? '普通管理员' : '普通用户'
-    ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
-    router.push(role === 'super_admin' || role === 'admin' || role === 'admin_csic' || role === 'admin_dept' || role === 'college_admin' ? '/knowledge/list' : '/chat')
+    ElMessage.success(`SSO 登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
+    const role = res.user?.role
+    router.push(role === 'super_admin' || role === 'admin' || role === 'college_admin' || role === 'dept_admin' ? '/knowledge/list' : '/chat')
   } catch {
     ElMessage.error('SSO 登录失败')
   } finally {
