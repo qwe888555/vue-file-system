@@ -70,6 +70,13 @@ export interface PaginatedResult<T> {
   pageSize: number
 }
 
+export interface Keyword {
+  id: number
+  phrase: string
+  match_type: string
+  weight: number
+}
+
 // ── 知识库文件 ──
 export interface KnowledgeFile {
   id: number
@@ -83,7 +90,7 @@ export interface KnowledgeFile {
   fileType: string
   collegeId: number
   collegeName: string
-  keywords: string[]
+  keywords: Keyword[]
   status: number
   createdAt: string
   updatedAt: string

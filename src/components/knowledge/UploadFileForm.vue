@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { uploadFileApi } from '@/api/knowledge'
 
 const props = defineProps<{
   visible: boolean
@@ -14,7 +15,6 @@ const emit = defineEmits<{
 interface UploadFormData {
   title: string
   category: string
-  author: string
   keywords: string
   description: string
   content: string
@@ -26,7 +26,6 @@ interface UploadFormData {
 const form = ref<UploadFormData>({
   title: '',
   category: '',
-  author: '',
   keywords: '',
   description: '',
   content: '',
@@ -130,8 +129,8 @@ function handleRemove() {
   isFileTooLarge.value = false
 }
 
-function handleSubmit() {
-  if (!form.value.title || !form.value.author || !form.value.keywords) {
+async function handleSubmit() {
+  if (!form.value.title || !form.value.keywords) {
     ElMessage.warning('请填写必填项')
     return
   }
@@ -168,10 +167,34 @@ function handleSubmit() {
     .map((kw) => kw.trim())
     .filter((kw) => kw)
 
-  emit('submit', {
-    ...form.value,
-    keywords: keywords.join(','),
-  })
+  if (!createMode.value && uploadedFile.value) {
+    try {
+      const formData = new FormData()
+      formData.append('file', uploadedFile.value)
+      formData.append('title', form.value.title)
+      formData.append('description', form.value.description || '')
+      formData.append('college_id', '1')
+      formData.append('discipline_id', '1')
+      formData.append('keywords', keywords.join(','))
+      formData.append('category_id', '5')
+
+      await uploadFileApi(formData)
+      ElMessage.success('上传成功')
+      emit('submit', {
+        ...form.value,
+        keywords: keywords.join(','),
+      })
+    } catch (error) {
+      console.error('文件上传失败:', error)
+      ElMessage.error('文件上传失败，请重试')
+      return
+    }
+  } else {
+    emit('submit', {
+      ...form.value,
+      keywords: keywords.join(','),
+    })
+  }
 }
 
 function handleClose() {
@@ -190,10 +213,6 @@ function handleClose() {
     <el-form :model="form" label-width="100px" class="upload-form">
       <el-form-item label="文件名" required>
         <el-input v-model="form.title" placeholder="请输入文件名" />
-      </el-form-item>
-
-      <el-form-item label="作者" required>
-        <el-input v-model="form.author" placeholder="请输入作者名称" />
       </el-form-item>
 
       <el-form-item label="关键词" required>

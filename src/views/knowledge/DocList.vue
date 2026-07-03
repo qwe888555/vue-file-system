@@ -2,13 +2,20 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { KnowledgeFile } from '@/types'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened } from '@element-plus/icons-vue'
+import type { KnowledgeFile, Keyword } from '@/types'
 import UploadFileForm from '@/components/knowledge/UploadFileForm.vue'
+import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 
 const router = useRouter()
 
 const searchQuery = ref('')
 const showUploadDialog = ref(false)
+const showEditDialog = ref(false)
+const editingFile = ref<KnowledgeFile | null>(null)
+
+const currentPage = ref(1)
+const pageSize = ref(8)
 
 const getStoredFiles = (): KnowledgeFile[] => {
   const stored = localStorage.getItem('knowledgeFiles')
@@ -35,7 +42,7 @@ const defaultFiles: KnowledgeFile[] = [
     fileType: 'pdf',
     collegeId: 1,
     collegeName: '信息工程学院',
-    keywords: ['人工智能', '机器学习', '深度学习'],
+    keywords: [{ id: 1, phrase: '人工智能', match_type: 'exact', weight: 1 }, { id: 2, phrase: '机器学习', match_type: 'exact', weight: 1 }, { id: 3, phrase: '深度学习', match_type: 'exact', weight: 1 }],
     status: 1,
     createdAt: '2026-07-01 14:30:00',
     updatedAt: '2026-07-01 14:30:00',
@@ -52,7 +59,7 @@ const defaultFiles: KnowledgeFile[] = [
     fileType: 'video',
     collegeId: 2,
     collegeName: '计算机学院',
-    keywords: ['大数据', '数据分析', '案例'],
+    keywords: [{ id: 4, phrase: '大数据', match_type: 'exact', weight: 1 }, { id: 5, phrase: '数据分析', match_type: 'exact', weight: 1 }, { id: 6, phrase: '案例', match_type: 'exact', weight: 1 }],
     status: 1,
     createdAt: '2026-07-01 10:15:00',
     updatedAt: '2026-07-01 10:15:00',
@@ -69,7 +76,7 @@ const defaultFiles: KnowledgeFile[] = [
     fileType: 'doc',
     collegeId: 1,
     collegeName: '信息工程学院',
-    keywords: ['软件工程', '实践', '项目'],
+    keywords: [{ id: 7, phrase: '软件工程', match_type: 'exact', weight: 1 }, { id: 8, phrase: '实践', match_type: 'exact', weight: 1 }, { id: 9, phrase: '项目', match_type: 'exact', weight: 1 }],
     status: 1,
     createdAt: '2026-06-30 16:45:00',
     updatedAt: '2026-06-30 16:45:00',
@@ -86,7 +93,7 @@ const defaultFiles: KnowledgeFile[] = [
     fileType: 'audio',
     collegeId: 3,
     collegeName: '数字艺术学院',
-    keywords: ['校园活动', '采访', '录音'],
+    keywords: [{ id: 10, phrase: '校园活动', match_type: 'exact', weight: 1 }, { id: 11, phrase: '采访', match_type: 'exact', weight: 1 }, { id: 12, phrase: '录音', match_type: 'exact', weight: 1 }],
     status: 1,
     createdAt: '2026-06-30 09:20:00',
     updatedAt: '2026-06-30 09:20:00',
@@ -103,7 +110,7 @@ const defaultFiles: KnowledgeFile[] = [
     fileType: 'pdf',
     collegeId: 2,
     collegeName: '计算机学院',
-    keywords: ['课程体系', '规划', '专业'],
+    keywords: [{ id: 13, phrase: '课程体系', match_type: 'exact', weight: 1 }, { id: 14, phrase: '规划', match_type: 'exact', weight: 1 }, { id: 15, phrase: '专业', match_type: 'exact', weight: 1 }],
     status: 1,
     createdAt: '2026-06-29 11:00:00',
     updatedAt: '2026-06-29 11:00:00',
@@ -120,7 +127,7 @@ const defaultFiles: KnowledgeFile[] = [
     fileType: 'doc',
     collegeId: 1,
     collegeName: '信息工程学院',
-    keywords: ['毕业设计', '模板', '论文'],
+    keywords: [{ id: 16, phrase: '毕业设计', match_type: 'exact', weight: 1 }, { id: 17, phrase: '模板', match_type: 'exact', weight: 1 }, { id: 18, phrase: '论文', match_type: 'exact', weight: 1 }],
     status: 1,
     createdAt: '2026-06-28 15:30:00',
     updatedAt: '2026-06-28 15:30:00',
@@ -141,7 +148,7 @@ const filteredFiles = computed(() => {
       file.summary.toLowerCase().includes(query) ||
       file.author.toLowerCase().includes(query) ||
       file.collegeName.toLowerCase().includes(query) ||
-      (file.keywords && file.keywords.some((kw) => kw.toLowerCase().includes(query)))
+      (file.keywords && file.keywords.some((kw) => kw.phrase.toLowerCase().includes(query)))
   )
 })
 
@@ -151,13 +158,25 @@ const recentFiles = computed(() => {
     .slice(0, 5)
 })
 
-const fileTypeIcons: Record<string, string> = {
-  pdf: 'Document',
-  doc: 'FileText',
-  image: 'Picture',
-  audio: 'Headset',
-  video: 'VideoCamera',
-  archive: 'FolderOpened',
+const totalFiles = computed(() => filteredFiles.value.length)
+
+const paginatedFiles = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  const end = start + pageSize.value
+  return filteredFiles.value.slice(start, end)
+})
+
+function handleCurrentChange(page: number) {
+  currentPage.value = page
+}
+
+const fileTypeIcons: Record<string, any> = {
+  pdf: Document,
+  doc: Files,
+  image: Picture,
+  audio: Headset,
+  video: VideoCamera,
+  archive: FolderOpened,
 }
 
 const fileTypeColors: Record<string, string> = {
@@ -179,20 +198,19 @@ function handleFileClick(file: KnowledgeFile) {
   router.push(`/knowledge/detail/${file.id}`)
 }
 
-function handleRename(file: KnowledgeFile) {
-  ElMessageBox.prompt('请输入新文件名', '重命名', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    inputValue: file.title,
-  })
-    .then(({ value }) => {
-      if (value && value.trim()) {
-        file.title = value.trim()
-        saveFiles(uploadedFiles.value)
-        ElMessage.success('重命名成功')
-      }
-    })
-    .catch(() => {})
+function handleEdit(file: KnowledgeFile) {
+  editingFile.value = file
+  showEditDialog.value = true
+}
+
+function handleEditSubmit(data: { title: string; keywords: Keyword[] }) {
+  if (editingFile.value) {
+    editingFile.value.title = data.title
+    editingFile.value.keywords = data.keywords
+    saveFiles(uploadedFiles.value)
+    ElMessage.success('编辑成功')
+  }
+  showEditDialog.value = false
 }
 
 function handleDelete(file: KnowledgeFile) {
@@ -212,11 +230,18 @@ function handleDelete(file: KnowledgeFile) {
     .catch(() => {})
 }
 
-function handleFormSubmit(data: { title: string; category: string; author: string; keywords: string; description: string; content: string; fileName: string; fileSize: number; fileData: string }) {
-  const keywords = data.keywords
+function handleFormSubmit(data: { title: string; category: string; keywords: string; description: string; content: string; fileName: string; fileSize: number; fileData: string }) {
+  const keywordPhrases = data.keywords
     .split(/[,，、\s]+/)
     .map((kw) => kw.trim())
     .filter((kw) => kw)
+
+  const keywords = keywordPhrases.map((phrase, index) => ({
+    id: Date.now() + index,
+    phrase,
+    match_type: 'exact' as const,
+    weight: 1,
+  }))
 
   const hasContent = data.content && data.content.trim()
   let title = data.title
@@ -257,7 +282,7 @@ function handleFormSubmit(data: { title: string; category: string; author: strin
     title,
     category: data.category || '未分类',
     categoryName: data.category || '未分类',
-    author: data.author,
+    author: '当前用户',
     summary: data.description,
     fileUrl: '',
     fileSize: size,
@@ -348,7 +373,7 @@ function handleFormSubmit(data: { title: string; category: string; author: strin
 
       <div v-else class="file-grid">
         <div
-          v-for="file in filteredFiles"
+          v-for="file in paginatedFiles"
           :key="file.id"
           class="file-card"
           @click="handleFileClick(file)"
@@ -363,7 +388,7 @@ function handleFormSubmit(data: { title: string; category: string; author: strin
             <p class="card-summary">{{ file.summary }}</p>
             <div class="card-meta">
               <el-tag size="small" type="primary">{{ file.collegeName }}</el-tag>
-              <el-tag v-for="kw in (file.keywords || []).slice(0, 3)" :key="kw" size="small" type="info">{{ kw }}</el-tag>
+              <el-tag v-for="kw in (file.keywords || []).slice(0, 3)" :key="kw.id" size="small" type="info">{{ kw.phrase }}</el-tag>
               <el-tag size="small">{{ formatFileSize(file.fileSize) }}</el-tag>
             </div>
             <div class="card-footer">
@@ -372,7 +397,7 @@ function handleFormSubmit(data: { title: string; category: string; author: strin
             </div>
           </div>
           <div class="card-actions">
-            <el-button size="small" @click.stop="handleRename(file)" type="text">
+            <el-button size="small" @click.stop="handleEdit(file)" type="text">
               <el-icon><Edit /></el-icon>
             </el-button>
             <el-button size="small" @click.stop="handleDelete(file)" type="text" danger>
@@ -381,12 +406,33 @@ function handleFormSubmit(data: { title: string; category: string; author: strin
           </div>
         </div>
       </div>
+
+    </div>
+
+    <div class="pagination-wrapper">
+      <el-pagination
+        :current-page="currentPage"
+        :page-size="pageSize"
+        :total="totalFiles"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next, jumper"
+        :hide-on-single-page="false"
+        @current-change="handleCurrentChange"
+        @size-change="(size) => { pageSize.value = size; currentPage.value = 1; }"
+      />
     </div>
 
     <UploadFileForm
       :visible="showUploadDialog"
       @close="showUploadDialog = false"
       @submit="handleFormSubmit"
+    />
+
+    <EditFileForm
+      :visible="showEditDialog"
+      :file="editingFile"
+      @close="showEditDialog = false"
+      @submit="handleEditSubmit"
     />
   </div>
 </template>
@@ -637,6 +683,20 @@ function handleFormSubmit(data: { title: string; category: string; author: strin
 
 .upload-form {
   margin-top: var(--spacing-md);
+}
+
+.pagination-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: var(--spacing-xl);
+  padding: var(--spacing-lg);
+  background: #fff;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  position: sticky;
+  bottom: 20px;
+  z-index: 100;
 }
 
 .upload-form :deep(.el-form-item) {

@@ -44,6 +44,13 @@ export function checkFileHashApi(hash: string): Promise<{ exists: boolean; fileI
   return request.post('/knowledge/files/check-hash', { hash })
 }
 
+/** 文件上传 */
+export function uploadFileApi(data: FormData): Promise<KnowledgeFile> {
+  return request.post('/knowledge/upload/file/', data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
 /** 编辑文档 */
 export function updateDocApi(id: number, data: Partial<KnowledgeFile>): Promise<void> {
   return request.put(`/knowledge/files/${id}`, data)
@@ -54,15 +61,29 @@ export function deleteDocApi(id: number): Promise<void> {
   return request.delete(`/knowledge/files/${id}`)
 }
 
+export interface Keyword {
+  id: number
+  phrase: string
+  match_type: string
+  weight: number
+}
+
 /** 文档关键词 CRUD */
-export function getKeywordsApi(fileId: number): Promise<string[]> {
-  return request.get(`/knowledge/files/${fileId}/keywords`)
+export function getKeywordsApi(docId: number): Promise<Keyword[]> {
+  return request.get(`/knowledge/docs/${docId}/keywords/`)
 }
-export function addKeywordApi(fileId: number, keyword: string): Promise<void> {
-  return request.post(`/knowledge/files/${fileId}/keywords`, { keyword })
+export function addKeywordApi(docId: number, keywords: string[]): Promise<void> {
+  return request.post(`/knowledge/docs/${docId}/keywords/create/`, {
+    keywords,
+    match_type: 'exact',
+    weight: 1,
+  })
 }
-export function deleteKeywordApi(fileId: number, keyword: string): Promise<void> {
-  return request.delete(`/knowledge/files/${fileId}/keywords`, { data: { keyword } })
+export function updateKeywordApi(id: number, data: { phrase: string; match_type: string; weight: number }): Promise<void> {
+  return request.put(`/knowledge/keywords/${id}/`, data)
+}
+export function deleteKeywordApi(id: number): Promise<void> {
+  return request.delete(`/knowledge/keywords/${id}/delete/`)
 }
 
 /** 三级分类树形数据 */

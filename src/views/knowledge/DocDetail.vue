@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import * as mammoth from 'mammoth'
 import type { KnowledgeFile } from '@/types'
@@ -19,15 +20,15 @@ const md = new MarkdownIt({
   typographer: true,
 })
 
-const fileTypeIcons: Record<string, string> = {
-  pdf: 'Document',
-  doc: 'FileText',
-  image: 'Picture',
-  audio: 'Headset',
-  video: 'VideoCamera',
-  archive: 'FolderOpened',
-  txt: 'FileText',
-  md: 'FileText',
+const fileTypeIcons: Record<string, any> = {
+  pdf: Document,
+  doc: Files,
+  image: Picture,
+  audio: Headset,
+  video: VideoCamera,
+  archive: FolderOpened,
+  txt: Files,
+  md: Files,
 }
 
 const fileTypeColors: Record<string, string> = {
@@ -76,7 +77,7 @@ const defaultFiles: KnowledgeFile[] = [
     fileType: 'pdf',
     collegeId: 1,
     collegeName: '信息工程学院',
-    keywords: ['人工智能', '机器学习', '深度学习'],
+    keywords: [{ id: 1, phrase: '人工智能', match_type: 'exact', weight: 1 }, { id: 2, phrase: '机器学习', match_type: 'exact', weight: 1 }, { id: 3, phrase: '深度学习', match_type: 'exact', weight: 1 }],
     status: 1,
     createdAt: '2026-07-01 14:30:00',
     updatedAt: '2026-07-01 14:30:00',
@@ -93,7 +94,7 @@ const defaultFiles: KnowledgeFile[] = [
     fileType: 'video',
     collegeId: 2,
     collegeName: '计算机学院',
-    keywords: ['大数据', '数据分析', '案例'],
+    keywords: [{ id: 4, phrase: '大数据', match_type: 'exact', weight: 1 }, { id: 5, phrase: '数据分析', match_type: 'exact', weight: 1 }, { id: 6, phrase: '案例', match_type: 'exact', weight: 1 }],
     status: 1,
     createdAt: '2026-07-01 10:15:00',
     updatedAt: '2026-07-01 10:15:00',
@@ -110,7 +111,7 @@ const defaultFiles: KnowledgeFile[] = [
     fileType: 'doc',
     collegeId: 1,
     collegeName: '信息工程学院',
-    keywords: ['软件工程', '实践', '项目'],
+    keywords: [{ id: 7, phrase: '软件工程', match_type: 'exact', weight: 1 }, { id: 8, phrase: '实践', match_type: 'exact', weight: 1 }, { id: 9, phrase: '项目', match_type: 'exact', weight: 1 }],
     status: 1,
     createdAt: '2026-06-30 16:45:00',
     updatedAt: '2026-06-30 16:45:00',
@@ -127,7 +128,7 @@ const defaultFiles: KnowledgeFile[] = [
     fileType: 'audio',
     collegeId: 3,
     collegeName: '数字艺术学院',
-    keywords: ['校园活动', '采访', '录音'],
+    keywords: [{ id: 10, phrase: '校园活动', match_type: 'exact', weight: 1 }, { id: 11, phrase: '采访', match_type: 'exact', weight: 1 }, { id: 12, phrase: '录音', match_type: 'exact', weight: 1 }],
     status: 1,
     createdAt: '2026-06-30 09:20:00',
     updatedAt: '2026-06-30 09:20:00',
@@ -144,7 +145,7 @@ const defaultFiles: KnowledgeFile[] = [
     fileType: 'pdf',
     collegeId: 2,
     collegeName: '计算机学院',
-    keywords: ['课程体系', '规划', '专业'],
+    keywords: [{ id: 13, phrase: '课程体系', match_type: 'exact', weight: 1 }, { id: 14, phrase: '规划', match_type: 'exact', weight: 1 }, { id: 15, phrase: '专业', match_type: 'exact', weight: 1 }],
     status: 1,
     createdAt: '2026-06-29 11:00:00',
     updatedAt: '2026-06-29 11:00:00',
@@ -161,7 +162,7 @@ const defaultFiles: KnowledgeFile[] = [
     fileType: 'doc',
     collegeId: 1,
     collegeName: '信息工程学院',
-    keywords: ['毕业设计', '模板', '论文'],
+    keywords: [{ id: 16, phrase: '毕业设计', match_type: 'exact', weight: 1 }, { id: 17, phrase: '模板', match_type: 'exact', weight: 1 }, { id: 18, phrase: '论文', match_type: 'exact', weight: 1 }],
     status: 1,
     createdAt: '2026-06-28 15:30:00',
     updatedAt: '2026-06-28 15:30:00',
@@ -406,7 +407,7 @@ onMounted(() => {
             关键词
           </h4>
           <div class="keyword-tags">
-            <el-tag v-for="kw in file.keywords" :key="kw" size="small" effect="plain">{{ kw }}</el-tag>
+            <el-tag v-for="kw in file.keywords" :key="kw.id" size="small" effect="plain">{{ kw.phrase }}</el-tag>
           </div>
         </div>
       </div>
