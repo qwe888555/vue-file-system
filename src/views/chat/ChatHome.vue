@@ -390,11 +390,16 @@ onMounted(() => { chat.init(); loadHotQuestions() })
   display: flex;
   flex-direction: column;
   border-right: 1px solid rgba(64, 158, 255, 0.12);
-  transition: margin-left 0.25s ease;
+  transition: width 0.25s ease, min-width 0.25s ease, padding 0.25s ease, opacity 0.25s ease;
   z-index: 10;
+  overflow: hidden;
 }
 .chat-sidebar.collapsed {
-  margin-left: -280px;
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  opacity: 0;
+  border-right: none;
 }
 
 /* 顶部 */
@@ -578,7 +583,6 @@ onMounted(() => { chat.init(); loadHotQuestions() })
   min-width: 0;
   background: #fff;
 }
-
 /* 顶栏 */
 .chat-topbar {
   height: 56px;
