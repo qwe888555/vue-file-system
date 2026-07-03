@@ -21,7 +21,7 @@
           @input="handleSearch"
           @clear="handleSearch"
         />
-        <el-select v-model="roleFilter" placeholder="全部角色" clearable filterable style="width: 160px" @change="handleSearch">
+        <el-select v-model="roleFilter" placeholder="全部角色" clearable style="width: 160px" @change="handleSearch">
           <el-option label="全部角色" value="__all__" />
           <el-option
             v-for="opt in roleOptions"
@@ -34,7 +34,6 @@
           v-model="collegeFilter"
           placeholder="全部学院/部门"
           clearable
-          filterable
           style="width: 160px"
           :disabled="false"
           @change="handleSearch"
