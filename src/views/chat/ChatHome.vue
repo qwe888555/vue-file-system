@@ -12,6 +12,7 @@ import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ChatLoginDialog from '@/components/chat/ChatLoginDialog.vue'
+import PersonalCenter from '@/components/common/PersonalCenter.vue'
 
 const userStore = useUserStore()
 const router = useRouter()
@@ -19,6 +20,7 @@ const chat = useChat()
 
 const sidebarOpen = ref(true)
 const showLoginDialog = ref(false)
+const showPersonalCenter = ref(false)
 const showToolsMenu = ref(false)
 const inputText = ref('')
 
@@ -198,6 +200,14 @@ onMounted(() => { chat.init(); loadHotQuestions() })
         </div>
       </div>
 
+      <!-- 个人中心（管理员和普通用户） -->
+      <div v-if="isLoggedIn && userStore.role !== 'super_admin'" class="chat-pc" @click="showPersonalCenter = true">
+        <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
+          <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/>
+        </svg>
+        <span>个人中心</span>
+      </div>
+
       <!-- 底部用户 -->
       <div v-if="isLoggedIn" class="sidebar-user" @click="handleLogout">
         <div class="su-avatar">
@@ -366,6 +376,7 @@ onMounted(() => { chat.init(); loadHotQuestions() })
     </div>
 
     <!-- ═══ 弹窗 ═══ -->
+    <PersonalCenter v-if="showPersonalCenter" @close="showPersonalCenter = false" />
     <ChatLoginDialog v-if="showLoginDialog" @success="handleLoginSuccess" @cancel="handleLoginCancel" />
   </div>
 </template>
@@ -563,6 +574,14 @@ onMounted(() => { chat.init(); loadHotQuestions() })
   transition: background 0.15s;
 }
 .sidebar-user:hover { background: #f0f4fe; }
+.chat-pc {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 20px; cursor: pointer;
+  font-size: 13px; color: #8e8e93;
+  border-top: 1px solid #f0f0f0;
+  transition: all 0.15s;
+}
+.chat-pc:hover { background: #f0f4fe; color: #2b5fd9; }
 .su-avatar {
   width: 36px; height: 36px; border-radius: 50%;
   background: rgba(64, 158, 255, 0.15);

@@ -2,17 +2,20 @@
 // ── 侧边栏 ──
 // 功能：Logo + 菜单导航（按角色动态过滤）+ 底部用户信息
 
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { usePermissionStore } from '@/store/permission'
 import { ElMessageBox } from 'element-plus'
 import logoImg from '@/assets/logo.png'
+import PersonalCenter from '@/components/common/PersonalCenter.vue'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const permissionStore = usePermissionStore()
+
+const showPersonalCenter = ref(false)
 
 // 按角色动态生成菜单项
 const menuItems = computed(() => {
@@ -77,6 +80,12 @@ async function handleLogout() {
       </el-menu-item>
     </el-menu>
 
+    <!-- 个人中心（管理员和普通用户） -->
+    <div v-if="isLoggedIn && userStore.role !== 'super_admin'" class="sidebar-pc" @click="showPersonalCenter = true">
+      <el-icon class="menu-icon"><User /></el-icon>
+      <span class="menu-label">个人中心</span>
+    </div>
+
     <!-- 底部用户 -->
     <div v-if="isLoggedIn" class="sidebar-user" @click="handleLogout">
       <div class="su-avatar">
@@ -96,6 +105,7 @@ async function handleLogout() {
       </div>
       <span class="su-name">未登录</span>
     </div>
+    <PersonalCenter v-if="showPersonalCenter" @close="showPersonalCenter = false" />
   </aside>
 </template>
 
@@ -187,6 +197,30 @@ async function handleLogout() {
 .sidebar-menu .el-menu-item.is-active .menu-icon {
   color: #2b5fd9;
 }
+
+/* ── 个人中心 ── */
+.sidebar-pc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 26px;
+  cursor: pointer;
+  color: #5a6070;
+  font-size: 14px;
+  font-weight: 450;
+  transition: all 0.2s ease;
+  border-top: 1px solid #f0f0f0;
+}
+.sidebar-pc:hover {
+  background-color: #f0f4fa;
+  color: #2b5fd9;
+}
+.sidebar-pc .menu-icon {
+  font-size: 20px;
+  color: #8e95a6;
+  transition: color 0.2s ease;
+}
+.sidebar-pc:hover .menu-icon { color: #2b5fd9; }
 
 /* ── 底部用户（与智能问答保持一致）── */
 .sidebar-user {
