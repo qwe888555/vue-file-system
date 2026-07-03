@@ -49,7 +49,7 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
-  const currentRole = userStore.role
+  let currentRole = userStore.role
   if (!currentRole) {
     next({ path: '/login' })
     return
