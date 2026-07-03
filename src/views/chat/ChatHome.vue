@@ -248,9 +248,6 @@ onMounted(() => { chat.init(); loadHotQuestions() })
 
       <!-- 对话区 -->
       <div class="chat-messages">
-        <!-- 科技感背景装饰 -->
-        <div class="tech-blob tech-blob-top" />
-        <div class="tech-blob tech-blob-bottom" />
         <div class="messages-inner">
           <!-- 消息列表 -->
           <template v-if="hasActiveConversation">
@@ -474,8 +471,8 @@ onMounted(() => { chat.init(); loadHotQuestions() })
   gap: 6px;
   margin: 0 16px 12px;
   padding: 10px;
-  background: #409eff;
-  color: #fff;
+  background: rgba(64, 158, 255, 0.12);
+  color: #409eff;
   border: none;
   border-radius: 8px;
   font-size: 13px;
@@ -483,7 +480,7 @@ onMounted(() => { chat.init(); loadHotQuestions() })
   cursor: pointer;
   transition: background 0.2s;
 }
-.sidebar-new-chat:hover { background: #3a8ee6; }
+.sidebar-new-chat:hover { background: rgba(64, 158, 255, 0.2); }
 
 /* 对话列表 */
 .sidebar-conversations {
@@ -635,28 +632,6 @@ onMounted(() => { chat.init(); loadHotQuestions() })
 }
 
 /* 科技感蓝色光晕背景 */
-.tech-blob {
-  position: fixed;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 0;
-}
-.tech-blob-top {
-  width: 500px;
-  height: 500px;
-  background: rgba(30, 58, 138, 0.15);
-  filter: blur(100px);
-  top: -100px;
-  right: -80px;
-}
-.tech-blob-bottom {
-  width: 360px;
-  height: 360px;
-  background: rgba(64, 158, 255, 0.08);
-  filter: blur(80px);
-  bottom: 60px;
-  left: -60px;
-}
 .messages-inner {
   max-width: 720px;
   margin: 0 auto;
