@@ -61,24 +61,16 @@ function handleDislike() {
 
       <!-- 反馈（仅 AI 已完成消息） -->
       <div v-if="!isUser && !streaming && message.content" class="msg-feedback">
-        <button
-          class="fb-btn"
-          :class="{ active: message.feedback === 'like' }"
-          @click="handleLike"
-          title="有帮助"
-        >
-          <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
-            <path d="M4 7v6H2V7h2zm10-1a1 1 0 01-1 1h-3v4a2 2 0 01-2 2H7l-1-4V7V5a1 1 0 011-1h4.5l.7-1.4A1 1 0 0113 2.5V6z"/>
+        <button class="fb-btn fb-like" :class="{ active: message.feedback === 'like' }" @click="handleLike" title="有帮助">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 9v8a1 1 0 01-1 1H4a1 1 0 01-1-1v-6a1 1 0 011-1h2z" />
+            <path d="M7 9l3-4a2 2 0 012 2v2h5.5a1.5 1.5 0 011.5 1.5v.5l-1.5 5a2 2 0 01-2 1.5H7" />
           </svg>
         </button>
-        <button
-          class="fb-btn"
-          :class="{ active: message.feedback === 'dislike' }"
-          @click="handleDislike"
-          title="没有帮助"
-        >
-          <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
-            <path d="M12 9V3h2v6h-2zm-10 1a1 1 0 011-1h3V5a2 2 0 012-2h1l1 4v2v2a1 1 0 01-1 1H4.5l-.7 1.4A1 1 0 013 13.5V10z"/>
+        <button class="fb-btn fb-dislike" :class="{ active: message.feedback === 'dislike' }" @click="handleDislike" title="没有帮助">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 15V7a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2z" />
+            <path d="M17 15l-3 4a2 2 0 01-2-2v-2H6.5A1.5 1.5 0 015 13.5V13l1.5-5a2 2 0 012-1.5H17" />
           </svg>
         </button>
       </div>
@@ -161,20 +153,39 @@ function handleDislike() {
 /* 反馈按钮 */
 .msg-feedback {
   display: flex;
-  gap: 2px;
-  padding: 2px 0;
-  opacity: 0;
-  transition: opacity 0.2s;
+  gap: 16px;
+  padding: 6px 0;
+  align-items: center;
 }
-.msg-row:hover .msg-feedback { opacity: 1; }
 
 .fb-btn {
-  width: 26px; height: 26px;
-  display: flex; align-items: center; justify-content: center;
-  background: transparent; border: none; border-radius: 6px;
-  cursor: pointer; color: #aeaeb2;
-  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #333;
+  background: none;
+  border: none;
 }
-.fb-btn:hover { background: rgba(64,158,255,0.08); color: #409eff; }
-.fb-btn.active { color: #409eff; }
+
+/* 点赞：浅灰圆角底板 */
+.fb-like {
+  width: 44px;
+  height: 34px;
+  background: #f7f7f7;
+  border-radius: 17px;
+}
+
+.fb-like:hover { color: #409eff; background: #eef4ff; }
+.fb-like.active { color: #409eff; background: #e8f0fe; }
+
+/* 点踩：纯图标，无底板 */
+.fb-dislike {
+  width: 34px;
+  height: 34px;
+}
+
+.fb-dislike:hover { color: #409eff; }
+.fb-dislike.active { color: #409eff; }
 </style>

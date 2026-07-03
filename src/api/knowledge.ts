@@ -18,7 +18,7 @@ export function getDocListApi(params: {
 
 /** 文档详情 */
 export function getDocDetailApi(id: number): Promise<KnowledgeFile> {
-  return request.get(`/knowledge/files/${id}`)
+  return request.get(`/knowledge/docs/${id}/`)
 }
 
 /** 上传文档（含元数据） */
@@ -53,12 +53,37 @@ export function uploadFileApi(data: FormData): Promise<KnowledgeFile> {
 
 /** 编辑文档 */
 export function updateDocApi(id: number, data: Partial<KnowledgeFile>): Promise<void> {
-  return request.put(`/knowledge/files/${id}`, data)
+  return request.put(`/api/knowledge/docs/${id}/`, data)
 }
 
 /** 删除文档 */
 export function deleteDocApi(id: number): Promise<void> {
-  return request.delete(`/knowledge/files/${id}`)
+  return request.delete(`/knowledge/docs/${id}/delete`)
+}
+
+/** 下载文档 */
+export function downloadDocApi(id: number): Promise<Blob> {
+  return request.get(`/knowledge/docs/${id}/download/`, {
+    responseType: 'blob',
+  })
+}
+
+/** 文件预览 */
+export function previewDocApi(id: number): Promise<{ content: string; content_type: string }> {
+  return request.get(`/knowledge/docs/${id}/preview/`)
+}
+
+/** 录入文本 */
+export function uploadTextApi(data: {
+  title: string
+  content: string
+  description?: string
+  college_id?: number
+  discipline_id?: number
+  keywords?: string[]
+  visibility?: string
+}): Promise<KnowledgeFile> {
+  return request.post('/knowledge/upload/text/', data)
 }
 
 export interface Keyword {

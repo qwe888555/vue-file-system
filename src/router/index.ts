@@ -32,42 +32,27 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  // 未登录 → 自动 mock（后端关停时免登录）
+  // 未登录 → 跳登录页
   if (!userStore.token) {
-    userStore.token = 'mock-token'
-    userStore.userInfo = {
-      id: 1,
-      username: 'admin',
-      email: 'admin@nisu.edu.cn',
-      first_name: '管理',
-      last_name: '员',
-      role: 'super_admin',
-      role_display: '超级管理员',
-      college: null,
-      college_name: null,
-      phone: '',
-      avatar: '',
-      date_joined: new Date().toISOString(),
+    next({ path: '/login' })
+    return
+  }
+
+  // 已登录但未获取用户信息 → 拉取
+  if (!userStore.role) {
+    try {
+      await userStore.getUserInfo()
+    } catch {
+      userStore.logout()
+      next({ path: '/login' })
+      return
     }
   }
 
-  let currentRole = userStore.role
+  const currentRole = userStore.role
   if (!currentRole) {
-    userStore.userInfo = {
-      id: 1,
-      username: 'admin',
-      email: 'admin@nisu.edu.cn',
-      first_name: '管理',
-      last_name: '员',
-      role: 'super_admin',
-      role_display: '超级管理员',
-      college: null,
-      college_name: null,
-      phone: '',
-      avatar: '',
-      date_joined: new Date().toISOString(),
-    }
-    currentRole = userStore.role
+    next({ path: '/login' })
+    return
   }
 
   // 兼容：后端可能返回 superadmin（无下划线），统一为 super_admin

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // ── 侧边栏 ──
-// 功能：Logo 占位 + 菜单导航（按角色动态过滤）
+// 功能：Logo + 菜单导航（按角色动态过滤）+ 底部用户信息
 
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { usePermissionStore } from '@/store/permission'
+import { ElMessageBox } from 'element-plus'
 import logoImg from '@/assets/logo.png'
 
 const route = useRoute()
@@ -28,13 +29,24 @@ const activeMenu = computed(() => {
   return matched ? matched.path : route.path
 })
 
+const isLoggedIn = computed(() => !!userStore.token)
+const userDisplayRole = computed(() => {
+  if (userStore.role === 'admin') return '普通管理员'
+  return userStore.userInfo?.role_display || ''
+})
+
 function handleSelect(path: string) {
   router.push(path)
 }
 
-function handleLogout() {
-  userStore.logout()
-  router.push('/login')
+async function handleLogout() {
+  try {
+    await ElMessageBox.confirm('确定要退出登录吗？', '提示')
+    userStore.logout()
+    router.push('/login')
+  } catch {
+    // 取消操作
+  }
 }
 </script>
 
@@ -65,10 +77,24 @@ function handleLogout() {
       </el-menu-item>
     </el-menu>
 
-    <!-- 退出登录 -->
-    <div class="sidebar-logout" @click="handleLogout">
-      <el-icon class="logout-icon"><SwitchButton /></el-icon>
-      <span class="logout-label">退出登录</span>
+    <!-- 底部用户 -->
+    <div v-if="isLoggedIn" class="sidebar-user" @click="handleLogout">
+      <div class="su-avatar">
+        <span class="su-avatar-text">{{ (userDisplayRole || userStore.userInfo?.username || '?').charAt(0).toUpperCase() }}</span>
+      </div>
+      <div class="su-info">
+        <span class="su-name">{{ userStore.userInfo?.username || '' }}</span>
+        <span class="su-role">{{ userDisplayRole }}</span>
+      </div>
+      <span class="su-status">已登录</span>
+    </div>
+    <div v-else class="sidebar-user" @click="router.push('/login')">
+      <div class="su-avatar">
+        <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
+          <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/>
+        </svg>
+      </div>
+      <span class="su-name">未登录</span>
     </div>
   </aside>
 </template>
@@ -119,7 +145,6 @@ function handleLogout() {
   background: transparent;
 }
 
-/* 菜单项 */
 .sidebar-menu .el-menu-item {
   height: 48px;
   margin-bottom: 4px;
@@ -132,7 +157,6 @@ function handleLogout() {
   transition: all 0.2s ease;
 }
 
-/* 图标 */
 .sidebar-menu .el-menu-item .menu-icon {
   font-size: 20px;
   margin-right: 10px;
@@ -140,12 +164,10 @@ function handleLogout() {
   transition: color 0.2s ease;
 }
 
-/* 标签 */
 .sidebar-menu .el-menu-item .menu-label {
   line-height: 1.5;
 }
 
-/* Hover 状态 */
 .sidebar-menu .el-menu-item:hover {
   background-color: #f0f4fa;
   color: #2c3e50;
@@ -155,7 +177,6 @@ function handleLogout() {
   color: #5a7cf0;
 }
 
-/* 激活状态 */
 .sidebar-menu .el-menu-item.is-active {
   background: linear-gradient(135deg, #eef3fe 0%, #e6edfe 100%);
   color: #2b5fd9;
@@ -167,42 +188,25 @@ function handleLogout() {
   color: #2b5fd9;
 }
 
-/* ── 退出登录 ── */
-.sidebar-logout {
-  height: 52px;
+/* ── 底部用户（与智能问答保持一致）── */
+.sidebar-user {
   display: flex;
   align-items: center;
-  padding: 0 26px;
   gap: 10px;
+  padding: 14px 16px;
+  border-top: 1px solid #f0f0f0;
   cursor: pointer;
-  border-top: 1px solid #f0f2f5;
-  flex-shrink: 0;
-  transition: all 0.2s ease;
+  transition: background 0.15s;
 }
-
-.sidebar-logout:hover {
-  background: #f8fafc;
+.sidebar-user:hover { background: #f0f4fe; }
+.su-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(64, 158, 255, 0.15);
+  display: flex; align-items: center; justify-content: center;
+  color: #409eff; flex-shrink: 0; font-size: 15px; font-weight: 600;
 }
-
-.sidebar-logout:hover .logout-icon {
-  color: #e74c3c;
-}
-
-.sidebar-logout:hover .logout-label {
-  color: #e74c3c;
-}
-
-.logout-icon {
-  font-size: 18px;
-  color: #8e95a6;
-  transition: color 0.2s ease;
-}
-
-.logout-label {
-  font-size: 14px;
-  color: #5a6070;
-  font-weight: 450;
-  line-height: 1.5;
-  transition: color 0.2s ease;
-}
+.su-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.su-name { font-size: 13px; font-weight: 600; color: #1f1f1f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.su-role { font-size: 11px; color: #8e8e93; }
+.su-status { font-size: 11px; color: #67c23a; background: #f0f9eb; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
 </style>
