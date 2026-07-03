@@ -2,17 +2,21 @@
 // ── 侧边栏 ──
 // 功能：Logo + 菜单导航（按角色动态过滤）+ 底部用户信息
 
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { usePermissionStore } from '@/store/permission'
 import { ElMessageBox } from 'element-plus'
 import logoImg from '@/assets/logo.png'
+import PersonalCenter from '@/components/common/PersonalCenter.vue'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const permissionStore = usePermissionStore()
+
+const showPersonalCenter = ref(false)
+const showUserMenu = ref(false)
 
 // 按角色动态生成菜单项
 const menuItems = computed(() => {
@@ -77,16 +81,32 @@ async function handleLogout() {
       </el-menu-item>
     </el-menu>
 
+    <!-- 个人中心（管理员和普通用户） -->
     <!-- 底部用户 -->
-    <div v-if="isLoggedIn" class="sidebar-user" @click="handleLogout">
-      <div class="su-avatar">
-        <span class="su-avatar-text">{{ (userDisplayRole || userStore.userInfo?.username || '?').charAt(0).toUpperCase() }}</span>
+    <div v-if="isLoggedIn" class="sidebar-user-area">
+      <!-- 上拉菜单（非超级管理员） -->
+      <Transition name="menu-up">
+        <div v-if="showUserMenu && userStore.role !== 'super_admin'" class="user-popup">
+          <div class="user-popup-item" @click="showUserMenu = false; showPersonalCenter = true">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
+            <span>个人中心</span>
+          </div>
+          <div class="user-popup-item" @click="showUserMenu = false; handleLogout()">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M3 3h6v2H5v10h4v2H3V3zm12.5 5H11V6h4.5L19 10l-3.5 4H11v-2h4.5L16 10l-1.5-2z"/></svg>
+            <span>退出登录</span>
+          </div>
+        </div>
+      </Transition>
+      <div class="sidebar-user" @click="userStore.role === 'super_admin' ? handleLogout() : (showUserMenu = !showUserMenu)">
+        <div class="su-avatar">
+          <span class="su-avatar-text">{{ (userDisplayRole || userStore.userInfo?.username || '?').charAt(0).toUpperCase() }}</span>
+        </div>
+        <div class="su-info">
+          <span class="su-name">{{ userStore.userInfo?.username || '' }}</span>
+          <span class="su-role">{{ userDisplayRole }}</span>
+        </div>
+        <span class="su-status">已登录</span>
       </div>
-      <div class="su-info">
-        <span class="su-name">{{ userStore.userInfo?.username || '' }}</span>
-        <span class="su-role">{{ userDisplayRole }}</span>
-      </div>
-      <span class="su-status">已登录</span>
     </div>
     <div v-else class="sidebar-user" @click="router.push('/login')">
       <div class="su-avatar">
@@ -96,6 +116,7 @@ async function handleLogout() {
       </div>
       <span class="su-name">未登录</span>
     </div>
+    <PersonalCenter v-if="showPersonalCenter" @close="showPersonalCenter = false" />
   </aside>
 </template>
 
@@ -187,6 +208,25 @@ async function handleLogout() {
 .sidebar-menu .el-menu-item.is-active .menu-icon {
   color: #2b5fd9;
 }
+
+/* ── 个人中心 ── */
+/* ── 底部用户区域（含上拉菜单）── */
+.sidebar-user-area { position: relative; }
+.user-popup {
+  position: absolute; bottom: calc(100% + 4px); left: 8px; right: 8px;
+  background: #fff; border-radius: 10px;
+  box-shadow: 0 -2px 16px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.06);
+  overflow: hidden; z-index: 20;
+}
+.user-popup-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; cursor: pointer; font-size: 14px; color: #1a2332;
+  transition: background 0.15s;
+}
+.user-popup-item:hover { background: #f0f4fe; color: #2b5fd9; }
+.user-popup-item:first-child { border-bottom: 1px solid #f0f0f0; }
+.menu-up-enter-active, .menu-up-leave-active { transition: all 0.2s ease; }
+.menu-up-enter-from, .menu-up-leave-to { opacity: 0; transform: translateY(8px); }
 
 /* ── 底部用户（与智能问答保持一致）── */
 .sidebar-user {

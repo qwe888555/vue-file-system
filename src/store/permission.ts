@@ -9,6 +9,10 @@ import { allMenus, roleMenuMap } from '@/config/permission'
 const roleActions: Record<UserRole, string[]> = {
   super_admin: ['create', 'edit', 'delete', 'reset-password', 'batch-delete', 'batch-reset'],
   admin: ['create', 'edit', 'reset-password'],
+  admin_csic: ['create', 'edit', 'reset-password'],
+  admin_dept: ['create', 'edit', 'reset-password'],
+  college_admin: ['create', 'edit', 'reset-password'],
+  dept_admin: ['create', 'edit', 'reset-password'],
   user: [],
 }
 

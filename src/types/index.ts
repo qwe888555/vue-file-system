@@ -20,7 +20,7 @@ export interface UserInfo {
   }
 }
 
-export type UserRole = 'user' | 'admin' | 'college_admin' | 'dept_admin' | 'super_admin'
+export type UserRole = 'user' | 'admin' | 'admin_csic' | 'admin_dept' | 'college_admin' | 'dept_admin' | 'super_admin'
 
 export interface LoginParams {
   username: string
