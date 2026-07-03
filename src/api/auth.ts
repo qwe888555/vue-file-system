@@ -23,11 +23,6 @@ export function updateProfileApi(data: Partial<UserInfo>): Promise<UserInfo> {
   return request.put('/auth/me/', data)
 }
 
-/** 修改密码 */
-export function changePasswordApi(data: { old_password: string; new_password: string }): Promise<{ detail: string }> {
-  return request.post('/auth/change-password/', data)
-}
-
 /** SSO 登录接口地址 */
 export function ssoLoginUrl(): string {
   const base = import.meta.env.VITE_SSO_BASE_URL || import.meta.env.VITE_API_URL || ''

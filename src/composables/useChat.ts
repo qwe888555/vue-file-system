@@ -5,7 +5,7 @@ import type { Conversation, Message, KnowledgeFile } from '@/types'
 import {
   getConversationsApi,
   createConversationApi,
-  deleteConversationsApi,
+  deleteConversationApi,
   renameConversationApi,
   getMessagesApi,
   feedbackApi,
@@ -31,7 +31,7 @@ export function useChat() {
   // 请求封装
   const listReq = useRequest(getConversationsApi)
   const createReq = useRequest(createConversationApi)
-  const deleteReq = useRequest(deleteConversationsApi)
+  const deleteReq = useRequest(deleteConversationApi)
   const renameReq = useRequest(renameConversationApi)
   const messagesReq = useRequest(getMessagesApi)
 
@@ -86,7 +86,7 @@ export function useChat() {
   // ── 操作方法 ──
   async function fetchConversations() {
     const res = await listReq.execute({ page: 1, pageSize: 100 })
-    if (res) {
+    if (res && res.list) {
       conversations.value = res.list
       saveCache()
     }
@@ -114,7 +114,7 @@ export function useChat() {
   }
 
   async function deleteConversation(id: number) {
-    await deleteReq.execute([id])
+    await deleteReq.execute(id)
     conversations.value = conversations.value.filter(c => c.id !== id)
     if (currentConversationId.value === id) {
       currentConversationId.value = conversations.value[0]?.id ?? null
@@ -215,7 +215,7 @@ export function useChat() {
   // ── 初始化 ──
   function init() {
     if (!loadCache()) {
-      seedMockData()
+      fetchConversations()
     }
   }
 
