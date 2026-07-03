@@ -35,6 +35,7 @@ export function createAccountApi(data: {
   last_name?: string
   role?: string
   college?: number
+  department?: number
   phone?: string
 }): Promise<Account> {
   return request.post('/admin/users/', data)
@@ -49,6 +50,7 @@ export function updateAccountApi(
     last_name?: string
     role?: string
     college?: number
+    department?: number
     phone?: string
     is_active?: boolean
   },
@@ -101,4 +103,22 @@ export function batchDeleteAccountsApi(data: {
 /** 获取学院列表 */
 export function getCollegesApi(): Promise<{ count: number; results: College[] }> {
   return request.get('/admin/colleges/')
+}
+
+// ══════════════════════════════════════
+//  部门管理 — /api/admin/departments/
+// ══════════════════════════════════════
+
+export interface Department {
+  id: number
+  name: string
+  parent: number | null
+  sort_order: number
+  children: Department[]
+}
+
+export function getDepartmentsApi(params?: {
+  college_id?: number
+}): Promise<{ count: number; results: Department[] }> {
+  return request.get('/admin/departments/', { params })
 }

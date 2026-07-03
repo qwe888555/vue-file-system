@@ -4,9 +4,9 @@ import type { UserRole, MenuItem } from '@/types'
 
 export const roleMenuMap: Record<UserRole, string[]> = {
   user: ['/chat'],
-  admin: ['/chat', '/knowledge', '/admin'],
+  college_admin: ['/chat', '/knowledge', '/admin'],
+  dept_admin: ['/chat'],
   super_admin: ['/chat', '/knowledge', '/admin'],
-  superadmin: ['/chat', '/knowledge', '/admin'],
 }
 
 export const allMenus: MenuItem[] = [
@@ -34,10 +34,6 @@ export const allMenus: MenuItem[] = [
     icon: 'Setting',
     children: [
       { path: '/admin/users', name: 'UserManage', title: '用户账号' },
-      { path: '/admin/colleges', name: 'CollegeManage', title: '学院部门' },
-      { path: '/admin/disciplines', name: 'DisciplineManage', title: '学科管理' },
-      { path: '/admin/categories', name: 'CategoryManage', title: '资源类型' },
-      { path: '/admin/feedback-pending', name: 'FeedbackPending', title: '兜底问答' },
     ],
   },
 ]

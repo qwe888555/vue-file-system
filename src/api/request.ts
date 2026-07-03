@@ -121,8 +121,19 @@ instance.interceptors.response.use(
       }
     }
 
-    // 业务错误提示
-    const msg = error.response?.data?.detail || error.message || '网络异常'
+    // 业务错误提示（兼容 DRF 字段级错误）
+    let msg = ''
+    const respData = error.response?.data
+    if (typeof respData === 'string') {
+      msg = respData
+    } else if (respData?.detail) {
+      msg = respData.detail
+    } else if (typeof respData === 'object') {
+      const firstErr = Object.values(respData).find((v) => Array.isArray(v) && v.length)
+      msg = firstErr ? (firstErr as string[])[0] : ''
+    }
+    if (!msg) msg = error.message || '网络异常'
+    error.message = msg
     if (error.response?.status !== 401) {
       ElMessage.error(msg)
     }

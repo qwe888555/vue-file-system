@@ -70,6 +70,9 @@ router.beforeEach(async (to, _from, next) => {
     currentRole = userStore.role
   }
 
+  // 兼容：后端可能返回 superadmin（无下划线），统一为 super_admin
+  if ((currentRole as string) === 'superadmin') currentRole = 'super_admin' as UserRole
+
   // 权限校验
   if (to.meta.roles) {
     const allowedRoles = to.meta.roles as UserRole[]

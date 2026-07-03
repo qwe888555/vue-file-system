@@ -9,7 +9,6 @@ declare module '*.vue' {
 // 环境变量类型提示
 interface ImportMetaEnv {
   readonly VITE_API_URL: string
-  readonly VITE_USE_MOCK?: string
 }
 
 interface ImportMeta {

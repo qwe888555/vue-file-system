@@ -63,25 +63,8 @@ async function handleLogin() {
     ElMessage.success(`登录成功，欢迎 ${res.user?.role_display ?? '用户'}`)
     const role = res.user?.role
     router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
-  } catch {
-    // 后端关停时 mock 登录
-    userStore.token = 'mock-token'
-    userStore.userInfo = {
-      id: 1,
-      username: form.username || 'admin',
-      email: 'admin@nisu.edu.cn',
-      first_name: '管理',
-      last_name: '员',
-      role: 'super_admin',
-      role_display: '超级管理员',
-      college: null,
-      college_name: null,
-      phone: '',
-      avatar: '',
-      date_joined: new Date().toISOString(),
-    }
-    ElMessage.success('Mock 登录成功')
-    router.push('/knowledge/list')
+  } catch (e: any) {
+    errorMsg.value = e?.response?.data?.detail || e?.message || '登录失败，请检查账号密码'
   } finally {
     loading.value = false
   }
@@ -106,16 +89,7 @@ async function handleSSOLogin() {
       ElMessage.warning('未获取到可用的测试账号')
     }
   } catch {
-    // 后端关停时 mock SSO
-    userStore.token = 'mock-token'
-    userStore.userInfo = {
-      id: 1, username: 'admin', email: 'admin@nisu.edu.cn',
-      first_name: '管理', last_name: '员', role: 'super_admin',
-      role_display: '超级管理员', college: null, college_name: null,
-      phone: '', avatar: '', date_joined: new Date().toISOString(),
-    }
-    ElMessage.success('Mock 登录成功')
-    router.push('/knowledge/list')
+    ElMessage.error('统一身份认证服务暂不可用，请稍后再试或使用账号密码登录')
   } finally {
     ssoLoading.value = false
   }
