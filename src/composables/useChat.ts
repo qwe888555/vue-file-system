@@ -8,7 +8,7 @@ import {
   deleteConversationApi,
   renameConversationApi,
   getMessagesApi,
-  feedbackApi,
+  rateMessageApi,
 } from '@/api/chat'
 import { useRequest } from './useRequest'
 
@@ -170,7 +170,7 @@ export function useChat() {
   }
 
   async function submitFeedback(messageId: number, type: 'like' | 'dislike') {
-    await feedbackApi(messageId, type)
+    try { await rateMessageApi(messageId, type) } catch { /* 忽略评分失败 */ }
     const id = currentConversationId.value
     if (!id) return
     const msg = messagesMap.value[id]?.find(m => m.id === messageId)
