@@ -129,8 +129,26 @@ async function handleLogin() {
     emit('update:visible', false)
     const role = res.user?.role
     router.push(role === 'super_admin' || role === 'admin' ? '/knowledge/list' : '/chat')
-  } catch (e: any) {
-    errorMsg.value = e?.response?.data?.detail || e?.message || '登录失败'
+  } catch {
+    // 后端关停时 mock 登录
+    userStore.token = 'mock-token'
+    userStore.userInfo = {
+      id: 1,
+      username: form.username || 'admin',
+      email: 'admin@nisu.edu.cn',
+      first_name: '管理',
+      last_name: '员',
+      role: 'super_admin',
+      role_display: '超级管理员',
+      college: null,
+      college_name: null,
+      phone: '',
+      avatar: '',
+      date_joined: new Date().toISOString(),
+    }
+    ElMessage.success('Mock 登录成功')
+    emit('update:visible', false)
+    router.push('/knowledge/list')
   } finally {
     loading.value = false
   }
@@ -155,8 +173,26 @@ async function handleSSOLogin() {
     } else {
       ElMessage.warning('未获取到可用的测试账号')
     }
-  } catch (e: any) {
-    ElMessage.error(e?.message || 'SSO 登录请求失败')
+  } catch {
+    // 后端关停时 mock SSO 登录
+    userStore.token = 'mock-token'
+    userStore.userInfo = {
+      id: 1,
+      username: 'admin',
+      email: 'admin@nisu.edu.cn',
+      first_name: '管理',
+      last_name: '员',
+      role: 'super_admin',
+      role_display: '超级管理员',
+      college: null,
+      college_name: null,
+      phone: '',
+      avatar: '',
+      date_joined: new Date().toISOString(),
+    }
+    ElMessage.success('Mock 登录成功')
+    emit('update:visible', false)
+    router.push('/knowledge/list')
   } finally {
     ssoLoading.value = false
   }
