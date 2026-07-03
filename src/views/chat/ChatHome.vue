@@ -12,6 +12,7 @@ import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ChatLoginDialog from '@/components/chat/ChatLoginDialog.vue'
+import PersonalCenter from '@/components/common/PersonalCenter.vue'
 
 const userStore = useUserStore()
 const router = useRouter()
@@ -19,6 +20,8 @@ const chat = useChat()
 
 const sidebarOpen = ref(true)
 const showLoginDialog = ref(false)
+const showPersonalCenter = ref(false)
+const showUserMenu = ref(false)
 const showToolsMenu = ref(false)
 const inputText = ref('')
 
@@ -29,71 +32,55 @@ const streamingReferences = ref<KnowledgeFile[]>([])
 let currentSSE: ReturnType<typeof useSSE> | null = null
 
 const isLoggedIn = computed(() => !!userStore.token)
-const isAdminUser = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin')
+const isAdminUser = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin' || userStore.role === 'college_admin')
 const displayName = computed(() => {
   if (!userStore.userInfo) return ''
   return userStore.userInfo.role_display || userStore.userInfo.username || ''
 })
 const hasActiveConversation = computed(() => chat.currentConversationId.value !== null)
 
-// ── 热门问题统计（localStorage 持久化）──
-const HOT_KEY = 'chat_hot_questions'
-const SEED_QUESTIONS = [
-  { text: '如何查找学习资料', icon: '📚' },
-  { text: '论文格式要求是什么', icon: '📝' },
-  { text: '校园网怎么连接', icon: '🌐' },
-  { text: '课程表在哪里查', icon: '📅' },
-  { text: '图书馆借书流程', icon: '📖' },
-  { text: '奖学金申请条件', icon: '🏆' },
-  { text: '如何选课', icon: '🎯' },
-  { text: '学校邮箱怎么注册', icon: '📧' },
-  { text: '实习机会有哪些', icon: '💼' },
-]
-interface QuestionStat { text: string; icon: string; count: number }
+// ── 热点问题（API）──
+const hotQuestions = ref<Array<{ question: string; count: number }>>([])
+const SEED_ICONS: Record<string, string> = {
+  '如何重置密码': '🔑', '怎么连接校园网': '🌐', '论文格式要求': '📝',
+  '如何查找学习资料': '📚', '课程表在哪查': '📅', '图书馆借书流程': '📖',
+  '奖学金申请条件': '🏆', '如何选课': '🎯', '实习机会有哪些': '💼',
+  '学校邮箱怎么注册': '📧',
+}
 
-const hotQuestions = ref<QuestionStat[]>([])
-
-function loadHotQuestions() {
+async function loadHotQuestions() {
   try {
-    const raw = localStorage.getItem(HOT_KEY)
-    if (raw) {
-      hotQuestions.value = JSON.parse(raw)
-      return
-    }
-  } catch {}
-  // 首次使用：种子数据带随机初始次数
-  hotQuestions.value = SEED_QUESTIONS.map((q, i) => ({
-    ...q,
-    count: Math.floor(Math.random() * 8) + (8 - i),
-  }))
-  saveHotQuestions()
-}
-function saveHotQuestions() {
-  try { localStorage.setItem(HOT_KEY, JSON.stringify(hotQuestions.value)) } catch {}
-}
-function recordQuestion(text: string) {
-  const found = hotQuestions.value.find(q => q.text === text)
-  if (found) {
-    found.count++
-  } else {
-    hotQuestions.value.push({ text, icon: '💬', count: 1 })
+    const { getHotQuestionsApi } = await import('@/api/chat')
+    const data = await getHotQuestionsApi({ top_k: 9 })
+    hotQuestions.value = data
+  } catch {
+    // API 不通时使用空列表
+    hotQuestions.value = []
   }
-  saveHotQuestions()
 }
-// 取 top 9
+
 const topQuestions = computed(() =>
-  [...hotQuestions.value].sort((a, b) => b.count - a.count).slice(0, 9)
+  hotQuestions.value.map(q => ({
+    text: q.question,
+    icon: SEED_ICONS[Object.keys(SEED_ICONS).find(k => q.question.includes(k)) || ''] || '💬',
+    count: q.count,
+  }))
 )
 
 function quickQuestion(text: string) {
-  recordQuestion(text)
   inputText.value = text
   sendMessage()
 }
 
 function toggleSidebar() { sidebarOpen.value = !sidebarOpen.value }
 
-function handleLoginSuccess() { showLoginDialog.value = false; chat.fetchConversations() }
+function handleLoginSuccess() {
+  showLoginDialog.value = false
+  if (userStore.role === 'super_admin' || userStore.role === 'admin' || userStore.role === 'admin_csic' || userStore.role === 'admin_dept' || userStore.role === 'college_admin') {
+    router.push('/knowledge/list')
+  }
+  chat.fetchConversations()
+}
 function handleLoginCancel() { showLoginDialog.value = false }
 async function handleLogout() {
   try {
@@ -201,15 +188,30 @@ onMounted(() => { chat.init(); loadHotQuestions() })
       </div>
 
       <!-- 底部用户 -->
-      <div v-if="isLoggedIn" class="sidebar-user" @click="handleLogout">
-        <div class="su-avatar">
-          <span class="su-avatar-text">{{ displayName.charAt(0).toUpperCase() }}</span>
+      <div v-if="isLoggedIn" class="sidebar-user-area">
+        <!-- 上拉菜单（非超级管理员） -->
+        <Transition name="menu-up">
+          <div v-if="showUserMenu && userStore.role !== 'super_admin'" class="user-popup">
+            <div class="user-popup-item" @click="showUserMenu = false; showPersonalCenter = true">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
+              <span>个人中心</span>
+            </div>
+            <div class="user-popup-item" @click="showUserMenu = false; handleLogout()">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M3 3h6v2H5v10h4v2H3V3zm12.5 5H11V6h4.5L19 10l-3.5 4H11v-2h4.5L16 10l-1.5-2z"/></svg>
+              <span>退出登录</span>
+            </div>
+          </div>
+        </Transition>
+        <div class="sidebar-user" @click="userStore.role === 'super_admin' ? handleLogout() : (showUserMenu = !showUserMenu)">
+          <div class="su-avatar">
+            <span class="su-avatar-text">{{ displayName.charAt(0).toUpperCase() }}</span>
+          </div>
+          <div class="su-info">
+            <span class="su-name">{{ userStore.userInfo?.username || '' }}</span>
+            <span class="su-role">{{ userStore.role === 'admin' || userStore.role === 'admin_csic' || userStore.role === 'admin_dept' || userStore.role === 'college_admin' ? '普通管理员' : (userStore.userInfo?.role_display || '') }}</span>
+          </div>
+          <span class="su-status">已登录</span>
         </div>
-        <div class="su-info">
-          <span class="su-name">{{ userStore.userInfo?.username || '' }}</span>
-          <span class="su-role">{{ userStore.role === 'admin' ? '普通管理员' : (userStore.userInfo?.role_display || '') }}</span>
-        </div>
-        <span class="su-status">已登录</span>
       </div>
       <div v-else class="sidebar-user" @click="showLoginDialog = true">
         <div class="su-avatar">
@@ -360,7 +362,11 @@ onMounted(() => { chat.init(); loadHotQuestions() })
               :disabled="isStreaming"
               @keyup.enter="sendMessage"
             />
-            <button class="input-send-btn" :disabled="!inputText.trim() || isStreaming" @click="sendMessage">发送</button>
+            <button class="send-fab" :disabled="!inputText.trim() || isStreaming" @click="sendMessage">
+              <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
+                <path d="M10 2a1 1 0 01.707.293l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414l-4.293 4.293a1 1 0 01-1.414-1.414l6-6A1 1 0 0110 2z"/>
+              </svg>
+            </button>
           </div>
           </div>
         </div>
@@ -368,6 +374,7 @@ onMounted(() => { chat.init(); loadHotQuestions() })
     </div>
 
     <!-- ═══ 弹窗 ═══ -->
+    <PersonalCenter v-if="showPersonalCenter" @close="showPersonalCenter = false" />
     <ChatLoginDialog v-if="showLoginDialog" @success="handleLoginSuccess" @cancel="handleLoginCancel" />
   </div>
 </template>
@@ -564,7 +571,23 @@ onMounted(() => { chat.init(); loadHotQuestions() })
   cursor: pointer;
   transition: background 0.15s;
 }
+.sidebar-user-area { position: relative; }
 .sidebar-user:hover { background: #f0f4fe; }
+.user-popup {
+  position: absolute; bottom: calc(100% + 4px); left: 8px; right: 8px;
+  background: #fff; border-radius: 10px;
+  box-shadow: 0 -2px 16px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.06);
+  overflow: hidden; z-index: 20;
+}
+.user-popup-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; cursor: pointer; font-size: 14px; color: #1a2332;
+  transition: background 0.15s;
+}
+.user-popup-item:hover { background: #f0f4fe; color: #2b5fd9; }
+.user-popup-item:first-child { border-bottom: 1px solid #f0f0f0; }
+.menu-up-enter-active, .menu-up-leave-active { transition: all 0.2s ease; }
+.menu-up-enter-from, .menu-up-leave-to { opacity: 0; transform: translateY(8px); }
 .su-avatar {
   width: 36px; height: 36px; border-radius: 50%;
   background: rgba(64, 158, 255, 0.15);
@@ -795,7 +818,7 @@ onMounted(() => { chat.init(); loadHotQuestions() })
 /* ═══ 输入栏 ═══ */
 .chat-input-area {
   flex-shrink: 0;
-  padding: 20px 24px 32px;
+  padding: 12px 24px 20px;
   background: #fff;
 }
 
@@ -817,13 +840,12 @@ onMounted(() => { chat.init(); loadHotQuestions() })
   position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
-  border: none;
-  border-radius: 0.875em;
-  padding: 10px 8px 10px 20px;
-  background: #f0f5ff;
+  gap: 8px;
+  border: 1px solid rgba(22, 119, 255, 0.1);
+  border-radius: 12px;
+  padding: 6px 6px 6px 14px;
+  background: #fff;
   z-index: 1;
-  overflow: hidden;
 }
 
 .input-backdrop {
@@ -861,9 +883,9 @@ onMounted(() => { chat.init(); loadHotQuestions() })
 }
 
 .spin-inside {
-  inset: -2px;
+  inset: -1px;
   border-radius: inherit;
-  filter: blur(2px) url(#unopaq3);
+  filter: blur(1.5px) url(#unopaq3);
   z-index: 0;
 }
 
@@ -950,18 +972,18 @@ onMounted(() => { chat.init(); loadHotQuestions() })
 .tools-enter-from, .tools-leave-to { opacity: 0; transform: translateY(6px); }
 .input-field {
   flex: 1; border: none; background: transparent; outline: none;
-  font-size: 16px; color: #1f1f1f; padding: 12px 0; min-height: 30px;
+  font-size: 14px; color: #1f1f1f; padding: 8px 0; min-height: 24px;
 }
 .input-field::placeholder { color: #8e9ebd; font-size: 15px; }
-.input-send-btn {
-  padding: 0 22px; height: 46px; border-radius: 12px;
-  border: none; background: #409eff; color: #fff;
-  font-size: 16px; font-weight: 600; letter-spacing: 1px;
+.send-fab {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: none; background: #1677ff; color: #fff;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+  cursor: pointer; transition: all 0.2s; flex-shrink: 0; padding: 0;
 }
-.input-send-btn:hover:not(:disabled) { background: #3a8ee6; box-shadow: 0 0 20px rgba(64,158,255,0.3); }
-.input-send-btn:disabled { background: #d0ddf0; cursor: not-allowed; color: #8e9ebd; }
+.send-fab svg { width: 16px; height: 16px; }
+.send-fab:hover:not(:disabled) { background: #4096ff; }
+.send-fab:disabled { background: #d9d9d9; cursor: not-allowed; }
 
 /* 动画 */
 </style>
