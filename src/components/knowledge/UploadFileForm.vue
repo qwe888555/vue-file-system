@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { uploadFileApi } from '@/api/knowledge'
+import { useUserStore } from '@/store/user'
+import { uploadFileApi, uploadTextApi } from '@/api/knowledge'
 
 const props = defineProps<{
   visible: boolean
@@ -12,9 +13,13 @@ const emit = defineEmits<{
   (e: 'submit', data: UploadFormData): void
 }>()
 
+const userStore = useUserStore()
+
 interface UploadFormData {
   title: string
   category: string
+  collegeId: number
+  collegeName: string
   keywords: string
   description: string
   content: string
@@ -26,6 +31,8 @@ interface UploadFormData {
 const form = ref<UploadFormData>({
   title: '',
   category: '',
+  collegeId: 0,
+  collegeName: '',
   keywords: '',
   description: '',
   content: '',
@@ -46,10 +53,12 @@ watch(() => props.visible, (val) => {
 })
 
 function resetForm() {
+  const userInfo = userStore.userInfo
   form.value = {
     title: '',
     category: '',
-    author: '',
+    collegeId: userInfo?.college || 0,
+    collegeName: userInfo?.college_name || '',
     keywords: '',
     description: '',
     content: '',
@@ -167,13 +176,36 @@ async function handleSubmit() {
     .map((kw) => kw.trim())
     .filter((kw) => kw)
 
-  if (!createMode.value && uploadedFile.value) {
+  if (createMode.value) {
+    try {
+      await uploadTextApi({
+        title: form.value.title,
+        content: form.value.content,
+        description: form.value.description || undefined,
+        college_id: form.value.collegeId || undefined,
+        discipline_id: 1,
+        keywords,
+        visibility: 'public',
+      })
+      ElMessage.success('创建成功')
+      emit('submit', {
+        ...form.value,
+        keywords: keywords.join(','),
+        collegeId: form.value.collegeId,
+        collegeName: form.value.collegeName,
+      })
+    } catch (error) {
+      console.error('创建文件失败:', error)
+      ElMessage.error('创建文件失败，请重试')
+      return
+    }
+  } else if (uploadedFile.value) {
     try {
       const formData = new FormData()
       formData.append('file', uploadedFile.value)
       formData.append('title', form.value.title)
       formData.append('description', form.value.description || '')
-      formData.append('college_id', '1')
+      formData.append('college_id', String(form.value.collegeId || 1))
       formData.append('discipline_id', '1')
       formData.append('keywords', keywords.join(','))
       formData.append('category_id', '5')
@@ -183,17 +215,14 @@ async function handleSubmit() {
       emit('submit', {
         ...form.value,
         keywords: keywords.join(','),
+        collegeId: form.value.collegeId,
+        collegeName: form.value.collegeName,
       })
     } catch (error) {
       console.error('文件上传失败:', error)
       ElMessage.error('文件上传失败，请重试')
       return
     }
-  } else {
-    emit('submit', {
-      ...form.value,
-      keywords: keywords.join(','),
-    })
   }
 }
 
@@ -304,6 +333,10 @@ function handleClose() {
               <div class="storage-note">
                 <span class="note-icon">⚠️</span>
                 <span>注意：由于浏览器存储限制，单个文件实际不能超过4MB</span>
+              </div>
+              <div class="storage-note warning-note">
+                <span class="note-icon">🚫</span>
+                <span>不能上传非法、非公开文件</span>
               </div>
             </div>
           </el-popover>
@@ -469,6 +502,12 @@ function handleClose() {
   border-radius: 4px;
   font-size: 12px;
   color: #e6a23c;
+}
+
+.warning-note {
+  background: #fef0f0;
+  color: #f56c6c;
+  font-weight: 500;
 }
 
 .note-icon {

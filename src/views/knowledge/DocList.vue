@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { TransitionGroup } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Files, Picture, Headset, VideoCamera, FolderOpened } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
+import { deleteDocApi } from '@/api/knowledge'
 import UploadFileForm from '@/components/knowledge/UploadFileForm.vue'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 
@@ -213,24 +215,30 @@ function handleEditSubmit(data: { title: string; keywords: Keyword[] }) {
   showEditDialog.value = false
 }
 
-function handleDelete(file: KnowledgeFile) {
+async function handleDelete(file: KnowledgeFile) {
   ElMessageBox.confirm('确定要删除该文件吗？', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning',
   })
-    .then(() => {
-      const index = uploadedFiles.value.findIndex((f) => f.id === file.id)
-      if (index > -1) {
-        uploadedFiles.value.splice(index, 1)
-        saveFiles(uploadedFiles.value)
+    .then(async () => {
+      try {
+        await deleteDocApi(file.id)
+        const index = uploadedFiles.value.findIndex((f) => f.id === file.id)
+        if (index > -1) {
+          uploadedFiles.value.splice(index, 1)
+          saveFiles(uploadedFiles.value)
+        }
         ElMessage.success('删除成功')
+      } catch (error) {
+        console.error('删除文件失败:', error)
+        ElMessage.error('删除文件失败')
       }
     })
     .catch(() => {})
 }
 
-function handleFormSubmit(data: { title: string; category: string; keywords: string; description: string; content: string; fileName: string; fileSize: number; fileData: string }) {
+function handleFormSubmit(data: { title: string; category: string; collegeId: number; collegeName: string; keywords: string; description: string; content: string; fileName: string; fileSize: number; fileData: string }) {
   const keywordPhrases = data.keywords
     .split(/[,，、\s]+/)
     .map((kw) => kw.trim())
@@ -280,15 +288,15 @@ function handleFormSubmit(data: { title: string; category: string; keywords: str
   const newFile: KnowledgeFile = {
     id: Date.now(),
     title,
-    category: data.category || '未分类',
-    categoryName: data.category || '未分类',
+    category: data.collegeName || '未分类',
+    categoryName: data.collegeName || '未分类',
     author: '当前用户',
     summary: data.description,
     fileUrl: '',
     fileSize: size,
     fileType,
-    collegeId: 0,
-    collegeName: data.category || '未分类',
+    collegeId: data.collegeId || 0,
+    collegeName: data.collegeName || '未分类',
     keywords,
     status: 1,
     createdAt: new Date().toLocaleString('zh-CN'),
@@ -371,11 +379,12 @@ function handleFormSubmit(data: { title: string; category: string; keywords: str
         <p>暂无文件，请上传</p>
       </div>
 
-      <div v-else class="file-grid">
+      <TransitionGroup v-else name="card" tag="div" class="file-grid">
         <div
-          v-for="file in paginatedFiles"
+          v-for="(file, index) in paginatedFiles"
           :key="file.id"
           class="file-card"
+          :style="{ animationDelay: `${index * 50}ms` }"
           @click="handleFileClick(file)"
         >
           <div class="card-icon-wrapper" :style="{ background: fileTypeColors[file.fileType] + '15' }">
@@ -405,21 +414,21 @@ function handleFormSubmit(data: { title: string; category: string; keywords: str
             </el-button>
           </div>
         </div>
+      </TransitionGroup>
+
+      <div class="pagination-wrapper">
+        <el-pagination
+          :current-page="currentPage"
+          :page-size="pageSize"
+          :total="totalFiles"
+          :page-sizes="[8, 10, 12, 16, 18]"
+          :pager-count="6"
+          layout="total, sizes, prev, pager, next, jumper"
+          :hide-on-single-page="false"
+          @current-change="handleCurrentChange"
+          @size-change="(size) => { pageSize.value = size; currentPage.value = 1; }"
+        />
       </div>
-
-    </div>
-
-    <div class="pagination-wrapper">
-      <el-pagination
-        :current-page="currentPage"
-        :page-size="pageSize"
-        :total="totalFiles"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
-        :hide-on-single-page="false"
-        @current-change="handleCurrentChange"
-        @size-change="(size) => { pageSize.value = size; currentPage.value = 1; }"
-      />
     </div>
 
     <UploadFileForm
@@ -558,7 +567,9 @@ function handleFormSubmit(data: { title: string; category: string; keywords: str
   background: #fff;
   border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
+  padding-bottom: 80px;
   box-shadow: var(--shadow-sm);
+  position: relative;
 }
 
 .empty-state {
@@ -587,14 +598,60 @@ function handleFormSubmit(data: { title: string; category: string; keywords: str
   border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), box-shadow 0.3s ease, border-color 0.3s ease;
   overflow: hidden;
+  will-change: transform, opacity;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
 }
 
 .file-card:hover {
   border-color: var(--color-primary);
   box-shadow: var(--shadow-base);
-  transform: translateY(-2px);
+  transform: translate3d(0, -6px, 0);
+}
+
+.card-enter-active {
+  animation: cardEnter 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.card-leave-active {
+  animation: cardLeave 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+.card-move {
+  transition: transform 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+@keyframes cardEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 30px, 0) scale(0.92);
+    filter: blur(4px);
+  }
+  60% {
+    opacity: 1;
+    transform: translate3d(0, -5px, 0) scale(1.02);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes cardLeave {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, -20px, 0) scale(0.96);
+    filter: blur(4px);
+  }
 }
 
 .card-icon-wrapper {
@@ -689,14 +746,58 @@ function handleFormSubmit(data: { title: string; category: string; keywords: str
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-top: var(--spacing-xl);
-  padding: var(--spacing-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
   background: #fff;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  position: sticky;
-  bottom: 20px;
-  z-index: 100;
+  border-top: 1px solid var(--color-border);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+}
+
+.pagination-wrapper :deep(.el-pagination) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pagination-wrapper :deep(.el-pagination__btn) {
+  transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.2s ease;
+  backface-visibility: hidden;
+}
+
+.pagination-wrapper :deep(.el-pagination__btn:not(.is-disabled):hover) {
+  transform: scale(1.15);
+}
+
+.pagination-wrapper :deep(.el-pagination__btn:not(.is-disabled):active) {
+  transform: scale(0.9);
+}
+
+.pagination-wrapper :deep(.el-pagination__number) {
+  transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.2s ease;
+  backface-visibility: hidden;
+}
+
+.pagination-wrapper :deep(.el-pagination__number:hover) {
+  transform: translate3d(0, -3px, 0) scale(1.05);
+}
+
+.pagination-wrapper :deep(.el-pagination__number.is-current) {
+  animation: currentPageScale 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes currentPageScale {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1.1);
+  }
 }
 
 .upload-form :deep(.el-form-item) {
