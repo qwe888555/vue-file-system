@@ -4,13 +4,12 @@ import { ref, computed, watch } from 'vue'
 import type { Conversation, Message, KnowledgeFile } from '@/types'
 import {
   getConversationsApi,
+  getConversationDetailApi,
   createConversationApi,
   deleteConversationApi,
   renameConversationApi,
-  getMessagesApi,
   rateMessageApi,
 } from '@/api/chat'
-import { useRequest } from './useRequest'
 
 /** localStorage 缓存 key */
 const CACHE_KEY = 'chat_conversations_cache'
@@ -27,13 +26,6 @@ export function useChat() {
   const currentConversationId = ref<number | null>(null)
   const messagesMap = ref<Record<number, Message[]>>({})
   const searchKeyword = ref('')
-
-  // 请求封装
-  const listReq = useRequest(getConversationsApi)
-  const createReq = useRequest(createConversationApi)
-  const deleteReq = useRequest(deleteConversationApi)
-  const renameReq = useRequest(renameConversationApi)
-  const messagesReq = useRequest(getMessagesApi)
 
   // ── Computed ──
   const currentMessages = computed<Message[]>(() => {
@@ -52,7 +44,7 @@ export function useChat() {
     return conversations.value.filter(c => c.title.toLowerCase().includes(kw))
   })
 
-  const loading = computed(() => listReq.loading.value)
+  const loading = ref(false)
 
   // ── 缓存读写 ──
   function loadCache() {
@@ -85,36 +77,50 @@ export function useChat() {
 
   // ── 操作方法 ──
   async function fetchConversations() {
-    const res = await listReq.execute({ page: 1, pageSize: 100 })
-    if (res && res.list) {
-      conversations.value = res.list
-      saveCache()
-    }
+    loading.value = true
+    try {
+      const list = await getConversationsApi()
+      if (list) {
+        conversations.value = list
+        saveCache()
+      }
+    } catch { /* 忽略 */ }
+    finally { loading.value = false }
   }
 
   async function selectConversation(id: number) {
     currentConversationId.value = id
     if (!messagesMap.value[id]) {
-      const msgs = await messagesReq.execute(id)
-      if (msgs) {
-        messagesMap.value[id] = msgs
-      }
+      try {
+        const detail = await getConversationDetailApi(id)
+        if (detail) {
+          messagesMap.value[id] = detail.messages
+          // 更新对话标题
+          const conv = conversations.value.find(c => c.id === id)
+          if (conv) {
+            conv.title = detail.conversation.title || conv.title
+            conv.messageCount = detail.conversation.messageCount
+          }
+        }
+      } catch { /* 忽略 */ }
     }
   }
 
   async function createConversation(): Promise<Conversation | null> {
-    const conv = await createReq.execute()
-    if (conv) {
-      conversations.value.unshift(conv)
-      currentConversationId.value = conv.id
-      messagesMap.value[conv.id] = []
-      saveCache()
-    }
-    return conv
+    try {
+      const conv = await createConversationApi()
+      if (conv) {
+        conversations.value.unshift(conv)
+        currentConversationId.value = conv.id
+        messagesMap.value[conv.id] = []
+        saveCache()
+      }
+      return conv
+    } catch { return null }
   }
 
   async function deleteConversation(id: number) {
-    await deleteReq.execute(id)
+    try { await deleteConversationApi(id) } catch { /* 忽略 */ }
     conversations.value = conversations.value.filter(c => c.id !== id)
     if (currentConversationId.value === id) {
       currentConversationId.value = conversations.value[0]?.id ?? null
@@ -124,10 +130,12 @@ export function useChat() {
   }
 
   async function renameConversation(id: number, title: string) {
-    await renameReq.execute(id, title)
-    const conv = conversations.value.find(c => c.id === id)
-    if (conv) conv.title = title
-    saveCache()
+    try {
+      const updated = await renameConversationApi(id, title)
+      const conv = conversations.value.find(c => c.id === id)
+      if (conv && updated) conv.title = updated.title
+      saveCache()
+    } catch { /* 忽略 */ }
   }
 
   /** 添加用户消息到当前对话（本地即时） */

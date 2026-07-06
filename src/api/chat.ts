@@ -3,57 +3,41 @@
 import request from './request'
 import type { Conversation, Message, PaginatedResult } from '@/types'
 
-/** 后端会话列表原始响应格式 */
-interface ConversationsRawItem {
-  id: number
-  title: string
-  created_at: string
-  updated_at: string
-}
-interface ConversationsRawResponse {
-  count: number
-  next: string | null
-  previous: string | null
-  results: ConversationsRawItem[]
+/** 获取会话列表（文档 1.1）— 返回纯数组 */
+export async function getConversationsApi(): Promise<Conversation[]> {
+  const res: Array<{ id: number; title: string; created_at: string; updated_at: string }> = await request.get('/chat/conversations/')
+  return res.map((item) => ({
+    id: item.id,
+    title: item.title || '',
+    isFavorite: false,
+    messageCount: 0,
+    createdAt: item.created_at,
+    updatedAt: item.updated_at,
+  }))
 }
 
-/** 获取会话列表（分页）— 适配真实后端格式 */
-export async function getConversationsApi(params: { page: number; pageSize: number }): Promise<PaginatedResult<Conversation>> {
-  const res: ConversationsRawResponse = await request.get('/chat/conversations/', {
-    params: { page: params.page, page_size: params.pageSize },
-  })
+/** 获取会话详情含消息列表（文档 1.2） */
+export async function getConversationDetailApi(conversationId: number): Promise<{ conversation: Conversation; messages: Message[] }> {
+  const res: {
+    id: number; title: string; created_at: string; updated_at: string
+    messages: Array<{ id: number; role: string; content: string; references: any; created_at: string }>
+  } = await request.get(`/chat/conversations/${conversationId}/`)
   return {
-    list: res.results.map((item) => ({
-      id: item.id,
-      title: item.title || '',
-      isFavorite: false,
-      messageCount: 0,
-      createdAt: item.created_at,
-      updatedAt: item.updated_at,
+    conversation: { id: res.id, title: res.title || '', isFavorite: false, messageCount: res.messages?.length || 0, createdAt: res.created_at, updatedAt: res.updated_at },
+    messages: (res.messages || []).map((m) => ({
+      id: m.id, conversationId, role: m.role as 'user' | 'assistant', content: m.content, references: m.references, createdAt: m.created_at,
     })),
-    total: res.count,
-    page: params.page,
-    pageSize: params.pageSize,
   }
 }
 
-/** 后端新建会话响应格式 */
-interface CreateConversationResponse {
-  id: number
-  title: string
-  messages: any[]
-  created_at: string
-  updated_at: string
-}
-
-/** 新建会话 */
-export async function createConversationApi(): Promise<Conversation> {
-  const res: CreateConversationResponse = await request.post('/chat/conversations/')
+/** 新建会话（文档 1.3） */
+export async function createConversationApi(title?: string): Promise<Conversation> {
+  const res: { id: number; title: string; created_at: string; updated_at: string } = await request.post('/chat/conversations/', title ? { title } : undefined)
   return {
     id: res.id,
     title: res.title || '',
     isFavorite: false,
-    messageCount: res.messages?.length || 0,
+    messageCount: 0,
     createdAt: res.created_at,
     updatedAt: res.updated_at,
   }
