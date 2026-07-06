@@ -129,9 +129,11 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
           }
           break
         }
-        case 'start':
-          messageId.value = parsed?.message_id || null
+        case 'start': {
+          const startData = JSON.parse(dataStr)
+          messageId.value = startData?.message_id || null
           break
+        }
       }
     } catch {
       // JSON parse 失败则忽略该事件
