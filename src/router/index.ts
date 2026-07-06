@@ -75,7 +75,7 @@ router.beforeEach(async (to, _from, next) => {
 
   // 角色菜单校验
   const allowedPaths = getAllowedPaths(currentRole!)
-  const matched = to.matched.some((r) => allowedPaths.some((p) => r.path.startsWith(p)))
+  const matched = to.matched.some((r) => allowedPaths.some((p) => r.path === p || r.path.startsWith(p + '/')))
   if (!matched && to.path !== '/') {
     console.warn(
       `[权限守卫] 路径 "${to.path}" 不在角色 "${currentRole}" 的允许列表中:`,

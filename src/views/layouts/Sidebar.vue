@@ -7,7 +7,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { usePermissionStore } from '@/store/permission'
 import { ElMessageBox } from 'element-plus'
-import logoImg from '@/assets/logo.png'
 import PersonalCenter from '@/components/common/PersonalCenter.vue'
 
 const route = useRoute()
@@ -58,7 +57,8 @@ async function handleLogout() {
   <aside class="sidebar">
     <!-- Logo -->
     <div class="sidebar-logo">
-      <img :src="logoImg" alt="成都东软学院" class="sidebar-logo-img" />
+      <span class="sidebar-logo-text">NISU-CD</span>
+      <span class="sidebar-logo-sub">资源系统</span>
     </div>
 
     <div class="sidebar-divider" />
@@ -137,17 +137,25 @@ async function handleLogout() {
 .sidebar-logo {
   height: 72px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 0 24px;
+  padding: 0 16px;
   flex-shrink: 0;
+  gap: 2px;
 }
-
-.sidebar-logo-img {
-  height: 40px;
-  width: auto;
-  max-width: 100%;
-  object-fit: contain;
+.sidebar-logo-text {
+  font-size: 20px;
+  font-weight: 700;
+  color: #2b5fd9;
+  letter-spacing: 2px;
+  line-height: 1.2;
+}
+.sidebar-logo-sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: #8e95a6;
+  letter-spacing: 4px;
 }
 
 /* ── 分割线 ── */
