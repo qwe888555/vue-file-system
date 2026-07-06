@@ -5,7 +5,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
-import logoImg from '@/assets/logo.png'
 import { ElMessageBox } from 'element-plus'
 import type { KnowledgeFile } from '@/types'
 import { useChat } from '@/composables/useChat'
@@ -162,8 +161,9 @@ onMounted(() => {
     <!-- ═══ 左侧边栏（对话列表）═══ -->
     <aside class="chat-sidebar" :class="{ collapsed: !sidebarOpen }">
       <!-- 顶部 -->
-      <div class="sidebar-logo-area">
-        <img :src="logoImg" alt="成都东软学院" class="sidebar-logo-img" />
+      <div class="sidebar-logo">
+        <span class="sidebar-logo-text">NISU-CD</span>
+        <span class="sidebar-logo-sub">资源系统</span>
       </div>
 
       <!-- 搜索 -->
@@ -443,16 +443,28 @@ onMounted(() => {
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(64, 158, 255, 0.3), transparent);
 }
-.sidebar-logo-area {
-  padding: 20px 16px;
+.sidebar-logo {
+  height: 72px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  padding: 0 16px;
+  flex-shrink: 0;
+  gap: 2px;
 }
-.sidebar-logo-img {
-  height: 44px;
-  width: auto;
-  object-fit: contain;
+.sidebar-logo-text {
+  font-size: 22px;
+  font-weight: 700;
+  color: #2b5fd9;
+  letter-spacing: 2px;
+  line-height: 1.2;
+}
+.sidebar-logo-sub {
+  font-size: 13px;
+  font-weight: 500;
+  color: #8e95a6;
+  letter-spacing: 4px;
 }
 /* 退出按钮 */
 .sidebar-exit {
