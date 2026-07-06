@@ -155,11 +155,11 @@ export function useChat() {
   }
 
   /** 添加 AI 回复消息（SSE 完成后调用） */
-  function appendAssistantMessage(content: string, references?: KnowledgeFile[]): Message {
+  function appendAssistantMessage(content: string, references?: KnowledgeFile[], realId?: number): Message {
     const id = currentConversationId.value
     if (!id) throw new Error('No active conversation')
     const msg: Message = {
-      id: Date.now() + 1,
+      id: realId || Date.now() + 1,
       conversationId: id,
       role: 'assistant',
       content,

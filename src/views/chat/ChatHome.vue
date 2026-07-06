@@ -30,6 +30,7 @@ const inputText = ref('')
 const streamingContent = ref('')
 const isStreaming = ref(false)
 const streamingReferences = ref<KnowledgeFile[]>([])
+const streamingMessageId = ref<number | null>(null)
 let currentSSE: ReturnType<typeof useSSE> | null = null
 
 const isLoggedIn = computed(() => !!userStore.token)
@@ -119,9 +120,11 @@ async function sendMessage() {
 
   currentSSE = useSSE(convId, text, () => {
     isStreaming.value = false
-    chat.appendAssistantMessage(streamingContent.value, streamingReferences.value)
+    const realId = currentSSE?.messageId?.value
+    chat.appendAssistantMessage(streamingContent.value, streamingReferences.value, realId || undefined)
     streamingContent.value = ''
     streamingReferences.value = []
+    streamingMessageId.value = null
   })
   watch(currentSSE.content, (val) => { streamingContent.value = val })
   watch(currentSSE.references, (val) => { streamingReferences.value = val })
@@ -130,14 +133,14 @@ async function sendMessage() {
 function handleFeedback(messageId: number, type: 'like' | 'dislike') {
   chat.submitFeedback(messageId, type)
 }
-onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAnim.value = false, 2400) })
+onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAnim.value = false, 2600) })
 </script>
 
 <template>
   <div class="chat-app">
-    <!-- 蜂巢入场动画 -->
+    <!-- 蜂巢入场动画（相 1-2：弹出 → 聚合 → 缩小） -->
     <div v-if="showEntryAnim" class="entry-overlay">
-      <div class="honeycomb">
+      <div class="entry-honeycomb">
         <div></div><div></div><div></div><div></div><div></div><div></div><div></div>
       </div>
     </div>
@@ -287,29 +290,20 @@ onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAni
           <!-- 欢迎页（无对话或对话为空时显示） -->
           <div v-else class="chat-welcome">
             <div class="welcome-icon">
-              <div class="loader">
-                <svg width="100" height="100" viewBox="0 0 100 100">
-                  <defs>
-                    <mask id="clipping">
-                      <polygon points="0,0 100,0 100,100 0,100" fill="black"></polygon>
-                      <polygon points="25,25 75,25 50,75" fill="white"></polygon>
-                      <polygon points="50,25 75,75 25,75" fill="white"></polygon>
-                      <polygon points="35,35 65,35 50,65" fill="white"></polygon>
-                      <polygon points="35,35 65,35 50,65" fill="white"></polygon>
-                      <polygon points="35,35 65,35 50,65" fill="white"></polygon>
-                      <polygon points="35,35 65,35 50,65" fill="white"></polygon>
-                    </mask>
-                  </defs>
-                </svg>
-                <div class="box"></div>
+              <div class="wi-honeycomb">
+                <div></div><div></div><div></div><div></div><div></div><div></div><div></div>
               </div>
             </div>
-            <h2 class="welcome-title">你好！有什么可以帮助你的？</h2>
-            <div v-if="topQuestions.length" class="quick-questions">
+            <h2 class="welcome-title" :class="{ 'wi-anim-in': !showEntryAnim }">
+              你好！有什么可以帮助你的？
+              <span class="title-scanline" />
+            </h2>
+            <div v-if="topQuestions.length" class="quick-questions" :class="{ 'wi-anim-in': !showEntryAnim }">
               <button
-                v-for="q in topQuestions"
+                v-for="(q, qi) in topQuestions"
                 :key="q.text"
                 class="qq-btn"
+                :style="{ transitionDelay: `${qi * 70}ms` }"
                 @click="quickQuestion(q.text)"
               >{{ q.text }}</button>
             </div>
@@ -696,88 +690,13 @@ onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAni
   text-align: center;
 }
 .welcome-icon {
-  margin-bottom: 24px;
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: rgba(64, 158, 255, 0.06);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  z-index: 1;
-  box-shadow: 0 0 40px rgba(64, 158, 255, 0.08), inset 0 0 20px rgba(64, 158, 255, 0.04);
+  margin-bottom: 60px;
+  width: 72px; height: 72px;
+  display: flex; align-items: center; justify-content: center;
+  position: relative; z-index: 1;
 }
 
-/* 欢迎页加载动画（蓝调版） */
-.loader {
-  --color-one: #ffbf48;
-  --color-two: #be4a1d;
-  --color-three: #ffbf4780;
-  --color-four: #bf4a1d80;
-  --color-five: #ffbf4740;
-  --time-animation: 2s;
-  --size: 0.56;
-  position: relative;
-  border-radius: 50%;
-  transform: scale(var(--size));
-  box-shadow: 0 0 25px 0 var(--color-three), 0 20px 50px 0 var(--color-four);
-  animation: colorize calc(var(--time-animation) * 3) ease-in-out infinite;
-  transform-origin: center;
-}
-
-.loader::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100px;
-  height: 100px;
-  border-radius: 50%;
-  border-top: solid 1px var(--color-one);
-  border-bottom: solid 1px var(--color-two);
-  background: linear-gradient(180deg, var(--color-five), var(--color-four));
-  box-shadow: inset 0 10px 10px 0 var(--color-three), inset 0 -10px 10px 0 var(--color-four);
-}
-
-.loader .box {
-  width: 100px;
-  height: 100px;
-  background: linear-gradient(180deg, var(--color-one) 30%, var(--color-two) 70%);
-  mask: url(#clipping);
-  -webkit-mask: url(#clipping);
-}
-
-.loader svg { position: absolute; }
-.loader svg #clipping { filter: contrast(15); animation: roundness calc(var(--time-animation) / 2) linear infinite; }
-.loader svg #clipping polygon { filter: blur(7px); }
-.loader svg #clipping polygon:nth-child(1) { transform-origin: 75% 25%; transform: rotate(90deg); }
-.loader svg #clipping polygon:nth-child(2) { transform-origin: 50% 50%; animation: rotation var(--time-animation) linear infinite reverse; }
-.loader svg #clipping polygon:nth-child(3) { transform-origin: 50% 60%; animation: rotation var(--time-animation) linear infinite; animation-delay: calc(var(--time-animation) / -3); }
-.loader svg #clipping polygon:nth-child(4) { transform-origin: 40% 40%; animation: rotation var(--time-animation) linear infinite reverse; }
-.loader svg #clipping polygon:nth-child(5) { transform-origin: 40% 40%; animation: rotation var(--time-animation) linear infinite reverse; animation-delay: calc(var(--time-animation) / -2); }
-.loader svg #clipping polygon:nth-child(6) { transform-origin: 60% 40%; animation: rotation var(--time-animation) linear infinite; }
-.loader svg #clipping polygon:nth-child(7) { transform-origin: 60% 40%; animation: rotation var(--time-animation) linear infinite; animation-delay: calc(var(--time-animation) / -1.5); }
-
-@keyframes rotation {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-@keyframes roundness {
-  0% { filter: contrast(15); }
-  20% { filter: contrast(3); }
-  40% { filter: contrast(3); }
-  60% { filter: contrast(15); }
-  100% { filter: contrast(15); }
-}
-@keyframes colorize {
-  0% { filter: hue-rotate(0deg); }
-  20% { filter: hue-rotate(-30deg); }
-  40% { filter: hue-rotate(-60deg); }
-  60% { filter: hue-rotate(-90deg); }
-  80% { filter: hue-rotate(-45deg); }
-  100% { filter: hue-rotate(0deg); }
-}
+/* ═══ 标题入场 + 扫光特效 ═══ */
 .welcome-title {
   font-size: 22px;
   font-weight: 400;
@@ -786,15 +705,50 @@ onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAni
   letter-spacing: -0.04em;
   position: relative;
   z-index: 1;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.4s ease-out, transform 0.4s ease-out;
 }
-.welcome-desc {
-  font-size: 14px;
-  font-weight: 400;
-  color: #555;
-  margin: 0 0 24px;
-  letter-spacing: 0.05em;
-  position: relative;
-  z-index: 1;
+.welcome-title.wi-anim-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+/* 扫光光带 */
+.title-scanline {
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, rgba(120,190,255,0.5) 50%, transparent 100%);
+  background-size: 200% 100%;
+  opacity: 0;
+}
+.welcome-title.wi-anim-in .title-scanline {
+  opacity: 1;
+  animation: scanlineSweep 0.4s ease-out 0s forwards;
+}
+@keyframes scanlineSweep {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ═══ 快捷按钮入场（分层延时 + 外发光脉冲） ═══ */
+.quick-questions {
+  opacity: 0;
+}
+.quick-questions.wi-anim-in {
+  opacity: 1;
+}
+.qq-btn {
+  opacity: 0;
+  transform: scale(0.7);
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out, box-shadow 0.3s ease-out, background 0.2s, color 0.2s;
+}
+.quick-questions.wi-anim-in .qq-btn {
+  opacity: 1;
+  transform: scale(1);
+  animation: btnGlowPulse 0.3s ease-out forwards;
+}
+@keyframes btnGlowPulse {
+  0%   { box-shadow: 0 0 12px rgba(80,160,255,0.4); }
+  100% { box-shadow: 0 0 8px rgba(80,160,255,0); }
 }
 
 /* 快捷提问胶囊按钮 */
@@ -997,34 +951,78 @@ onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAni
 
 </style>
 <style>
-/* 蜂巢入场动画（Uiverse 原版效果） */
+/* ═══ 入场动画：蜂巢弹出 → 聚合 → 缩小 ═══ */
 .entry-overlay {
   position: fixed; inset: 0; z-index: 9999;
   display: flex; align-items: center; justify-content: center;
   background: #fff;
 }
-.honeycomb { height: 24px; position: relative; width: 24px; transform: scale(1.5); }
-.honeycomb div {
-  animation: honeycomb 2.1s infinite backwards;
+.entry-honeycomb {
+  height: 24px; position: relative; width: 24px;
+  transform: scale(3);
+  animation: containerFull 2600ms cubic-bezier(0.21, 0.98, 0.22, 1) forwards;
+}
+.entry-honeycomb div {
   background: #409eff; height: 12px; margin-top: 6px;
   position: absolute; width: 24px;
+  opacity: 0; transform: scale(0);
+  animation: popIn 600ms cubic-bezier(0.21, 0.98, 0.22, 1) forwards;
 }
-.honeycomb div:after, .honeycomb div:before {
+.entry-honeycomb div:after, .entry-honeycomb div:before {
   content: ''; border-left: 12px solid transparent; border-right: 12px solid transparent;
   position: absolute; left: 0; right: 0;
 }
-.honeycomb div:after { top: -6px; border-bottom: 6px solid #409eff; }
-.honeycomb div:before { bottom: -6px; border-top: 6px solid #409eff; }
-.honeycomb div:nth-child(1) { animation-delay: 0s; left: -28px; top: 0; }
-.honeycomb div:nth-child(2) { animation-delay: 0.1s; left: -14px; top: 22px; }
-.honeycomb div:nth-child(3) { animation-delay: 0.2s; left: 14px; top: 22px; }
-.honeycomb div:nth-child(4) { animation-delay: 0.3s; left: 28px; top: 0; }
-.honeycomb div:nth-child(5) { animation-delay: 0.4s; left: 14px; top: -22px; }
-.honeycomb div:nth-child(6) { animation-delay: 0.5s; left: -14px; top: -22px; }
-.honeycomb div:nth-child(7) { animation-delay: 0.6s; left: 0; top: 0; }
+.entry-honeycomb div:after { top: -6px; border-bottom: 6px solid #409eff; }
+.entry-honeycomb div:before { bottom: -6px; border-top: 6px solid #409eff; }
+.entry-honeycomb div:nth-child(1) { animation-delay: 0ms;   left: -28px; top: 0; }
+.entry-honeycomb div:nth-child(2) { animation-delay: 120ms; left: -14px; top: 22px; }
+.entry-honeycomb div:nth-child(3) { animation-delay: 240ms; left: 14px; top: 22px; }
+.entry-honeycomb div:nth-child(4) { animation-delay: 360ms; left: 28px; top: 0; }
+.entry-honeycomb div:nth-child(5) { animation-delay: 480ms; left: 14px; top: -22px; }
+.entry-honeycomb div:nth-child(6) { animation-delay: 600ms; left: -14px; top: -22px; }
+.entry-honeycomb div:nth-child(7) { animation-delay: 720ms; left: 0; top: 0; }
 
-@keyframes honeycomb {
-  0%, 20%, 80%, 100% { opacity: 0; transform: scale(0); }
-  30%, 70% { opacity: 1; transform: scale(1); }
+/* 单块弹出 */
+@keyframes popIn {
+  0%   { opacity: 0; transform: scale(0); }
+  70%  { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
 }
+/* 容器：稳定 bounce（800-1300ms）→ 缩小（1300-1800ms）→ 上移归位（1800-2600ms） */
+@keyframes containerFull {
+  0%, 30.8% { transform: scale(3) translateY(0); }
+  34.6%     { transform: scale(3.12) translateY(0); }
+  42.3%     { transform: scale(3) translateY(0); }
+  50%       { transform: scale(3) translateY(0); }
+  69.2%     { transform: scale(1) translateY(0); }
+  100%      { transform: scale(1) translateY(-190px); }
+}
+
+/* ═══ 欢迎页永久蜂巢图标（缓慢顺时旋转） ═══ */
+.wi-honeycomb {
+  height: 24px; position: relative; width: 24px;
+  animation: slowSpin 12s linear infinite;
+  animation-delay: 2.6s; /* 等待入场动画完成 */
+}
+@keyframes slowSpin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.wi-honeycomb div {
+  background: #409eff; height: 12px; margin-top: 6px;
+  position: absolute; width: 24px;
+}
+.wi-honeycomb div:after, .wi-honeycomb div:before {
+  content: ''; border-left: 12px solid transparent; border-right: 12px solid transparent;
+  position: absolute; left: 0; right: 0;
+}
+.wi-honeycomb div:after { top: -6px; border-bottom: 6px solid #409eff; }
+.wi-honeycomb div:before { bottom: -6px; border-top: 6px solid #409eff; }
+.wi-honeycomb div:nth-child(1) { left: -28px; top: 0; }
+.wi-honeycomb div:nth-child(2) { left: -14px; top: 22px; }
+.wi-honeycomb div:nth-child(3) { left: 14px; top: 22px; }
+.wi-honeycomb div:nth-child(4) { left: 28px; top: 0; }
+.wi-honeycomb div:nth-child(5) { left: 14px; top: -22px; }
+.wi-honeycomb div:nth-child(6) { left: -14px; top: -22px; }
+.wi-honeycomb div:nth-child(7) { left: 0; top: 0; }
 </style>

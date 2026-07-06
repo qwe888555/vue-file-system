@@ -11,6 +11,7 @@ export interface SSEResult {
   error: ReturnType<typeof ref<string | null>>
   references: ReturnType<typeof ref<KnowledgeFile[]>>
   suggested: ReturnType<typeof ref<string[]>>
+  messageId: ReturnType<typeof ref<number | null>>
   close: () => void
 }
 
@@ -27,6 +28,7 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
   const error = ref<string | null>(null)
   const references = ref<KnowledgeFile[]>([])
   const suggested = ref<string[]>([])
+  const messageId = ref<number | null>(null)
 
   let abortController: AbortController | null = null
   let closed = false
@@ -115,10 +117,9 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
           break
         }
         case 'references_detail': {
-          // 引用详情（仅 admin/super_admin 可见），替换 summary 型 references
-          const detail = JSON.parse(dataStr)
-          if (Array.isArray(detail) && detail.length > 0) {
-            references.value = detail.map((r: any) => ({
+          const refDetail = JSON.parse(dataStr)
+          if (Array.isArray(refDetail) && refDetail.length > 0) {
+            references.value = refDetail.map((r: any) => ({
               id: r.doc_id || 0,
               title: r.doc_title || '',
               fileType: r.file_type || '',
@@ -129,7 +130,7 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
           break
         }
         case 'start':
-          // start 事件包含 conversation_id 和 message_id，暂不处理
+          messageId.value = parsed?.message_id || null
           break
       }
     } catch {
@@ -148,5 +149,5 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
 
   onUnmounted(close)
 
-  return { content, streaming, done, error, references, suggested, close }
+  return { content, streaming, done, error, references, suggested, messageId, close }
 }
