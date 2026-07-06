@@ -104,17 +104,15 @@ const loading = ref(true)
 
 const page = ref(1)
 const pageSize = ref(10)
-const total = ref(0)
 
 onMounted(async () => {
   try {
     const [cats, faqs] = await Promise.all([
       getFaqCategoriesApi(),
-      getFaqItemsApi({ page: page.value, page_size: pageSize.value }),
+      getFaqItemsApi(),
     ])
     categories.value = cats
-    total.value = faqs.count
-    items.value = faqs.results
+    items.value = faqs.results || []
   } catch {
     // 静默
   } finally {
@@ -124,29 +122,10 @@ onMounted(async () => {
 
 async function loadItems() {
   page.value = 1
-  await loadPage()
-}
-
-async function loadPage() {
-  loading.value = true
-  try {
-    const res = await getFaqItemsApi({
-      page: page.value,
-      page_size: pageSize.value,
-      category: activeCategory.value || undefined,
-    })
-    total.value = res.count
-    items.value = res.results
-  } catch {
-    items.value = []
-  } finally {
-    loading.value = false
-  }
 }
 
 function handlePageChange(p: number) {
   page.value = p
-  loadPage()
 }
 
 function toggleItem(id: number) {
@@ -156,7 +135,6 @@ function toggleItem(id: number) {
 function handleSizeChange(s: number) {
   pageSize.value = s
   page.value = 1
-  loadPage()
 }
 
 function searchTag(tag: string) {
@@ -167,16 +145,22 @@ function handleSearch() {
   // computed 实时过滤
 }
 
-// 搜索过滤后的全部数据（用于分页统计）
+// 搜索 + 分类过滤后的全部数据（用于分页统计）
 const allFiltered = computed(() => {
-  if (!searchQuery.value) return items.value
-  const kw = searchQuery.value.toLowerCase()
-  return items.value.filter(
-    (item) =>
-      item.question.toLowerCase().includes(kw) ||
-      (item.answer && item.answer.toLowerCase().includes(kw)) ||
-      item.tags?.some((t) => t.toLowerCase().includes(kw)),
-  )
+  let result = items.value
+  if (activeCategory.value !== null) {
+    result = result.filter((item) => item.category === activeCategory.value)
+  }
+  if (searchQuery.value) {
+    const kw = searchQuery.value.toLowerCase()
+    result = result.filter(
+      (item) =>
+        item.question.toLowerCase().includes(kw) ||
+        (item.answer && item.answer.toLowerCase().includes(kw)) ||
+        item.tags?.some((t) => t.toLowerCase().includes(kw)),
+    )
+  }
+  return result
 })
 
 // 当前页展示的数据（搜索 + 客户端分页）

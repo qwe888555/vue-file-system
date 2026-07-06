@@ -8,8 +8,8 @@
 
     <!-- 搜索 + 筛选 -->
     <div class="fm-toolbar">
-      <el-input v-model="keyword" placeholder="搜索问题..." clearable size="default" style="width:240px" @input="loadData" @clear="loadData" />
-      <el-select v-model="categoryFilter" placeholder="全部分类" clearable size="default" style="width:140px" @change="loadData">
+      <el-input v-model="keyword" placeholder="搜索问题..." clearable size="default" style="width:240px" />
+      <el-select v-model="categoryFilter" placeholder="全部分类" clearable size="default" style="width:140px">
         <el-option label="全部分类" value="" />
         <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
       </el-select>
@@ -17,7 +17,7 @@
 
     <!-- 状态 Tabs -->
     <div class="fm-tabs">
-      <span v-for="tab in tabs" :key="tab.value" class="fm-tab" :class="{ active: activeTab === tab.value }" @click="activeTab = tab.value; loadData()">
+      <span v-for="tab in tabs" :key="tab.value" class="fm-tab" :class="{ active: activeTab === tab.value }" @click="activeTab = tab.value; page = 1">
         {{ tab.label }}
       </span>
     </div>
@@ -66,7 +66,7 @@
         <el-pagination
           v-model:current-page="page"
           v-model:page-size="pageSize"
-          :total="total"
+          :total="filteredList.length"
           layout="total, sizes, prev, pager, next, jumper"
           :page-sizes="[10, 15, 20]"
           @current-change="handlePageChange"
@@ -145,16 +145,8 @@ async function loadData() {
   loading.value = true
   page.value = 1
   try {
-    const res = await getFaqManageItemsApi({
-      status: activeTab.value || undefined,
-      search: keyword.value || undefined,
-    })
-    // 后端可能不返回 status，根据筛选条件补充
-    list.value = (res.results || []).map((item: any) => ({
-      ...item,
-      status: item.status || activeTab.value || 'published',
-    }))
-    total.value = list.value.length
+    const res = await getFaqManageItemsApi()
+    list.value = res.results || []
   } catch {
     list.value = []
   } finally {
@@ -162,21 +154,38 @@ async function loadData() {
   }
 }
 
+/** 前端搜索 + 分类 + 状态过滤 */
+const filteredList = computed(() => {
+  let result = list.value
+  if (activeTab.value) {
+    result = result.filter((item) => item.status === activeTab.value)
+  }
+  if (keyword.value) {
+    const kw = keyword.value.toLowerCase()
+    result = result.filter(
+      (item) => item.question.toLowerCase().includes(kw) || item.answer.toLowerCase().includes(kw),
+    )
+  }
+  if (categoryFilter.value) {
+    result = result.filter((item) => item.category === categoryFilter.value)
+  }
+  return result
+})
+
+/** 当前页数据 */
+const pagedList = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return filteredList.value.slice(start, start + pageSize.value)
+})
+
 function handlePageChange(p: number) {
   page.value = p
-  loadData()
 }
 
 function handleSizeChange(s: number) {
   pageSize.value = s
   page.value = 1
-  loadData()
 }
-
-const pagedList = computed(() => {
-  const start = (page.value - 1) * pageSize.value
-  return list.value.slice(start, start + pageSize.value)
-})
 
 function toggleItem(id: number) {
   expandedId.value = expandedId.value === id ? null : id
