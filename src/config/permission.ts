@@ -5,8 +5,10 @@ import type { UserRole, MenuItem } from '@/types'
 export const roleMenuMap: Record<UserRole, string[]> = {
   user: ['/chat', '/faq'],
   admin: ['/chat', '/faq-manage', '/knowledge', '/admin'],
+  admin_csic: ['/chat', '/faq-manage', '/knowledge', '/admin'],
+  admin_dept: ['/chat', '/faq-manage', '/knowledge'],
   college_admin: ['/chat', '/faq-manage', '/knowledge', '/admin'],
-  dept_admin: ['/chat', '/faq-manage', '/knowledge', '/admin'],
+  dept_admin: ['/chat', '/faq-manage', '/knowledge'],
   super_admin: ['/chat', '/faq-manage', '/knowledge', '/admin'],
 }
 
