@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { TransitionGroup } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi } from '@/api/knowledge'
 import UploadFileForm from '@/components/knowledge/UploadFileForm.vue'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 
@@ -15,144 +15,42 @@ const searchQuery = ref('')
 const showUploadDialog = ref(false)
 const showEditDialog = ref(false)
 const editingFile = ref<KnowledgeFile | null>(null)
+const loading = ref(false)
 
 const currentPage = ref(1)
 const pageSize = ref(8)
+const totalFiles = ref(0)
 
-const getStoredFiles = (): KnowledgeFile[] => {
-  const stored = localStorage.getItem('knowledgeFiles')
-  if (stored) {
-    return JSON.parse(stored)
+const uploadedFiles = ref<KnowledgeFile[]>([])
+
+async function fetchFiles() {
+  loading.value = true
+  try {
+    const res = await getDocListApi({
+      page: currentPage.value,
+      page_size: pageSize.value,
+    })
+    const data = res.results || res.data || res
+    uploadedFiles.value = Array.isArray(data) ? data : []
+    totalFiles.value = res.total || res.count || uploadedFiles.value.length
+  } catch (error: any) {
+    console.error('获取文件列表失败:', error)
+    if (error.response?.status === 404 && currentPage.value > 1) {
+      currentPage.value = 1
+      await fetchFiles()
+    }
+  } finally {
+    loading.value = false
   }
-  return []
 }
 
-const saveFiles = (files: KnowledgeFile[]) => {
-  localStorage.setItem('knowledgeFiles', JSON.stringify(files))
-}
-
-const defaultFiles: KnowledgeFile[] = [
-  {
-    id: 1,
-    title: '人工智能导论课件.pdf',
-    category: '课件',
-    categoryName: '课件',
-    author: '张老师',
-    summary: '人工智能基础概念介绍，包括机器学习、深度学习等内容',
-    fileUrl: '',
-    fileSize: 2048000,
-    fileType: 'pdf',
-    collegeId: 1,
-    collegeName: '信息工程学院',
-    keywords: [{ id: 1, phrase: '人工智能', match_type: 'exact', weight: 1 }, { id: 2, phrase: '机器学习', match_type: 'exact', weight: 1 }, { id: 3, phrase: '深度学习', match_type: 'exact', weight: 1 }],
-    status: 1,
-    createdAt: '2026-07-01 14:30:00',
-    updatedAt: '2026-07-01 14:30:00',
-  },
-  {
-    id: 2,
-    title: '大数据分析案例.mp4',
-    category: '视频',
-    categoryName: '视频',
-    author: '李老师',
-    summary: '大数据分析实际案例讲解视频',
-    fileUrl: '',
-    fileSize: 52428800,
-    fileType: 'video',
-    collegeId: 2,
-    collegeName: '计算机学院',
-    keywords: [{ id: 4, phrase: '大数据', match_type: 'exact', weight: 1 }, { id: 5, phrase: '数据分析', match_type: 'exact', weight: 1 }, { id: 6, phrase: '案例', match_type: 'exact', weight: 1 }],
-    status: 1,
-    createdAt: '2026-07-01 10:15:00',
-    updatedAt: '2026-07-01 10:15:00',
-  },
-  {
-    id: 3,
-    title: '软件工程实践报告.docx',
-    category: '报告',
-    categoryName: '报告',
-    author: '王同学',
-    summary: '软件工程课程实践项目报告',
-    fileUrl: '',
-    fileSize: 512000,
-    fileType: 'doc',
-    collegeId: 1,
-    collegeName: '信息工程学院',
-    keywords: [{ id: 7, phrase: '软件工程', match_type: 'exact', weight: 1 }, { id: 8, phrase: '实践', match_type: 'exact', weight: 1 }, { id: 9, phrase: '项目', match_type: 'exact', weight: 1 }],
-    status: 1,
-    createdAt: '2026-06-30 16:45:00',
-    updatedAt: '2026-06-30 16:45:00',
-  },
-  {
-    id: 4,
-    title: '校园活动记录.mp3',
-    category: '音频',
-    categoryName: '音频',
-    author: '广播站',
-    summary: '校园活动采访录音',
-    fileUrl: '',
-    fileSize: 3145728,
-    fileType: 'audio',
-    collegeId: 3,
-    collegeName: '数字艺术学院',
-    keywords: [{ id: 10, phrase: '校园活动', match_type: 'exact', weight: 1 }, { id: 11, phrase: '采访', match_type: 'exact', weight: 1 }, { id: 12, phrase: '录音', match_type: 'exact', weight: 1 }],
-    status: 1,
-    createdAt: '2026-06-30 09:20:00',
-    updatedAt: '2026-06-30 09:20:00',
-  },
-  {
-    id: 5,
-    title: '专业课程体系规划.pdf',
-    category: '文档',
-    categoryName: '文档',
-    author: '教务处',
-    summary: '2026年度专业课程体系规划方案',
-    fileUrl: '',
-    fileSize: 1024000,
-    fileType: 'pdf',
-    collegeId: 2,
-    collegeName: '计算机学院',
-    keywords: [{ id: 13, phrase: '课程体系', match_type: 'exact', weight: 1 }, { id: 14, phrase: '规划', match_type: 'exact', weight: 1 }, { id: 15, phrase: '专业', match_type: 'exact', weight: 1 }],
-    status: 1,
-    createdAt: '2026-06-29 11:00:00',
-    updatedAt: '2026-06-29 11:00:00',
-  },
-  {
-    id: 6,
-    title: '毕业设计模板.docx',
-    category: '模板',
-    categoryName: '模板',
-    author: '教务处',
-    summary: '2026届毕业设计论文模板',
-    fileUrl: '',
-    fileSize: 256000,
-    fileType: 'doc',
-    collegeId: 1,
-    collegeName: '信息工程学院',
-    keywords: [{ id: 16, phrase: '毕业设计', match_type: 'exact', weight: 1 }, { id: 17, phrase: '模板', match_type: 'exact', weight: 1 }, { id: 18, phrase: '论文', match_type: 'exact', weight: 1 }],
-    status: 1,
-    createdAt: '2026-06-28 15:30:00',
-    updatedAt: '2026-06-28 15:30:00',
-  },
-]
-
-const storedFiles = getStoredFiles()
-const uploadedFiles = ref<KnowledgeFile[]>(
-  storedFiles.length > 0 ? storedFiles : defaultFiles
-)
-
-const filteredFiles = computed(() => {
-  if (!searchQuery.value) return uploadedFiles.value
-  const query = searchQuery.value.toLowerCase()
-  return uploadedFiles.value.filter(
-    (file) =>
-      file.title.toLowerCase().includes(query) ||
-      file.summary.toLowerCase().includes(query) ||
-      file.author.toLowerCase().includes(query) ||
-      file.collegeName.toLowerCase().includes(query) ||
-      (file.keywords && file.keywords.some((kw) => kw.phrase.toLowerCase().includes(query)))
-  )
+onMounted(() => {
+  fetchFiles()
 })
+
+function handleOpenUpload() {
+  showUploadDialog.value = true
+}
 
 const recentFiles = computed(() => {
   return [...uploadedFiles.value]
@@ -160,7 +58,18 @@ const recentFiles = computed(() => {
     .slice(0, 5)
 })
 
-const totalFiles = computed(() => filteredFiles.value.length)
+const filteredFiles = computed(() => {
+  if (!searchQuery.value) return uploadedFiles.value
+  const query = searchQuery.value.toLowerCase()
+  return uploadedFiles.value.filter(
+    (file) =>
+      file.title.toLowerCase().includes(query) ||
+      (file.summary && file.summary.toLowerCase().includes(query)) ||
+      (file.author && file.author.toLowerCase().includes(query)) ||
+      (file.collegeName && file.collegeName.toLowerCase().includes(query)) ||
+      (file.keywords && file.keywords.some((kw) => kw.phrase.toLowerCase().includes(query)))
+  )
+})
 
 const paginatedFiles = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
@@ -170,6 +79,7 @@ const paginatedFiles = computed(() => {
 
 function handleCurrentChange(page: number) {
   currentPage.value = page
+  fetchFiles()
 }
 
 const fileTypeIcons: Record<string, any> = {
@@ -224,12 +134,8 @@ async function handleDelete(file: KnowledgeFile) {
     .then(async () => {
       try {
         await deleteDocApi(file.id)
-        const index = uploadedFiles.value.findIndex((f) => f.id === file.id)
-        if (index > -1) {
-          uploadedFiles.value.splice(index, 1)
-          saveFiles(uploadedFiles.value)
-        }
         ElMessage.success('删除成功')
+        fetchFiles()
       } catch (error) {
         console.error('删除文件失败:', error)
         ElMessage.error('删除文件失败')
@@ -238,85 +144,9 @@ async function handleDelete(file: KnowledgeFile) {
     .catch(() => {})
 }
 
-function handleFormSubmit(data: { title: string; category: string; collegeId: number; collegeName: string; keywords: string; description: string; content: string; fileName: string; fileSize: number; fileData: string }) {
-  const keywordPhrases = data.keywords
-    .split(/[,，、\s]+/)
-    .map((kw) => kw.trim())
-    .filter((kw) => kw)
-
-  const keywords = keywordPhrases.map((phrase, index) => ({
-    id: Date.now() + index,
-    phrase,
-    match_type: 'exact' as const,
-    weight: 1,
-  }))
-
-  const hasContent = data.content && data.content.trim()
-  let title = data.title
-  let size = data.fileSize
-  let fileType = 'doc'
-
-  if (hasContent) {
-    if (!data.title.includes('.md')) {
-      title += '.md'
-    }
-    size = data.content.length * 2
-    fileType = 'doc'
-  } else {
-    const ext = data.fileName.split('.').pop()?.toLowerCase() || ''
-    if (!data.title.includes(`.${ext}`)) {
-      title += `.${ext}`
-    }
-    
-    if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(ext)) {
-      fileType = 'image'
-    } else if (['mp3', 'wav'].includes(ext)) {
-      fileType = 'audio'
-    } else if (['mp4', 'avi', 'mkv'].includes(ext)) {
-      fileType = 'video'
-    } else if (['pdf'].includes(ext)) {
-      fileType = 'pdf'
-    } else if (['doc', 'docx'].includes(ext)) {
-      fileType = 'doc'
-    } else if (['txt'].includes(ext)) {
-      fileType = 'doc'
-    } else if (['zip', 'rar'].includes(ext)) {
-      fileType = 'archive'
-    }
-  }
-
-  const newFile: KnowledgeFile = {
-    id: Date.now(),
-    title,
-    category: data.collegeName || '未分类',
-    categoryName: data.collegeName || '未分类',
-    author: '当前用户',
-    summary: data.description,
-    fileUrl: '',
-    fileSize: size,
-    fileType,
-    collegeId: data.collegeId || 0,
-    collegeName: data.collegeName || '未分类',
-    keywords,
-    status: 1,
-    createdAt: new Date().toLocaleString('zh-CN'),
-    updatedAt: new Date().toLocaleString('zh-CN'),
-    content: hasContent ? data.content : '',
-    fileData: data.fileData,
-  }
-
-  uploadedFiles.value.unshift(newFile)
-  try {
-    saveFiles(uploadedFiles.value)
-    showUploadDialog.value = false
-    setTimeout(() => {
-      ElMessage.success(hasContent ? '创建成功' : '上传成功')
-    }, 1000)
-  } catch (error) {
-    uploadedFiles.value.shift()
-    showUploadDialog.value = false
-    ElMessage.error('存储失败，文件过大或浏览器存储已满，请尝试上传更小的文件')
-  }
+function handleFormSubmit() {
+  showUploadDialog.value = false
+  fetchFiles()
 }
 </script>
 
@@ -327,7 +157,7 @@ function handleFormSubmit(data: { title: string; category: string; collegeId: nu
         <h2 class="page-title">知识库管理</h2>
         <p class="page-subtitle">管理和浏览所有上传的文档资源</p>
       </div>
-      <el-button type="primary" @click="showUploadDialog = true" class="upload-btn">
+      <el-button type="primary" @click="handleOpenUpload" class="upload-btn">
         <el-icon><Upload /></el-icon>
         上传文件
       </el-button>
@@ -426,7 +256,7 @@ function handleFormSubmit(data: { title: string; category: string; collegeId: nu
           layout="total, sizes, prev, pager, next, jumper"
           :hide-on-single-page="false"
           @current-change="handleCurrentChange"
-          @size-change="(size) => { pageSize.value = size; currentPage.value = 1; }"
+          @size-change="(size) => { pageSize.value = size; currentPage.value = 1; fetchFiles(); }"
         />
       </div>
     </div>

@@ -36,7 +36,7 @@ const streamingMessageId = ref<number | null>(null)
 let currentSSE: ReturnType<typeof useSSE> | null = null
 
 const isLoggedIn = computed(() => !!userStore.token)
-const isAdminUser = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin' || userStore.role === 'college_admin')
+const isAdminUser = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin' || userStore.role === 'college_admin' || userStore.role === 'dept_admin')
 const displayName = computed(() => {
   if (!userStore.userInfo) return ''
   return userStore.userInfo.role_display || userStore.userInfo.username || ''

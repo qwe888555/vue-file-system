@@ -9,7 +9,7 @@ export const roleMenuMap: Record<UserRole, string[]> = {
   admin_dept: ['/chat', '/faq-manage', '/knowledge'],
   college_admin: ['/chat', '/faq-manage', '/knowledge', '/admin'],
   dept_admin: ['/chat', '/faq-manage', '/knowledge'],
-  super_admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/admin/logs'],
+  super_admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/logs'],
 }
 
 export const allMenus: MenuItem[] = [
@@ -52,7 +52,7 @@ export const allMenus: MenuItem[] = [
     ],
   },
   {
-    path: '/admin/logs',
+    path: '/logs',
     name: 'LogView',
     title: '日志管理',
     icon: 'Document',
