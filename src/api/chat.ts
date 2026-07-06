@@ -107,3 +107,17 @@ export function getMessageReferencesApi(messageId: number): Promise<any> {
 export function getHotQuestionsApi(params?: { days?: number; top_k?: number }): Promise<Array<{ question: string; count: number }>> {
   return request.get('/chat/hot-questions/', { params })
 }
+
+/** 语音问答（返回 SSE ReadableStream） */
+export function voiceAskApi(audioBlob: Blob, conversationId?: number | null): Promise<Response> {
+  const baseUrl = import.meta.env.VITE_API_URL || '/api'
+  const token = localStorage.getItem('access_token') || ''
+  const formData = new FormData()
+  formData.append('audio_file', audioBlob, 'recording.wav')
+  if (conversationId) formData.append('conversation_id', String(conversationId))
+  return fetch(`${baseUrl}/chat/voice-ask/`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  })
+}

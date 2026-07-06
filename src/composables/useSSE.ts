@@ -88,7 +88,8 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
   function handleEvent(eventType: string, dataStr: string) {
     try {
       switch (eventType) {
-        case 'token': {
+        case 'token':
+        case 'msg': {
           const parsed = JSON.parse(dataStr)
           if (parsed.content) content.value += parsed.content
           break

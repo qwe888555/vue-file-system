@@ -7,7 +7,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { usePermissionStore } from '@/store/permission'
 import { ElMessageBox } from 'element-plus'
-import logoImg from '@/assets/logo.png'
 import PersonalCenter from '@/components/common/PersonalCenter.vue'
 
 const route = useRoute()
@@ -35,7 +34,7 @@ const activeMenu = computed(() => {
 
 const isLoggedIn = computed(() => !!userStore.token)
 const userDisplayRole = computed(() => {
-  if (userStore.role === 'admin' || userStore.role === 'college_admin' || userStore.role === 'dept_admin') return '普通管理员'
+  if (userStore.role === 'admin' || userStore.role === 'college_admin') return '普通管理员'
   return userStore.userInfo?.role_display || ''
 })
 
@@ -58,7 +57,8 @@ async function handleLogout() {
   <aside class="sidebar">
     <!-- Logo -->
     <div class="sidebar-logo">
-      <img :src="logoImg" alt="成都东软学院" class="sidebar-logo-img" />
+      <span class="sidebar-logo-text">NISU-CD</span>
+      <span class="sidebar-logo-sub">资源系统</span>
     </div>
 
     <div class="sidebar-divider" />
@@ -137,15 +137,25 @@ async function handleLogout() {
 .sidebar-logo {
   height: 72px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 0 16px;
   flex-shrink: 0;
+  gap: 2px;
 }
-.sidebar-logo-img {
-  height: 44px;
-  width: auto;
-  object-fit: contain;
+.sidebar-logo-text {
+  font-size: 22px;
+  font-weight: 700;
+  color: #2b5fd9;
+  letter-spacing: 2px;
+  line-height: 1.2;
+}
+.sidebar-logo-sub {
+  font-size: 13px;
+  font-weight: 500;
+  color: #8e95a6;
+  letter-spacing: 4px;
 }
 
 /* ── 分割线 ── */

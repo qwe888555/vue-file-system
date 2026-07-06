@@ -5,7 +5,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
-import logoImg from '@/assets/logo.png'
 import { ElMessageBox } from 'element-plus'
 import type { KnowledgeFile } from '@/types'
 import { useChat } from '@/composables/useChat'
@@ -23,10 +22,13 @@ const showLoginDialog = ref(false)
 const showPersonalCenter = ref(false)
 const showUserMenu = ref(false)
 const showToolsMenu = ref(false)
-const hasPlayed = localStorage.getItem('hasPlayHomeAnimation') === 'true'
+const hasPlayed = sessionStorage.getItem('hasPlayHomeAnimation') === 'true'
 const showEntryAnim = ref(!hasPlayed)
 const showInstantContent = ref(hasPlayed)
 const inputText = ref('')
+const isRecording = ref(false)
+let mediaRecorder: MediaRecorder | null = null
+let audioChunks: Blob[] = []
 
 // SSE
 const streamingContent = ref('')
@@ -135,6 +137,93 @@ async function sendMessage() {
 function handleFeedback(messageId: number, type: 'like' | 'dislike') {
   chat.submitFeedback(messageId, type)
 }
+
+/* ── 语音输入 ── */
+async function toggleRecording() {
+  if (isRecording.value) {
+    stopRecording()
+    return
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    mediaRecorder = new MediaRecorder(stream)
+    audioChunks = []
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data) }
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop())
+      const blob = new Blob(audioChunks, { type: 'audio/wav' })
+      audioChunks = []
+      if (blob.size < 100) return // 太短忽略
+      await sendVoiceMessage(blob)
+    }
+    mediaRecorder.start()
+    isRecording.value = true
+  } catch { /* 麦克风权限拒绝 */ }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  }
+  isRecording.value = false
+}
+
+async function sendVoiceMessage(audioBlob: Blob) {
+  if (isStreaming.value) return
+  if (!chat.currentConversationId.value) {
+    const conv = await chat.createConversation()
+    if (!conv) return
+  }
+  const convId = chat.currentConversationId.value!
+  // 本地占位消息
+  chat.appendUserMessage('[语音消息]')
+  isStreaming.value = true
+  streamingContent.value = ''
+  streamingReferences.value = []
+
+  try {
+    const { voiceAskApi } = await import('@/api/chat')
+    const response = await voiceAskApi(audioBlob, convId)
+    if (!response.ok) { isStreaming.value = false; return }
+
+    const reader = response.body?.getReader()
+    if (!reader) { isStreaming.value = false; return }
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let currentEvent = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) currentEvent = line.slice(7).trim()
+        else if (line.startsWith('data: ')) {
+          const dataStr = line.slice(6).trim()
+          try {
+            const data = JSON.parse(dataStr)
+            switch (currentEvent) {
+              case 'msg': streamingContent.value += data.content || ''; break
+              case 'done':
+                chat.appendAssistantMessage(streamingContent.value, streamingReferences.value, data.message_id)
+                isStreaming.value = false
+                streamingContent.value = ''
+                break
+              case 'references':
+                if (data.count > 0) streamingReferences.value = [{ id: 0, title: data.summary || '参考来源', summary: data.summary, status: 1 } as any]
+                break
+              case 'error': isStreaming.value = false; break
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch { isStreaming.value = false }
+}
 onMounted(() => {
   chat.init()
   loadHotQuestions()
@@ -142,7 +231,7 @@ onMounted(() => {
     // 首次进入：播放完整动画，2600ms 后写入标记
     setTimeout(() => {
       showEntryAnim.value = false
-      localStorage.setItem('hasPlayHomeAnimation', 'true')
+      sessionStorage.setItem('hasPlayHomeAnimation', 'true')
     }, 2600)
   } else {
     // 非首次：直接显示完整内容
@@ -162,8 +251,9 @@ onMounted(() => {
     <!-- ═══ 左侧边栏（对话列表）═══ -->
     <aside class="chat-sidebar" :class="{ collapsed: !sidebarOpen }">
       <!-- 顶部 -->
-      <div class="sidebar-logo-area">
-        <img :src="logoImg" alt="成都东软学院" class="sidebar-logo-img" />
+      <div class="sidebar-logo">
+        <span class="sidebar-logo-text">NISU-CD</span>
+        <span class="sidebar-logo-sub">资源系统</span>
       </div>
 
       <!-- 搜索 -->
@@ -379,6 +469,13 @@ onMounted(() => {
               :disabled="isStreaming"
               @keyup.enter="sendMessage"
             />
+            <button class="mic-btn" :class="{ recording: isRecording }" @click="toggleRecording" title="语音输入">
+              <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
+                <path d="M10 2a3 3 0 00-3 3v4a3 3 0 106 0V5a3 3 0 00-3-3zM5 9a5 5 0 0010 0h-1.5a3.5 3.5 0 01-7 0H5z"/>
+                <path d="M9.25 13.5v2.75h1.5V13.5h-1.5z"/>
+                <path d="M6 14.5h8v1.5H6z"/>
+              </svg>
+            </button>
             <button class="send-fab" :disabled="!inputText.trim() || isStreaming" @click="sendMessage">
               <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
                 <path d="M10 2a1 1 0 01.707.293l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414l-4.293 4.293a1 1 0 01-1.414-1.414l6-6A1 1 0 0110 2z"/>
@@ -443,16 +540,28 @@ onMounted(() => {
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(64, 158, 255, 0.3), transparent);
 }
-.sidebar-logo-area {
-  padding: 20px 16px;
+.sidebar-logo {
+  height: 72px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  padding: 0 16px;
+  flex-shrink: 0;
+  gap: 2px;
 }
-.sidebar-logo-img {
-  height: 44px;
-  width: auto;
-  object-fit: contain;
+.sidebar-logo-text {
+  font-size: 22px;
+  font-weight: 700;
+  color: #2b5fd9;
+  letter-spacing: 2px;
+  line-height: 1.2;
+}
+.sidebar-logo-sub {
+  font-size: 13px;
+  font-weight: 500;
+  color: #8e95a6;
+  letter-spacing: 4px;
 }
 /* 退出按钮 */
 .sidebar-exit {
@@ -979,6 +1088,17 @@ onMounted(() => {
 .send-fab svg { width: 16px; height: 16px; }
 .send-fab:hover:not(:disabled) { background: #4096ff; }
 .send-fab:disabled { background: #d9d9d9; cursor: not-allowed; }
+
+/* 语音输入按钮 */
+.mic-btn {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: none; background: transparent; color: #8e9ebd;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.2s; flex-shrink: 0; padding: 0;
+}
+.mic-btn:hover { background: rgba(64,158,255,0.08); color: #409eff; }
+.mic-btn.recording { color: #f56c6c; animation: micPulse 1s ease-in-out infinite; }
+@keyframes micPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
 </style>
 <style>
