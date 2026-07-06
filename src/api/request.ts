@@ -41,6 +41,12 @@ function clearToken() {
 let isRefreshing = false
 let pendingQueue: Array<{ resolve: (token: string) => void; reject: (err: any) => void }> = []
 
+// 页面加载时重置刷新状态
+window.addEventListener('pageshow', () => {
+  isRefreshing = false
+  pendingQueue = []
+})
+
 function processQueue(error: any, token: string | null) {
   pendingQueue.forEach((p) => {
     if (error) p.reject(error)
