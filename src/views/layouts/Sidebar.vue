@@ -202,7 +202,6 @@ async function handleLogout() {
   background: linear-gradient(135deg, #eef3fe 0%, #e6edfe 100%);
   color: #2b5fd9;
   font-weight: 550;
-  box-shadow: inset 3px 0 0 #2b5fd9;
 }
 
 .sidebar-menu .el-menu-item.is-active .menu-icon {
