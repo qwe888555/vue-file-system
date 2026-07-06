@@ -23,7 +23,7 @@ const showLoginDialog = ref(false)
 const showPersonalCenter = ref(false)
 const showUserMenu = ref(false)
 const showToolsMenu = ref(false)
-const hasPlayed = localStorage.getItem('hasPlayHomeAnimation') === 'true'
+const hasPlayed = sessionStorage.getItem('hasPlayHomeAnimation') === 'true'
 const showEntryAnim = ref(!hasPlayed)
 const showInstantContent = ref(hasPlayed)
 const inputText = ref('')
@@ -142,7 +142,7 @@ onMounted(() => {
     // 首次进入：播放完整动画，2600ms 后写入标记
     setTimeout(() => {
       showEntryAnim.value = false
-      localStorage.setItem('hasPlayHomeAnimation', 'true')
+      sessionStorage.setItem('hasPlayHomeAnimation', 'true')
     }, 2600)
   } else {
     // 非首次：直接显示完整内容
