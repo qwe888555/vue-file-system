@@ -23,9 +23,26 @@ const profileForm = reactive({
 const pwdForm = reactive({ old_password: '', new_password: '' })
 
 async function handleSaveProfile() {
+  // 手机号校验：只能包含数字，可选 + 开头
+  const phone = profileForm.phone.trim()
+  if (phone && !/^\+?\d{6,15}$/.test(phone)) {
+    ElMessage.warning('手机号格式不正确，请输入 6-15 位数字')
+    return
+  }
+  // 邮箱格式校验
+  const email = profileForm.email.trim()
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    ElMessage.warning('邮箱格式不正确')
+    return
+  }
   saving.value = true
   try {
-    const res = await updateProfileApi(profileForm)
+    const res = await updateProfileApi({
+      first_name: profileForm.first_name.trim(),
+      last_name: profileForm.last_name.trim(),
+      email,
+      phone,
+    })
     userStore.userInfo = res
     ElMessage.success('个人资料更新成功')
   } catch (e: any) {

@@ -5,12 +5,25 @@ import type { UserRole, MenuItem } from '@/types'
 export const roleMenuMap: Record<UserRole, string[]> = {
   user: ['/chat', '/faq'],
   admin: ['/chat', '/faq-manage', '/knowledge', '/admin'],
+  admin_csic: ['/chat', '/faq-manage', '/knowledge', '/admin'],
+  admin_dept: ['/chat', '/faq-manage', '/knowledge'],
   college_admin: ['/chat', '/faq-manage', '/knowledge', '/admin'],
-  dept_admin: ['/chat', '/faq-manage', '/knowledge', '/admin'],
+  dept_admin: ['/chat', '/faq-manage', '/knowledge'],
   super_admin: ['/chat', '/faq-manage', '/knowledge', '/admin'],
 }
 
 export const allMenus: MenuItem[] = [
+  {
+    path: '/knowledge',
+    name: 'Knowledge',
+    title: '知识库管理',
+    icon: 'Folder',
+    children: [
+      { path: '/knowledge/list', name: 'DocList', title: '文档列表' },
+      { path: '/knowledge/upload', name: 'DocUpload', title: '上传文档' },
+      { path: '/knowledge/browse', name: 'Browse', title: '分类浏览' },
+    ],
+  },
   {
     path: '/chat',
     name: 'Chat',
@@ -28,17 +41,6 @@ export const allMenus: MenuItem[] = [
     name: 'FaqManage',
     title: 'FAQ 管理',
     icon: 'ChatDotSquare',
-  },
-  {
-    path: '/knowledge',
-    name: 'Knowledge',
-    title: '知识库管理',
-    icon: 'Folder',
-    children: [
-      { path: '/knowledge/list', name: 'DocList', title: '文档列表' },
-      { path: '/knowledge/upload', name: 'DocUpload', title: '上传文档' },
-      { path: '/knowledge/browse', name: 'Browse', title: '分类浏览' },
-    ],
   },
   {
     path: '/admin',

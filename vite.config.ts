@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: {
         '/api': {
-          target: env.VITE_API_PROXY || 'http://k55667d4.natappfree.cc',
+          target: env.VITE_API_PROXY || 'http://dbaa4d9b.natappfree.cc',
           changeOrigin: true,
           secure: false,
         },

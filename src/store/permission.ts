@@ -28,7 +28,7 @@ export const usePermissionStore = defineStore('permission', () => {
   function filterMenus(items: MenuItem[], role: UserRole): MenuItem[] {
     const allowedPaths = roleMenuMap[role] || []
     return items
-      .filter((item) => allowedPaths.some((p) => item.path.startsWith(p) || item.path === p))
+      .filter((item) => allowedPaths.some((p) => item.path === p || item.path.startsWith(p + '/')))
       .map((item) => ({
         ...item,
         children: item.children ? filterMenus(item.children, role) : undefined,
