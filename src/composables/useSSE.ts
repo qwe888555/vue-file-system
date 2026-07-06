@@ -114,6 +114,20 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
           streaming.value = false
           break
         }
+        case 'references_detail': {
+          // 引用详情（仅 admin/super_admin 可见），替换 summary 型 references
+          const detail = JSON.parse(dataStr)
+          if (Array.isArray(detail) && detail.length > 0) {
+            references.value = detail.map((r: any) => ({
+              id: r.doc_id || 0,
+              title: r.doc_title || '',
+              fileType: r.file_type || '',
+              summary: r.doc_title || '',
+              status: 1,
+            })) as any
+          }
+          break
+        }
         case 'start':
           // start 事件包含 conversation_id 和 message_id，暂不处理
           break

@@ -80,7 +80,7 @@ export function getMessagesApi(conversationId: number): Promise<Message[]> {
 }
 
 /** 流式问答 POST 请求（返回 ReadableStream 供 parseSSE 消费） */
-export function askQuestionApi(conversationId: number, question: string): Promise<Response> {
+export function askQuestionApi(conversationId: number | null, question: string): Promise<Response> {
   const baseUrl = import.meta.env.VITE_API_URL || '/api'
   const token = localStorage.getItem('access_token') || ''
   return fetch(`${baseUrl}/chat/ask/`, {
@@ -93,9 +93,9 @@ export function askQuestionApi(conversationId: number, question: string): Promis
   })
 }
 
-/** 赞/踩消息 */
+/** 赞/踩消息（文档 1.2） */
 export function rateMessageApi(messageId: number, type: 'like' | 'dislike'): Promise<void> {
-  return request.post(`/chat/message/${messageId}/rate/`, { type })
+  return request.post(`/chat/message/${messageId}/rate/`, { rating: type })
 }
 
 /** 获取消息引用文件 */
