@@ -12,6 +12,17 @@ export const roleMenuMap: Record<UserRole, string[]> = {
 
 export const allMenus: MenuItem[] = [
   {
+    path: '/knowledge',
+    name: 'Knowledge',
+    title: '知识库管理',
+    icon: 'Folder',
+    children: [
+      { path: '/knowledge/list', name: 'DocList', title: '文档列表' },
+      { path: '/knowledge/upload', name: 'DocUpload', title: '上传文档' },
+      { path: '/knowledge/browse', name: 'Browse', title: '分类浏览' },
+    ],
+  },
+  {
     path: '/chat',
     name: 'Chat',
     title: '智能问答',
@@ -28,17 +39,6 @@ export const allMenus: MenuItem[] = [
     name: 'FaqManage',
     title: 'FAQ 管理',
     icon: 'ChatDotSquare',
-  },
-  {
-    path: '/knowledge',
-    name: 'Knowledge',
-    title: '知识库管理',
-    icon: 'Folder',
-    children: [
-      { path: '/knowledge/list', name: 'DocList', title: '文档列表' },
-      { path: '/knowledge/upload', name: 'DocUpload', title: '上传文档' },
-      { path: '/knowledge/browse', name: 'Browse', title: '分类浏览' },
-    ],
   },
   {
     path: '/admin',
