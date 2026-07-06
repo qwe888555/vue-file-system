@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Check, Close } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import * as mammoth from 'mammoth'
 import type { KnowledgeFile } from '@/types'
@@ -14,6 +14,8 @@ const router = useRouter()
 const file = ref<KnowledgeFile | null>(null)
 const previewContent = ref('')
 const isLoading = ref(false)
+const isEditing = ref(false)
+const editContent = ref('')
 
 const md = new MarkdownIt({
   html: true,
@@ -285,6 +287,32 @@ async function handleDownload() {
   }
 }
 
+function startEdit() {
+  editContent.value = file.value?.content || previewContent.value || ''
+  isEditing.value = true
+}
+
+async function saveEdit() {
+  if (!file.value) return
+  
+  try {
+    await updateDocApi(file.value.id, {
+      content: editContent.value,
+    })
+    ElMessage.success('保存成功')
+    isEditing.value = false
+    await loadFileContent()
+  } catch (error) {
+    console.error('保存失败:', error)
+    ElMessage.error('保存失败')
+  }
+}
+
+function cancelEdit() {
+  isEditing.value = false
+  editContent.value = ''
+}
+
 async function handleRename() {
   if (!file.value) return
   ElMessageBox.prompt('请输入新文件名', '重命名', {
@@ -449,14 +477,42 @@ onMounted(() => {
       </div>
 
       <div class="preview-card">
-        <h4 class="preview-title">
-          <el-icon><Eye /></el-icon>
-          文件预览
-        </h4>
+        <div class="preview-header">
+          <h4 class="preview-title">
+            <el-icon><Eye /></el-icon>
+            文件预览
+          </h4>
+          <div v-if="!isEditing" class="preview-actions">
+            <el-button v-if="previewType === 'markdown' || previewType === 'text'" @click="startEdit" type="primary" size="small">
+              <el-icon><Edit /></el-icon>
+              编辑
+            </el-button>
+          </div>
+          <div v-else class="preview-actions">
+            <el-button @click="saveEdit" type="primary" size="small">
+              <el-icon><Check /></el-icon>
+              保存
+            </el-button>
+            <el-button @click="cancelEdit" size="small">
+              <el-icon><Close /></el-icon>
+              取消
+            </el-button>
+          </div>
+        </div>
         <div class="preview-content">
           <div v-if="isLoading" class="preview-loading">
             <el-icon :size="48" color="#409eff" class="loading-icon"><Loading /></el-icon>
             <p>加载中...</p>
+          </div>
+
+          <div v-else-if="isEditing && (previewType === 'markdown' || previewType === 'text')" class="edit-preview">
+            <el-input
+              v-model="editContent"
+              type="textarea"
+              :rows="20"
+              placeholder="请输入文件内容..."
+              class="content-textarea"
+            />
           </div>
 
           <div v-else-if="previewType === 'markdown'" class="markdown-preview">
@@ -670,18 +726,40 @@ onMounted(() => {
   min-height: 500px;
 }
 
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-lg);
+}
+
 .preview-title {
   font-size: 16px;
   font-weight: 600;
   color: var(--color-text);
-  margin: 0 0 var(--spacing-lg) 0;
+  margin: 0;
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
+.preview-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
 .preview-content {
   height: calc(100% - 40px);
+}
+
+.edit-preview {
+  padding: var(--spacing-md);
+}
+
+.content-textarea {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .preview-loading {

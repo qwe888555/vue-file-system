@@ -11,6 +11,7 @@ export interface SSEResult {
   error: ReturnType<typeof ref<string | null>>
   references: ReturnType<typeof ref<KnowledgeFile[]>>
   suggested: ReturnType<typeof ref<string[]>>
+  messageId: ReturnType<typeof ref<number | null>>
   close: () => void
 }
 
@@ -27,6 +28,7 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
   const error = ref<string | null>(null)
   const references = ref<KnowledgeFile[]>([])
   const suggested = ref<string[]>([])
+  const messageId = ref<number | null>(null)
 
   let abortController: AbortController | null = null
   let closed = false
@@ -114,8 +116,21 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
           streaming.value = false
           break
         }
+        case 'references_detail': {
+          const refDetail = JSON.parse(dataStr)
+          if (Array.isArray(refDetail) && refDetail.length > 0) {
+            references.value = refDetail.map((r: any) => ({
+              id: r.doc_id || 0,
+              title: r.doc_title || '',
+              fileType: r.file_type || '',
+              summary: r.doc_title || '',
+              status: 1,
+            })) as any
+          }
+          break
+        }
         case 'start':
-          // start 事件包含 conversation_id 和 message_id，暂不处理
+          messageId.value = parsed?.message_id || null
           break
       }
     } catch {
@@ -134,5 +149,5 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
 
   onUnmounted(close)
 
-  return { content, streaming, done, error, references, suggested, close }
+  return { content, streaming, done, error, references, suggested, messageId, close }
 }

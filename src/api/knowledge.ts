@@ -6,14 +6,14 @@ import type { KnowledgeFile, PaginatedResult } from '@/types'
 /** 文档列表（分页 + 筛选） */
 export function getDocListApi(params: {
   page: number
-  pageSize: number
+  page_size: number
   keyword?: string
   category?: string
   collegeId?: number
   startDate?: string
   endDate?: string
 }): Promise<PaginatedResult<KnowledgeFile>> {
-  return request.get('/knowledge/files', { params })
+  return request.get('/knowledge/docs/', { params })
 }
 
 /** 文档详情 */
@@ -23,7 +23,7 @@ export function getDocDetailApi(id: number): Promise<KnowledgeFile> {
 
 /** 上传文档（含元数据） */
 export function uploadDocApi(data: FormData): Promise<KnowledgeFile> {
-  return request.post('/knowledge/files', data, {
+  return request.post('/knowledge/files/', data, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
@@ -36,12 +36,12 @@ export function getUploadCredentialApi(): Promise<{
   endpoint: string
   expiration: string
 }> {
-  return request.get('/knowledge/upload/credential')
+  return request.get('/knowledge/upload/credential/')
 }
 
 /** MD5 秒传校验 */
 export function checkFileHashApi(hash: string): Promise<{ exists: boolean; fileId?: number; url?: string }> {
-  return request.post('/knowledge/files/check-hash', { hash })
+  return request.post('/knowledge/files/check-hash/', { hash })
 }
 
 /** 文件上传 */
@@ -52,13 +52,20 @@ export function uploadFileApi(data: FormData): Promise<KnowledgeFile> {
 }
 
 /** 编辑文档 */
-export function updateDocApi(id: number, data: Partial<KnowledgeFile>): Promise<void> {
-  return request.put(`/api/knowledge/docs/${id}/`, data)
+export function updateDocApi(id: number, data: {
+  title?: string
+  description?: string
+  discipline_id?: number
+  college_id?: number
+  category_id?: number
+  content?: string
+}): Promise<void> {
+  return request.put(`/knowledge/docs/${id}/`, data)
 }
 
 /** 删除文档 */
 export function deleteDocApi(id: number): Promise<void> {
-  return request.delete(`/knowledge/docs/${id}/delete`)
+  return request.delete(`/knowledge/docs/${id}/delete/`)
 }
 
 /** 下载文档 */
@@ -73,15 +80,27 @@ export function previewDocApi(id: number): Promise<{ content: string; content_ty
   return request.get(`/knowledge/docs/${id}/preview/`)
 }
 
+/** 获取一级分类列表 */
+export function getFirstLevelCategoriesApi(): Promise<{ id: number; name: string }[]> {
+  return request.get('/categories/first-level/')
+}
+
+/** 获取二级分类列表 */
+export function getSecondLevelCategoriesApi(parentId?: number): Promise<{ id: number; name: string; parent_id: number }[]> {
+  const params = parentId ? { parent_id: parentId } : {}
+  return request.get('/categories/second-level/', { params })
+}
+
 /** 录入文本 */
 export function uploadTextApi(data: {
   title: string
   content: string
   description?: string
-  college_id?: number
-  discipline_id?: number
-  keywords?: string[]
-  visibility?: string
+  college_id: number
+  category_id: number
+  keywords: string[]
+  visibility: string
+  scope: 'school' | 'college' | 'department'
 }): Promise<KnowledgeFile> {
   return request.post('/knowledge/upload/text/', data)
 }
@@ -113,5 +132,5 @@ export function deleteKeywordApi(id: number): Promise<void> {
 
 /** 三级分类树形数据 */
 export function getCategoryTreeApi(): Promise<any[]> {
-  return request.get('/knowledge/categories/tree')
+  return request.get('/knowledge/categories/tree/')
 }

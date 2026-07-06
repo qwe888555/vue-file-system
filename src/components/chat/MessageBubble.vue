@@ -125,24 +125,26 @@ function handleDislike() {
 
 /* 气泡 */
 .msg-bubble {
-  padding: 12px 16px;
+  padding: 14px 20px;
   font-size: 15px;
-  line-height: 1.8;
+  line-height: 1.75;
   word-break: break-word;
 }
 
 .msg-bubble-user {
-  background: #73b8ff;
+  background: linear-gradient(135deg, #409eff, #3a8ee6);
   color: #fff;
-  border-radius: 18px;
+  border-radius: 20px;
   border-bottom-right-radius: 4px;
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.15);
 }
 
 .msg-bubble-ai {
-  background: #f0f7ff;
-  color: #303133;
-  border-radius: 18px;
+  background: #f7f8fa;
+  color: #2c3e50;
+  border-radius: 20px;
   border-bottom-left-radius: 4px;
+  border: 1px solid #eef0f2;
 }
 
 /* 引用 */

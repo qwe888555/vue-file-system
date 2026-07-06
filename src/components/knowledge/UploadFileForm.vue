@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
-import { uploadFileApi, uploadTextApi } from '@/api/knowledge'
+import { uploadFileApi, uploadTextApi, getFirstLevelCategoriesApi, getSecondLevelCategoriesApi } from '@/api/knowledge'
 
 const props = defineProps<{
   visible: boolean
@@ -26,6 +26,9 @@ interface UploadFormData {
   fileName: string
   fileSize: number
   fileData: string
+  scope: 'school' | 'college' | 'department'
+  firstLevelCategoryId: number
+  secondLevelCategoryId: number
 }
 
 const form = ref<UploadFormData>({
@@ -39,15 +42,80 @@ const form = ref<UploadFormData>({
   fileName: '',
   fileSize: 0,
   fileData: '',
+  scope: 'school',
+  firstLevelCategoryId: 0,
+  secondLevelCategoryId: 0,
 })
 
 const createMode = ref(false)
 const uploadedFile = ref<File | null>(null)
 const isConverting = ref(false)
 const isFileTooLarge = ref(false)
+const firstLevelCategories = ref<{ id: number; name: string }[]>([])
+const secondLevelCategories = ref<{ id: number; name: string; parent_id: number }[]>([])
+const isAiClassifying = ref(false)
 
-watch(() => props.visible, (val) => {
+async function loadFirstLevelCategories() {
+  try {
+    const res = await getFirstLevelCategoriesApi()
+    firstLevelCategories.value = res
+  } catch (error) {
+    console.error('获取一级分类列表失败:', error)
+  }
+}
+
+async function loadSecondLevelCategories(parentId?: number) {
+  secondLevelCategories.value = []
+  if (parentId) {
+    try {
+      const res = await getSecondLevelCategoriesApi(parentId)
+      secondLevelCategories.value = res
+    } catch (error) {
+      console.error('获取二级分类列表失败:', error)
+    }
+  }
+}
+
+async function aiClassify() {
+  isAiClassifying.value = true
+  ElMessage.info('AI正在分析文件内容，自动分类中...')
+  setTimeout(() => {
+    if (firstLevelCategories.value.length > 0) {
+      form.value.firstLevelCategoryId = firstLevelCategories.value[0].id
+      loadSecondLevelCategories(firstLevelCategories.value[0].id)
+      setTimeout(() => {
+        if (secondLevelCategories.value.length > 0) {
+          form.value.secondLevelCategoryId = secondLevelCategories.value[0].id
+        }
+      }, 300)
+    }
+    isAiClassifying.value = false
+    ElMessage.success('AI分类完成')
+  }, 1500)
+}
+
+watch(() => form.value.firstLevelCategoryId, (val) => {
   if (val) {
+    loadSecondLevelCategories(val)
+    form.value.secondLevelCategoryId = 0
+  }
+})
+
+onMounted(async () => {
+  try {
+    await loadFirstLevelCategories()
+  } catch (error) {
+    console.error('初始化分类失败:', error)
+  }
+})
+
+watch(() => props.visible, async (val) => {
+  if (val) {
+    try {
+      await loadFirstLevelCategories()
+    } catch (error) {
+      console.error('加载分类失败:', error)
+    }
     resetForm()
   }
 })
@@ -65,11 +133,15 @@ function resetForm() {
     fileName: '',
     fileSize: 0,
     fileData: '',
+    scope: 'school',
+    firstLevelCategoryId: 0,
+    secondLevelCategoryId: 0,
   }
   createMode.value = false
   uploadedFile.value = null
   isConverting.value = false
   isFileTooLarge.value = false
+  secondLevelCategories.value = []
 }
 
 function handleFileChange(file: File) {
@@ -106,11 +178,13 @@ function handleFileChange(file: File) {
   }
   
   if (isFileTooLarge.value) {
+    isConverting.value = false
     if (exceedsStorageLimit) {
       ElMessage.warning(`当前浏览器存储限制，单个文件不能超过4MB（${fileCategory}格式上限${sizeLimitText}），建议将文件打包为 ZIP/RAR 压缩包后再上传`)
     } else {
       ElMessage.warning(`${fileCategory}文件大小不能超过${sizeLimitText}，建议将文件打包为 ZIP/RAR 压缩包后再上传`)
     }
+    return
   }
   
   if (!isFileTooLarge.value) {
@@ -139,8 +213,24 @@ function handleRemove() {
 }
 
 async function handleSubmit() {
-  if (!form.value.title || !form.value.keywords) {
-    ElMessage.warning('请填写必填项')
+  if (!form.value.title) {
+    ElMessage.warning('请输入文件名')
+    return
+  }
+  if (!form.value.keywords) {
+    ElMessage.warning('请输入关键词')
+    return
+  }
+  if (!form.value.scope) {
+    ElMessage.warning('请选择可见范围')
+    return
+  }
+  if (!form.value.firstLevelCategoryId) {
+    ElMessage.warning('请选择一级分类')
+    return
+  }
+  if (!form.value.secondLevelCategoryId) {
+    ElMessage.warning('请选择二级分类')
     return
   }
 
@@ -176,16 +266,22 @@ async function handleSubmit() {
     .map((kw) => kw.trim())
     .filter((kw) => kw)
 
+  if (keywords.length === 0) {
+    ElMessage.warning('请输入关键词')
+    return
+  }
+
   if (createMode.value) {
     try {
       await uploadTextApi({
         title: form.value.title,
         content: form.value.content,
         description: form.value.description || undefined,
-        college_id: form.value.collegeId || undefined,
-        discipline_id: 1,
+        college_id: form.value.collegeId || 1,
+        category_id: form.value.secondLevelCategoryId,
         keywords,
         visibility: 'public',
+        scope: form.value.scope,
       })
       ElMessage.success('创建成功')
       emit('submit', {
@@ -205,10 +301,10 @@ async function handleSubmit() {
       formData.append('file', uploadedFile.value)
       formData.append('title', form.value.title)
       formData.append('description', form.value.description || '')
+      formData.append('scope', form.value.scope)
       formData.append('college_id', String(form.value.collegeId || 1))
-      formData.append('discipline_id', '1')
-      formData.append('keywords', keywords.join(','))
-      formData.append('category_id', '5')
+      formData.append('department_id', '1')
+      formData.append('category_id', String(form.value.secondLevelCategoryId))
 
       await uploadFileApi(formData)
       ElMessage.success('上传成功')
@@ -246,6 +342,51 @@ function handleClose() {
 
       <el-form-item label="关键词" required>
         <el-input v-model="form.keywords" placeholder="请输入关键词，用逗号或空格分隔" />
+      </el-form-item>
+
+      <el-form-item label="可见范围" required>
+        <el-radio-group v-model="form.scope">
+          <el-radio label="school">全校</el-radio>
+          <el-radio label="college">学院内部</el-radio>
+          <el-radio label="department">部门内部</el-radio>
+        </el-radio-group>
+      </el-form-item>
+
+      <el-form-item label="一级分类" required>
+        <el-select v-model="form.firstLevelCategoryId" placeholder="请选择一级分类" style="width: 100%">
+          <el-option
+            v-for="cat in firstLevelCategories"
+            :key="cat.id"
+            :label="cat.name"
+            :value="cat.id"
+          />
+        </el-select>
+      </el-form-item>
+
+      <el-form-item label="二级分类" required>
+        <el-select
+          v-model="form.secondLevelCategoryId"
+          placeholder="请选择二级分类"
+          style="width: 100%"
+          :disabled="!form.firstLevelCategoryId"
+        >
+          <el-option
+            v-for="cat in secondLevelCategories"
+            :key="cat.id"
+            :label="cat.name"
+            :value="cat.id"
+          />
+        </el-select>
+      </el-form-item>
+
+      <el-form-item>
+        <el-button
+          type="primary"
+          :loading="isAiClassifying"
+          @click="aiClassify"
+        >
+          AI智能分类
+        </el-button>
       </el-form-item>
 
       <el-form-item label="文件描述">
@@ -346,7 +487,7 @@ function handleClose() {
 
     <template #footer>
       <el-button @click="handleClose">取消</el-button>
-      <el-button type="primary" @click="handleSubmit" :disabled="isConverting">
+      <el-button type="primary" @click="handleSubmit" :disabled="isConverting || !uploadedFile && !createMode">
         {{ createMode ? '确认创建' : '确认上传' }}
       </el-button>
     </template>

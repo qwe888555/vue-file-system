@@ -97,6 +97,10 @@ instance.interceptors.response.use(
           pendingQueue.push({ resolve, reject })
         }).then((token) => {
           originalRequest.headers.Authorization = `Bearer ${token}`
+          delete originalRequest.baseURL
+          if (originalRequest.url?.startsWith(baseURL)) {
+            originalRequest.url = originalRequest.url.replace(baseURL, '')
+          }
           return instance(originalRequest)
         })
       }
@@ -109,6 +113,10 @@ instance.interceptors.response.use(
         setAccessToken(res.access)
         processQueue(null, res.access)
         originalRequest.headers.Authorization = `Bearer ${res.access}`
+        delete originalRequest.baseURL
+        if (originalRequest.url?.startsWith(baseURL)) {
+          originalRequest.url = originalRequest.url.replace(baseURL, '')
+        }
         return instance(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError, null)
