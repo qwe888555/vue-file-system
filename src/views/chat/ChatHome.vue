@@ -23,6 +23,7 @@ const showLoginDialog = ref(false)
 const showPersonalCenter = ref(false)
 const showUserMenu = ref(false)
 const showToolsMenu = ref(false)
+const showEntryAnim = ref(true)
 const inputText = ref('')
 
 // SSE
@@ -129,11 +130,17 @@ async function sendMessage() {
 function handleFeedback(messageId: number, type: 'like' | 'dislike') {
   chat.submitFeedback(messageId, type)
 }
-onMounted(() => { chat.init(); loadHotQuestions() })
+onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAnim.value = false, 2400) })
 </script>
 
 <template>
   <div class="chat-app">
+    <!-- 蜂巢入场动画 -->
+    <div v-if="showEntryAnim" class="entry-overlay">
+      <div class="honeycomb">
+        <div></div><div></div><div></div><div></div><div></div><div></div><div></div>
+      </div>
+    </div>
     <!-- ═══ 左侧边栏（对话列表）═══ -->
     <aside class="chat-sidebar" :class="{ collapsed: !sidebarOpen }">
       <!-- 顶部 -->
@@ -304,7 +311,7 @@ onMounted(() => { chat.init(); loadHotQuestions() })
                 :key="q.text"
                 class="qq-btn"
                 @click="quickQuestion(q.text)"
-              >{{ q.icon }} {{ q.text }}</button>
+              >{{ q.text }}</button>
             </div>
           </div>
         </div>
@@ -988,5 +995,36 @@ onMounted(() => { chat.init(); loadHotQuestions() })
 .send-fab:hover:not(:disabled) { background: #4096ff; }
 .send-fab:disabled { background: #d9d9d9; cursor: not-allowed; }
 
-/* 动画 */
+</style>
+<style>
+/* 蜂巢入场动画（Uiverse 原版效果） */
+.entry-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff;
+}
+.honeycomb { height: 24px; position: relative; width: 24px; transform: scale(1.5); }
+.honeycomb div {
+  animation: honeycomb 2.1s infinite backwards;
+  background: #409eff; height: 12px; margin-top: 6px;
+  position: absolute; width: 24px;
+}
+.honeycomb div:after, .honeycomb div:before {
+  content: ''; border-left: 12px solid transparent; border-right: 12px solid transparent;
+  position: absolute; left: 0; right: 0;
+}
+.honeycomb div:after { top: -6px; border-bottom: 6px solid #409eff; }
+.honeycomb div:before { bottom: -6px; border-top: 6px solid #409eff; }
+.honeycomb div:nth-child(1) { animation-delay: 0s; left: -28px; top: 0; }
+.honeycomb div:nth-child(2) { animation-delay: 0.1s; left: -14px; top: 22px; }
+.honeycomb div:nth-child(3) { animation-delay: 0.2s; left: 14px; top: 22px; }
+.honeycomb div:nth-child(4) { animation-delay: 0.3s; left: 28px; top: 0; }
+.honeycomb div:nth-child(5) { animation-delay: 0.4s; left: 14px; top: -22px; }
+.honeycomb div:nth-child(6) { animation-delay: 0.5s; left: -14px; top: -22px; }
+.honeycomb div:nth-child(7) { animation-delay: 0.6s; left: 0; top: 0; }
+
+@keyframes honeycomb {
+  0%, 20%, 80%, 100% { opacity: 0; transform: scale(0); }
+  30%, 70% { opacity: 1; transform: scale(1); }
+}
 </style>
