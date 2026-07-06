@@ -24,7 +24,7 @@
 
     <!-- 列表 -->
     <div class="fm-list" v-loading="loading">
-      <div v-for="item in list" :key="item.id" class="fm-card" :class="['fm-status--' + item.status, { expanded: expandedId === item.id }]">
+      <div v-for="item in pagedList" :key="item.id" class="fm-card" :class="['fm-status--' + item.status, { expanded: expandedId === item.id }]">
         <div class="fm-card-top">
           <div class="fm-card-info" @click="toggleItem(item.id)">
             <div class="fm-card-head">
@@ -40,9 +40,9 @@
             </div>
           </div>
           <div class="fm-card-actions">
+            <el-button v-if="item.status === 'draft'" size="small" @click.stop="openEdit(item)">编辑</el-button>
             <el-button v-if="item.status === 'draft'" type="primary" size="small" @click.stop="handlePublish(item)">发布</el-button>
             <el-button v-if="item.status === 'draft'" type="warning" size="small" @click.stop="handleReject(item)">驳回</el-button>
-            <el-button v-if="item.status === 'draft'" size="small" @click.stop="openEdit(item)">编辑</el-button>
             <el-button type="danger" size="small" @click.stop="handleDelete(item)">删除</el-button>
           </div>
         </div>
@@ -60,10 +60,23 @@
       <div v-if="!loading && list.length === 0" class="fm-empty">
         <p>暂无数据</p>
       </div>
+
+      <!-- 分页 -->
+      <div class="faq-pagination">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          layout="total, sizes, prev, pager, next, jumper"
+          :page-sizes="[10, 15, 20]"
+          @current-change="handlePageChange"
+          @size-change="handleSizeChange"
+        />
+      </div>
     </div>
 
     <!-- 编辑弹窗 -->
-    <el-dialog v-model="editVisible" title="编辑草稿" width="560px" destroy-on-close>
+    <el-dialog v-model="editVisible" title="编辑 FAQ" width="560px" destroy-on-close>
       <el-form :model="editForm" label-width="80px">
         <el-form-item label="问题" required>
           <el-input v-model="editForm.question" />
@@ -91,7 +104,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getFaqManageItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, updateFaqDraftApi } from '@/api/faq'
 import type { FaqCategory, FaqManageItem } from '@/api/faq'
@@ -103,6 +116,9 @@ const categories = ref<FaqCategory[]>([])
 const list = ref<FaqManageItem[]>([])
 const loading = ref(false)
 const expandedId = ref<number | null>(null)
+const page = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 
 const tabs = [
   { value: '', label: '全部' },
@@ -127,19 +143,40 @@ onMounted(async () => {
 
 async function loadData() {
   loading.value = true
+  page.value = 1
   try {
     const res = await getFaqManageItemsApi({
       status: activeTab.value || undefined,
-      category: categoryFilter.value || undefined,
-      keyword: keyword.value || undefined,
+      search: keyword.value || undefined,
     })
-    list.value = res.results || []
+    // 后端可能不返回 status，根据筛选条件补充
+    list.value = (res.results || []).map((item: any) => ({
+      ...item,
+      status: item.status || activeTab.value || 'published',
+    }))
+    total.value = list.value.length
   } catch {
     list.value = []
   } finally {
     loading.value = false
   }
 }
+
+function handlePageChange(p: number) {
+  page.value = p
+  loadData()
+}
+
+function handleSizeChange(s: number) {
+  pageSize.value = s
+  page.value = 1
+  loadData()
+}
+
+const pagedList = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return list.value.slice(start, start + pageSize.value)
+})
 
 function toggleItem(id: number) {
   expandedId.value = expandedId.value === id ? null : id
@@ -241,18 +278,6 @@ async function confirmEdit() {
   position: relative;
   transition: all 0.25s ease;
 }
-.fm-card::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 3px;
-  height: 100%;
-  transition: opacity 0.2s;
-}
-.fm-card.fm-status--published::before { background: #67c23a; }
-.fm-card.fm-status--draft::before { background: #e6a23c; }
-.fm-card.fm-status--rejected::before { background: #909399; }
 .fm-card:hover {
   border-color: #d5dbe8;
   box-shadow: 0 4px 20px rgba(0,0,0,0.06);

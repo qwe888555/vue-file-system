@@ -48,7 +48,6 @@
         :class="{ expanded: expandedId === item.id }"
       >
         <div class="faq-question" @click="toggleItem(item.id)">
-          <span class="faq-q-icon">Q</span>
           <div class="faq-q-main">
             <span class="faq-q-text">{{ item.question }}</span>
             <span class="faq-q-meta" v-if="item.category_name">{{ item.category_name }}</span>
@@ -73,6 +72,19 @@
         </div>
         <p class="faq-empty-text">暂无相关问题</p>
       </div>
+
+      <!-- 分页 -->
+      <div class="faq-pagination">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="allFiltered.length"
+          layout="total, sizes, prev, pager, next, jumper"
+          :page-sizes="[10, 15, 20]"
+          @current-change="handlePageChange"
+          @size-change="handleSizeChange"
+        />
+      </div>
     </div>
 
 </div>
@@ -90,14 +102,19 @@ const expandedId = ref<number | null>(null)
 const searchQuery = ref('')
 const loading = ref(true)
 
+const page = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
+
 onMounted(async () => {
   try {
     const [cats, faqs] = await Promise.all([
       getFaqCategoriesApi(),
-      getFaqItemsApi(),
+      getFaqItemsApi({ page: page.value, page_size: pageSize.value }),
     ])
     categories.value = cats
-    items.value = faqs
+    total.value = faqs.count
+    items.value = faqs.results
   } catch {
     // 静默
   } finally {
@@ -106,17 +123,40 @@ onMounted(async () => {
 })
 
 async function loadItems() {
+  page.value = 1
+  await loadPage()
+}
+
+async function loadPage() {
+  loading.value = true
   try {
-    items.value = await getFaqItemsApi(
-      activeCategory.value ? { category: activeCategory.value } : undefined,
-    )
+    const res = await getFaqItemsApi({
+      page: page.value,
+      page_size: pageSize.value,
+      category: activeCategory.value || undefined,
+    })
+    total.value = res.count
+    items.value = res.results
   } catch {
     items.value = []
+  } finally {
+    loading.value = false
   }
+}
+
+function handlePageChange(p: number) {
+  page.value = p
+  loadPage()
 }
 
 function toggleItem(id: number) {
   expandedId.value = expandedId.value === id ? null : id
+}
+
+function handleSizeChange(s: number) {
+  pageSize.value = s
+  page.value = 1
+  loadPage()
 }
 
 function searchTag(tag: string) {
@@ -127,18 +167,22 @@ function handleSearch() {
   // computed 实时过滤
 }
 
+// 搜索过滤后的全部数据（用于分页统计）
+const allFiltered = computed(() => {
+  if (!searchQuery.value) return items.value
+  const kw = searchQuery.value.toLowerCase()
+  return items.value.filter(
+    (item) =>
+      item.question.toLowerCase().includes(kw) ||
+      (item.answer && item.answer.toLowerCase().includes(kw)) ||
+      item.tags?.some((t) => t.toLowerCase().includes(kw)),
+  )
+})
+
+// 当前页展示的数据（搜索 + 客户端分页）
 const filteredItems = computed(() => {
-  let list = items.value
-  if (searchQuery.value) {
-    const kw = searchQuery.value.toLowerCase()
-    list = list.filter(
-      (item) =>
-        item.question.toLowerCase().includes(kw) ||
-        (item.answer && item.answer.toLowerCase().includes(kw)) ||
-        item.tags?.some((t) => t.toLowerCase().includes(kw)),
-    )
-  }
-  return list
+  const start = (page.value - 1) * pageSize.value
+  return allFiltered.value.slice(start, start + pageSize.value)
 })
 </script>
 
@@ -188,10 +232,6 @@ const filteredItems = computed(() => {
   position: relative; overflow: hidden;
   transition: all 0.25s ease;
 }
-.faq-card::before {
-  content: ''; position: absolute; left: 0; top: 4px; bottom: 4px;
-  width: 3px; background: #2b5fd9; border-radius: 2px; opacity: 0.5;
-}
 .faq-card:hover {
   border-color: #d5dbe8; box-shadow: 0 4px 20px rgba(0,0,0,0.05);
   transform: translateY(-1px);
@@ -201,14 +241,6 @@ const filteredItems = computed(() => {
 .faq-question {
   display: flex; align-items: center; gap: 12px;
   padding: 14px 18px 14px 22px; cursor: pointer; user-select: none;
-}
-
-.faq-q-icon {
-  width: 28px; height: 28px; min-width: 28px; border-radius: 8px;
-  background: linear-gradient(135deg, #eef3fe, #dce5fb);
-  color: #2b5fd9; font-size: 13px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 1px 3px rgba(43, 95, 217, 0.1);
 }
 
 .faq-q-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -247,4 +279,12 @@ const filteredItems = computed(() => {
 .faq-empty { text-align: center; padding: 60px 0; }
 .faq-empty-icon { width: 48px; height: 48px; margin: 0 auto 12px; color: #c8cdd6; }
 .faq-empty-text { font-size: 14px; color: #8e95a6; margin: 0; }
+
+/* ── 分页 ── */
+.faq-pagination { display: flex; justify-content: flex-start; margin-top: 20px; }
+
+/* ── 响应式 ── */
+@media (max-width: 768px) {
+  .faq-list { grid-template-columns: 1fr; }
+}
 </style>
