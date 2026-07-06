@@ -35,7 +35,7 @@ const activeMenu = computed(() => {
 
 const isLoggedIn = computed(() => !!userStore.token)
 const userDisplayRole = computed(() => {
-  if (userStore.role === 'admin' || userStore.role === 'college_admin' || userStore.role === 'dept_admin') return '普通管理员'
+  if (userStore.role === 'admin' || userStore.role === 'college_admin') return '普通管理员'
   return userStore.userInfo?.role_display || ''
 })
 
