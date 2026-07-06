@@ -101,7 +101,8 @@ async function handleSSOLogin() {
   } catch { /* 忽略 */ }
   // 后端不可用或未返回 mock_codes 时使用默认测试账号
   ssoAccounts.value = [
-    { code: 'test_college', username: 'test_college', role: 'college_admin', description: '学院管理员' },
+    { code: 'mock_college_admin', username: 'sso_college_admin', role: 'college_admin', description: '学院SSO管理员' },
+    { code: 'mock_dept_admin', username: 'sso_dept_admin', role: 'dept_admin', description: '部门SSO管理员' },
   ]
   ssoDialogVisible.value = true
   ssoLoading.value = false

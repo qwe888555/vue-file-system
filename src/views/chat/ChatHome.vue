@@ -6,7 +6,6 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessageBox } from 'element-plus'
-import logoImg from '@/assets/logo.png'
 import type { KnowledgeFile } from '@/types'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
@@ -147,10 +146,9 @@ onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAni
     <!-- ═══ 左侧边栏（对话列表）═══ -->
     <aside class="chat-sidebar" :class="{ collapsed: !sidebarOpen }">
       <!-- 顶部 -->
-      <div class="sidebar-top">
-        <div class="sidebar-logo-area">
-          <img :src="logoImg" alt="logo" class="sidebar-logo" />
-        </div>
+      <div class="sidebar-logo">
+        <span class="sidebar-logo-text">NISU-CD</span>
+        <span class="sidebar-logo-sub">资源系统</span>
       </div>
 
       <!-- 搜索 -->
@@ -430,12 +428,30 @@ onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAni
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(64, 158, 255, 0.3), transparent);
 }
-.sidebar-logo-area {
-  margin-bottom: 12px;
-}
 .sidebar-logo {
-  height: 44px;
-  width: auto;
+  height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  flex-shrink: 0;
+  gap: 2px;
+}
+.sidebar-logo-text {
+  font-size: 20px;
+  font-weight: 700;
+  color: #2b5fd9;
+  letter-spacing: 2px;
+  line-height: 1.2;
+  font-family: 'Microsoft Yahei', sans-serif;
+}
+.sidebar-logo-sub {
+  font-size: 12px;
+  font-family: 'Microsoft Yahei', sans-serif;
+  font-weight: 500;
+  color: #8e95a6;
+  letter-spacing: 4px;
 }
 /* 退出按钮 */
 .sidebar-exit {
