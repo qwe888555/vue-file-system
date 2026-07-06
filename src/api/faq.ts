@@ -27,10 +27,12 @@ export function getFaqCategoriesApi(): Promise<FaqCategory[]> {
   return request.get('/faq/categories/')
 }
 
-/** 获取已发布的 FAQ 列表（支持按分类筛选） */
+/** 获取已发布的 FAQ 列表（支持按分类筛选 + 分页） */
 export function getFaqItemsApi(params?: {
   category?: number
-}): Promise<FaqItem[]> {
+  page?: number
+  page_size?: number
+}): Promise<{ count: number; results: FaqItem[] }> {
   return request.get('/faq/items/', { params })
 }
 
@@ -63,8 +65,8 @@ export function getFaqManageItemsApi(params?: {
   page?: number
   page_size?: number
   status?: string
-  category?: number
-  keyword?: string
+  college_id?: number
+  search?: string
 }): Promise<{ count: number; results: FaqManageItem[] }> {
   return request.get('/faq/manage/items/', { params })
 }
@@ -78,7 +80,7 @@ export function deleteFaqItemApi(id: number): Promise<void> {
 export function getFaqDraftsApi(params?: {
   page?: number
   page_size?: number
-  category?: number
+  college_id?: number
 }): Promise<{ count: number; results: FaqManageItem[] }> {
   return request.get('/faq/drafts/', { params })
 }
@@ -91,7 +93,7 @@ export function getFaqDraftDetailApi(id: number): Promise<FaqManageItem> {
 /** 编辑草稿 */
 export function updateFaqDraftApi(
   id: number,
-  data: { question?: string; answer?: string; category?: number; tags?: string[] },
+  data: { question?: string; answer?: string; category?: number; college?: number; tags?: string[] },
 ): Promise<FaqManageItem> {
   return request.patch(`/faq/drafts/${id}/`, data)
 }
@@ -100,6 +102,6 @@ export function updateFaqDraftApi(
 export function actionFaqDraftApi(
   id: number,
   action: 'publish' | 'reject',
-): Promise<{ status: string; faq_id: number; new_status: string }> {
+): Promise<{ detail: string; status: string; reviewed_at: string }> {
   return request.post(`/faq/drafts/${id}/action/`, { action })
 }
