@@ -122,6 +122,17 @@ onMounted(async () => {
 
 async function loadItems() {
   page.value = 1
+  loading.value = true
+  try {
+    const res = await getFaqItemsApi({
+      category: activeCategory.value || undefined,
+    })
+    items.value = res.results || []
+  } catch {
+    items.value = []
+  } finally {
+    loading.value = false
+  }
 }
 
 function handlePageChange(p: number) {
