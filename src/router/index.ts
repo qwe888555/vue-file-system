@@ -8,6 +8,7 @@ import chatRoutes from './chat'
 import faqRoutes from './faq'
 import knowledgeRoutes from './knowledge'
 import adminRoutes from './account'
+import logRoutes from './log'
 import { useUserStore } from '@/store/user'
 
 // ── 合并所有路由 ──
@@ -17,6 +18,7 @@ const routes: RouteRecordRaw[] = [
   ...faqRoutes,
   ...knowledgeRoutes,
   ...adminRoutes,
+  ...logRoutes,
 ]
 
 const router = createRouter({
