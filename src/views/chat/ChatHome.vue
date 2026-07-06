@@ -26,6 +26,9 @@ const hasPlayed = sessionStorage.getItem('hasPlayHomeAnimation') === 'true'
 const showEntryAnim = ref(!hasPlayed)
 const showInstantContent = ref(hasPlayed)
 const inputText = ref('')
+const isRecording = ref(false)
+let mediaRecorder: MediaRecorder | null = null
+let audioChunks: Blob[] = []
 
 // SSE
 const streamingContent = ref('')
@@ -133,6 +136,93 @@ async function sendMessage() {
 
 function handleFeedback(messageId: number, type: 'like' | 'dislike') {
   chat.submitFeedback(messageId, type)
+}
+
+/* ── 语音输入 ── */
+async function toggleRecording() {
+  if (isRecording.value) {
+    stopRecording()
+    return
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    mediaRecorder = new MediaRecorder(stream)
+    audioChunks = []
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data) }
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop())
+      const blob = new Blob(audioChunks, { type: 'audio/wav' })
+      audioChunks = []
+      if (blob.size < 100) return // 太短忽略
+      await sendVoiceMessage(blob)
+    }
+    mediaRecorder.start()
+    isRecording.value = true
+  } catch { /* 麦克风权限拒绝 */ }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  }
+  isRecording.value = false
+}
+
+async function sendVoiceMessage(audioBlob: Blob) {
+  if (isStreaming.value) return
+  if (!chat.currentConversationId.value) {
+    const conv = await chat.createConversation()
+    if (!conv) return
+  }
+  const convId = chat.currentConversationId.value!
+  // 本地占位消息
+  chat.appendUserMessage('[语音消息]')
+  isStreaming.value = true
+  streamingContent.value = ''
+  streamingReferences.value = []
+
+  try {
+    const { voiceAskApi } = await import('@/api/chat')
+    const response = await voiceAskApi(audioBlob, convId)
+    if (!response.ok) { isStreaming.value = false; return }
+
+    const reader = response.body?.getReader()
+    if (!reader) { isStreaming.value = false; return }
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let currentEvent = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) currentEvent = line.slice(7).trim()
+        else if (line.startsWith('data: ')) {
+          const dataStr = line.slice(6).trim()
+          try {
+            const data = JSON.parse(dataStr)
+            switch (currentEvent) {
+              case 'msg': streamingContent.value += data.content || ''; break
+              case 'done':
+                chat.appendAssistantMessage(streamingContent.value, streamingReferences.value, data.message_id)
+                isStreaming.value = false
+                streamingContent.value = ''
+                break
+              case 'references':
+                if (data.count > 0) streamingReferences.value = [{ id: 0, title: data.summary || '参考来源', summary: data.summary, status: 1 } as any]
+                break
+              case 'error': isStreaming.value = false; break
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch { isStreaming.value = false }
 }
 onMounted(() => {
   chat.init()
@@ -379,6 +469,13 @@ onMounted(() => {
               :disabled="isStreaming"
               @keyup.enter="sendMessage"
             />
+            <button class="mic-btn" :class="{ recording: isRecording }" @click="toggleRecording" title="语音输入">
+              <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
+                <path d="M10 2a3 3 0 00-3 3v4a3 3 0 106 0V5a3 3 0 00-3-3zM5 9a5 5 0 0010 0h-1.5a3.5 3.5 0 01-7 0H5z"/>
+                <path d="M9.25 13.5v2.75h1.5V13.5h-1.5z"/>
+                <path d="M6 14.5h8v1.5H6z"/>
+              </svg>
+            </button>
             <button class="send-fab" :disabled="!inputText.trim() || isStreaming" @click="sendMessage">
               <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
                 <path d="M10 2a1 1 0 01.707.293l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414l-4.293 4.293a1 1 0 01-1.414-1.414l6-6A1 1 0 0110 2z"/>
@@ -991,6 +1088,17 @@ onMounted(() => {
 .send-fab svg { width: 16px; height: 16px; }
 .send-fab:hover:not(:disabled) { background: #4096ff; }
 .send-fab:disabled { background: #d9d9d9; cursor: not-allowed; }
+
+/* 语音输入按钮 */
+.mic-btn {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: none; background: transparent; color: #8e9ebd;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.2s; flex-shrink: 0; padding: 0;
+}
+.mic-btn:hover { background: rgba(64,158,255,0.08); color: #409eff; }
+.mic-btn.recording { color: #f56c6c; animation: micPulse 1s ease-in-out infinite; }
+@keyframes micPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
 </style>
 <style>
