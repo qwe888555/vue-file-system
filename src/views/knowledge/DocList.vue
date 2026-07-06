@@ -38,6 +38,8 @@ async function fetchFiles() {
     if (error.response?.status === 404 && currentPage.value > 1) {
       currentPage.value = 1
       await fetchFiles()
+    } else if (error.response?.status === 401) {
+      console.warn('Token过期，需要重新登录')
     }
   } finally {
     loading.value = false
@@ -49,7 +51,9 @@ onMounted(() => {
 })
 
 function handleOpenUpload() {
+  console.log('handleOpenUpload called, showUploadDialog:', showUploadDialog.value)
   showUploadDialog.value = true
+  console.log('handleOpenUpload done, showUploadDialog:', showUploadDialog.value)
 }
 
 const recentFiles = computed(() => {

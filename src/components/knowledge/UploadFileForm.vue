@@ -20,6 +20,7 @@ interface UploadFormData {
   category: string
   collegeId: number
   collegeName: string
+  departmentId: number
   keywords: string
   description: string
   content: string
@@ -27,8 +28,8 @@ interface UploadFormData {
   fileSize: number
   fileData: string
   scope: 'school' | 'college' | 'department'
-  firstLevelCategoryId: number
-  secondLevelCategoryId: number
+  firstLevelCategoryId: number | undefined
+  secondLevelCategoryId: number | undefined
 }
 
 const form = ref<UploadFormData>({
@@ -36,6 +37,7 @@ const form = ref<UploadFormData>({
   category: '',
   collegeId: 0,
   collegeName: '',
+  departmentId: 0,
   keywords: '',
   description: '',
   content: '',
@@ -43,8 +45,8 @@ const form = ref<UploadFormData>({
   fileSize: 0,
   fileData: '',
   scope: 'school',
-  firstLevelCategoryId: 0,
-  secondLevelCategoryId: 0,
+  firstLevelCategoryId: undefined,
+  secondLevelCategoryId: undefined,
 })
 
 const createMode = ref(false)
@@ -57,10 +59,21 @@ const isAiClassifying = ref(false)
 
 async function loadFirstLevelCategories() {
   try {
+    console.log('开始加载一级分类...')
     const res = await getFirstLevelCategoriesApi()
-    firstLevelCategories.value = res
+    console.log('一级分类响应:', res)
+    if (Array.isArray(res)) {
+      firstLevelCategories.value = res
+    } else if (res && typeof res === 'object' && Array.isArray(res.results)) {
+      firstLevelCategories.value = res.results
+    } else {
+      console.error('一级分类数据格式错误:', res)
+      firstLevelCategories.value = []
+    }
+    console.log('一级分类加载完成:', firstLevelCategories.value)
   } catch (error) {
     console.error('获取一级分类列表失败:', error)
+    firstLevelCategories.value = []
   }
 }
 
@@ -68,8 +81,18 @@ async function loadSecondLevelCategories(parentId?: number) {
   secondLevelCategories.value = []
   if (parentId) {
     try {
+      console.log('开始加载二级分类, parentId:', parentId)
       const res = await getSecondLevelCategoriesApi(parentId)
-      secondLevelCategories.value = res
+      console.log('二级分类响应:', res)
+      if (Array.isArray(res)) {
+        secondLevelCategories.value = res
+      } else if (res && typeof res === 'object' && Array.isArray(res.results)) {
+        secondLevelCategories.value = res.results
+      } else {
+        console.error('二级分类数据格式错误:', res)
+        secondLevelCategories.value = []
+      }
+      console.log('二级分类加载完成:', secondLevelCategories.value)
     } catch (error) {
       console.error('获取二级分类列表失败:', error)
     }
@@ -95,9 +118,11 @@ async function aiClassify() {
 }
 
 watch(() => form.value.firstLevelCategoryId, (val) => {
-  if (val) {
+  if (val !== undefined) {
     loadSecondLevelCategories(val)
-    form.value.secondLevelCategoryId = 0
+    form.value.secondLevelCategoryId = undefined
+  } else {
+    secondLevelCategories.value = []
   }
 })
 
@@ -111,12 +136,8 @@ onMounted(async () => {
 
 watch(() => props.visible, async (val) => {
   if (val) {
-    try {
-      await loadFirstLevelCategories()
-    } catch (error) {
-      console.error('加载分类失败:', error)
-    }
     resetForm()
+    await loadFirstLevelCategories()
   }
 })
 
@@ -127,6 +148,7 @@ function resetForm() {
     category: '',
     collegeId: userInfo?.college || 0,
     collegeName: userInfo?.college_name || '',
+    departmentId: userInfo?.department || 0,
     keywords: '',
     description: '',
     content: '',
@@ -134,8 +156,8 @@ function resetForm() {
     fileSize: 0,
     fileData: '',
     scope: 'school',
-    firstLevelCategoryId: 0,
-    secondLevelCategoryId: 0,
+    firstLevelCategoryId: undefined,
+    secondLevelCategoryId: undefined,
   }
   createMode.value = false
   uploadedFile.value = null
@@ -225,11 +247,11 @@ async function handleSubmit() {
     ElMessage.warning('请选择可见范围')
     return
   }
-  if (!form.value.firstLevelCategoryId) {
+  if (form.value.firstLevelCategoryId === undefined) {
     ElMessage.warning('请选择一级分类')
     return
   }
-  if (!form.value.secondLevelCategoryId) {
+  if (form.value.secondLevelCategoryId === undefined) {
     ElMessage.warning('请选择二级分类')
     return
   }
@@ -303,9 +325,11 @@ async function handleSubmit() {
       formData.append('description', form.value.description || '')
       formData.append('scope', form.value.scope)
       formData.append('college_id', String(form.value.collegeId || 1))
-      formData.append('department_id', '1')
-      formData.append('category_id', String(form.value.secondLevelCategoryId))
+      formData.append('department_id', String(form.value.departmentId || 1))
+      formData.append('category_id', String(form.value.secondLevelCategoryId || 0))
+      formData.append('keywords', keywords.join(','))
 
+      console.log('文件上传FormData:', [...formData.entries()])
       await uploadFileApi(formData)
       ElMessage.success('上传成功')
       emit('submit', {

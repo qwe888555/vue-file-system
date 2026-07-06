@@ -48,6 +48,10 @@ export function checkFileHashApi(hash: string): Promise<{ exists: boolean; fileI
 export function uploadFileApi(data: FormData): Promise<KnowledgeFile> {
   return request.post('/knowledge/upload/file/', data, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    transformRequest: (data, headers) => {
+      delete headers['Content-Type']
+      return data
+    },
   })
 }
 
