@@ -5,6 +5,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
+import logoImg from '@/assets/logo.png'
 import { ElMessageBox } from 'element-plus'
 import type { KnowledgeFile } from '@/types'
 import { useChat } from '@/composables/useChat'
@@ -22,7 +23,9 @@ const showLoginDialog = ref(false)
 const showPersonalCenter = ref(false)
 const showUserMenu = ref(false)
 const showToolsMenu = ref(false)
-const showEntryAnim = ref(true)
+const hasPlayed = localStorage.getItem('hasPlayHomeAnimation') === 'true'
+const showEntryAnim = ref(!hasPlayed)
+const showInstantContent = ref(hasPlayed)
 const inputText = ref('')
 
 // SSE
@@ -132,7 +135,20 @@ async function sendMessage() {
 function handleFeedback(messageId: number, type: 'like' | 'dislike') {
   chat.submitFeedback(messageId, type)
 }
-onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAnim.value = false, 2600) })
+onMounted(() => {
+  chat.init()
+  loadHotQuestions()
+  if (showEntryAnim.value) {
+    // 首次进入：播放完整动画，2600ms 后写入标记
+    setTimeout(() => {
+      showEntryAnim.value = false
+      localStorage.setItem('hasPlayHomeAnimation', 'true')
+    }, 2600)
+  } else {
+    // 非首次：直接显示完整内容
+    showInstantContent.value = true
+  }
+})
 </script>
 
 <template>
@@ -146,9 +162,8 @@ onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAni
     <!-- ═══ 左侧边栏（对话列表）═══ -->
     <aside class="chat-sidebar" :class="{ collapsed: !sidebarOpen }">
       <!-- 顶部 -->
-      <div class="sidebar-logo">
-        <span class="sidebar-logo-text">NISU-CD</span>
-        <span class="sidebar-logo-sub">资源系统</span>
+      <div class="sidebar-logo-area">
+        <img :src="logoImg" alt="成都东软学院" class="sidebar-logo-img" />
       </div>
 
       <!-- 搜索 -->
@@ -292,16 +307,16 @@ onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAni
                 <div></div><div></div><div></div><div></div><div></div><div></div><div></div>
               </div>
             </div>
-            <h2 class="welcome-title" :class="{ 'wi-anim-in': !showEntryAnim }">
+            <h2 class="welcome-title" :class="{ 'wi-anim-in': !showEntryAnim, instant: showInstantContent }">
               你好！有什么可以帮助你的？
-              <span class="title-scanline" />
+              <span v-if="showInstantContent || !showEntryAnim" class="title-scanline" />
             </h2>
-            <div v-if="topQuestions.length" class="quick-questions" :class="{ 'wi-anim-in': !showEntryAnim }">
+            <div v-if="topQuestions.length" class="quick-questions" :class="{ 'wi-anim-in': !showEntryAnim, instant: showInstantContent }">
               <button
                 v-for="(q, qi) in topQuestions"
                 :key="q.text"
                 class="qq-btn"
-                :style="{ transitionDelay: `${qi * 70}ms` }"
+                :style="{ transitionDelay: showInstantContent ? '0ms' : `${qi * 70}ms` }"
                 @click="quickQuestion(q.text)"
               >{{ q.text }}</button>
             </div>
@@ -428,30 +443,16 @@ onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAni
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(64, 158, 255, 0.3), transparent);
 }
-.sidebar-logo {
-  height: 72px;
+.sidebar-logo-area {
+  padding: 20px 16px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 0 16px;
-  flex-shrink: 0;
-  gap: 2px;
 }
-.sidebar-logo-text {
-  font-size: 20px;
-  font-weight: 700;
-  color: #2b5fd9;
-  letter-spacing: 2px;
-  line-height: 1.2;
-  font-family: 'Microsoft Yahei', sans-serif;
-}
-.sidebar-logo-sub {
-  font-size: 12px;
-  font-family: 'Microsoft Yahei', sans-serif;
-  font-weight: 500;
-  color: #8e95a6;
-  letter-spacing: 4px;
+.sidebar-logo-img {
+  height: 44px;
+  width: auto;
+  object-fit: contain;
 }
 /* 退出按钮 */
 .sidebar-exit {
@@ -729,6 +730,11 @@ onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAni
   opacity: 1;
   transform: translateY(0);
 }
+.welcome-title.instant {
+  opacity: 1;
+  transform: translateY(0);
+  transition: none;
+}
 /* 扫光光带 */
 .title-scanline {
   position: absolute; inset: 0; pointer-events: none;
@@ -751,6 +757,15 @@ onMounted(() => { chat.init(); loadHotQuestions(); setTimeout(() => showEntryAni
 }
 .quick-questions.wi-anim-in {
   opacity: 1;
+}
+.quick-questions.instant {
+  opacity: 1;
+}
+.quick-questions.instant .qq-btn {
+  opacity: 1;
+  transform: scale(1);
+  transition: none;
+  box-shadow: none;
 }
 .qq-btn {
   opacity: 0;
