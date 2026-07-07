@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useUserStore } from '@/store/user'
-import { uploadFileApi, uploadTextApi, getFirstLevelCategoriesApi, getSecondLevelCategoriesApi, addKeywordsApi } from '@/api/knowledge'
+import { uploadTextApi, uploadFileApi } from '@/api/knowledge'
 
 const props = defineProps<{
   visible: boolean
@@ -13,225 +12,54 @@ const emit = defineEmits<{
   (e: 'submit', data: UploadFormData): void
 }>()
 
-const userStore = useUserStore()
-
 interface UploadFormData {
   title: string
-  category: string
-  collegeId: number
-  collegeName: string
-  departmentId: number
   keywords: string
   description: string
   content: string
-  fileName: string
-  fileSize: number
-  fileData: string
-  scope: 'school' | 'college' | 'department'
-  firstLevelCategoryId: number | undefined
-  secondLevelCategoryId: number | undefined
+  scope: 'public' | 'private'
 }
+
+const createMode = ref(true)
+const uploadedFile = ref<File | null>(null)
 
 const form = ref<UploadFormData>({
   title: '',
-  category: '',
-  collegeId: 0,
-  collegeName: '',
-  departmentId: 0,
   keywords: '',
   description: '',
   content: '',
-  fileName: '',
-  fileSize: 0,
-  fileData: '',
-  scope: 'school',
-  firstLevelCategoryId: undefined,
-  secondLevelCategoryId: undefined,
+  scope: 'public',
 })
 
-const createMode = ref(false)
-const uploadedFile = ref<File | null>(null)
-const isConverting = ref(false)
-const isFileTooLarge = ref(false)
-const firstLevelCategories = ref<{ id: number; name: string }[]>([])
-const secondLevelCategories = ref<{ id: number; name: string; parent_id: number }[]>([])
-const isAiClassifying = ref(false)
-
-async function loadFirstLevelCategories() {
-  try {
-    console.log('开始加载一级分类...')
-    const res = await getFirstLevelCategoriesApi()
-    console.log('一级分类响应:', res)
-    if (Array.isArray(res)) {
-      firstLevelCategories.value = res
-    } else if (res && typeof res === 'object' && Array.isArray(res.results)) {
-      firstLevelCategories.value = res.results
-    } else {
-      console.error('一级分类数据格式错误:', res)
-      firstLevelCategories.value = []
-    }
-    console.log('一级分类加载完成:', firstLevelCategories.value)
-  } catch (error) {
-    console.error('获取一级分类列表失败:', error)
-    firstLevelCategories.value = []
-  }
-}
-
-async function loadSecondLevelCategories(parentId?: number) {
-  secondLevelCategories.value = []
-  if (parentId) {
-    try {
-      console.log('开始加载二级分类, parentId:', parentId)
-      const res = await getSecondLevelCategoriesApi(parentId)
-      console.log('二级分类响应:', res)
-      if (Array.isArray(res)) {
-        secondLevelCategories.value = res
-      } else if (res && typeof res === 'object' && Array.isArray(res.results)) {
-        secondLevelCategories.value = res.results
-      } else {
-        console.error('二级分类数据格式错误:', res)
-        secondLevelCategories.value = []
-      }
-      console.log('二级分类加载完成:', secondLevelCategories.value)
-    } catch (error) {
-      console.error('获取二级分类列表失败:', error)
-    }
-  }
-}
-
-async function aiClassify() {
-  isAiClassifying.value = true
-  ElMessage.info('AI正在分析文件内容，自动分类中...')
-  setTimeout(() => {
-    if (firstLevelCategories.value.length > 0) {
-      form.value.firstLevelCategoryId = firstLevelCategories.value[0].id
-      loadSecondLevelCategories(firstLevelCategories.value[0].id)
-      setTimeout(() => {
-        if (secondLevelCategories.value.length > 0) {
-          form.value.secondLevelCategoryId = secondLevelCategories.value[0].id
-        }
-      }, 300)
-    }
-    isAiClassifying.value = false
-    ElMessage.success('AI分类完成')
-  }, 1500)
-}
-
-watch(() => form.value.firstLevelCategoryId, (val) => {
-  if (val !== undefined) {
-    loadSecondLevelCategories(val)
-    form.value.secondLevelCategoryId = undefined
-  } else {
-    secondLevelCategories.value = []
-  }
-})
-
-onMounted(async () => {
-  try {
-    await loadFirstLevelCategories()
-  } catch (error) {
-    console.error('初始化分类失败:', error)
-  }
-})
-
-watch(() => props.visible, async (val) => {
+watch(() => props.visible, (val) => {
   if (val) {
     resetForm()
-    await loadFirstLevelCategories()
   }
 })
 
 function resetForm() {
-  const userInfo = userStore.userInfo
+  createMode.value = true
+  uploadedFile.value = null
   form.value = {
     title: '',
-    category: '',
-    collegeId: userInfo?.college || 0,
-    collegeName: userInfo?.college_name || '',
-    departmentId: userInfo?.department || 0,
     keywords: '',
     description: '',
     content: '',
-    fileName: '',
-    fileSize: 0,
-    fileData: '',
-    scope: 'school',
-    firstLevelCategoryId: undefined,
-    secondLevelCategoryId: undefined,
+    scope: 'public',
   }
-  createMode.value = false
-  uploadedFile.value = null
-  isConverting.value = false
-  isFileTooLarge.value = false
-  secondLevelCategories.value = []
 }
 
 function handleFileChange(file: File) {
-  const ext = file.name.split('.').pop()?.toLowerCase() || ''
-  let maxSize = 50 * 1024 * 1024
-  let sizeLimitText = '50MB'
-  let fileCategory = '其他文件'
-  
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
-    maxSize = 10 * 1024 * 1024
-    sizeLimitText = '10MB'
-    fileCategory = '图片类'
-  } else if (['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv'].includes(ext)) {
-    maxSize = 500 * 1024 * 1024
-    sizeLimitText = '500MB'
-    fileCategory = '视频类'
-  } else if (['pdf', 'doc', 'docx', 'txt', 'mp3', 'wav'].includes(ext)) {
-    maxSize = 50 * 1024 * 1024
-    sizeLimitText = '50MB'
-    fileCategory = '文档/音频类'
-  }
-  
-  const exceedsFormatLimit = file.size > maxSize
-  const exceedsStorageLimit = file.size > 4 * 1024 * 1024
-  isFileTooLarge.value = exceedsFormatLimit || exceedsStorageLimit
-  
   uploadedFile.value = file
-  form.value.fileName = file.name
-  form.value.fileSize = file.size
-  
   const baseName = file.name.replace(/\.[^/.]+$/, '')
   if (!form.value.title) {
     form.value.title = baseName
-  }
-  
-  if (isFileTooLarge.value) {
-    isConverting.value = false
-    if (exceedsStorageLimit) {
-      ElMessage.warning(`当前浏览器存储限制，单个文件不能超过4MB（${fileCategory}格式上限${sizeLimitText}），建议将文件打包为 ZIP/RAR 压缩包后再上传`)
-    } else {
-      ElMessage.warning(`${fileCategory}文件大小不能超过${sizeLimitText}，建议将文件打包为 ZIP/RAR 压缩包后再上传`)
-    }
-    return
-  }
-  
-  if (!isFileTooLarge.value) {
-    isConverting.value = true
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      form.value.fileData = e.target?.result as string
-      isConverting.value = false
-    }
-    reader.onerror = () => {
-      ElMessage.error('文件读取失败，请重新选择')
-      isConverting.value = false
-      form.value.fileData = ''
-    }
-    reader.readAsDataURL(file)
   }
 }
 
 function handleRemove() {
   uploadedFile.value = null
-  form.value.fileName = ''
-  form.value.fileSize = 0
-  form.value.fileData = ''
   form.value.title = ''
-  isFileTooLarge.value = false
 }
 
 async function handleSubmit() {
@@ -247,41 +75,6 @@ async function handleSubmit() {
     ElMessage.warning('请选择可见范围')
     return
   }
-  if (form.value.firstLevelCategoryId === undefined) {
-    ElMessage.warning('请选择一级分类')
-    return
-  }
-  if (form.value.secondLevelCategoryId === undefined) {
-    ElMessage.warning('请选择二级分类')
-    return
-  }
-
-  if (createMode.value) {
-    if (!form.value.content.trim()) {
-      ElMessage.warning('请输入文件内容')
-      return
-    }
-  } else {
-    if (!uploadedFile.value) {
-      ElMessage.warning('请选择要上传的文件')
-      return
-    }
-    
-    if (isFileTooLarge.value) {
-      ElMessage.warning('上传的文件过大，请将文件打包为 ZIP/RAR 压缩包后再上传')
-      return
-    }
-    
-    if (isConverting.value) {
-      ElMessage.warning('文件正在处理中，请稍候...')
-      return
-    }
-    
-    if (!form.value.fileData && !isFileTooLarge.value) {
-      ElMessage.warning('文件处理失败，请重新上传')
-      return
-    }
-  }
 
   const keywords = form.value.keywords
     .split(/[,，、\s]+/)
@@ -294,55 +87,54 @@ async function handleSubmit() {
   }
 
   if (createMode.value) {
+    if (!form.value.content.trim()) {
+      ElMessage.warning('请输入文件内容')
+      return
+    }
+
     try {
       const result = await uploadTextApi({
         title: form.value.title,
         content: form.value.content,
         description: form.value.description || undefined,
-        college_id: form.value.collegeId || 1,
-        category_id: form.value.secondLevelCategoryId,
-        visibility: 'public',
-        scope: form.value.scope,
+        keywords: keywords.length > 0 ? keywords : undefined,
+        scope: form.value.scope === 'public' ? 'school' : 'college',
       })
-      const docId = result.id || result.doc_id
-      if (docId && keywords.length > 0) {
-        await addKeywordsApi(docId, keywords)
-      }
+      console.log('创建文件结果:', result)
       ElMessage.success('创建成功')
       emit('submit', {
         ...form.value,
         keywords: keywords.join(','),
-        collegeId: form.value.collegeId,
-        collegeName: form.value.collegeName,
       })
     } catch (error) {
       console.error('创建文件失败:', error)
       ElMessage.error('创建文件失败，请重试')
       return
     }
-  } else if (uploadedFile.value) {
+  } else {
+    if (!uploadedFile.value) {
+      ElMessage.warning('请选择要上传的文件')
+      return
+    }
+
     try {
       const formData = new FormData()
       formData.append('file', uploadedFile.value)
       formData.append('title', form.value.title)
-      formData.append('description', form.value.description || '')
-      formData.append('scope', form.value.scope)
-      formData.append('college_id', String(form.value.collegeId || 1))
-      formData.append('department_id', String(form.value.departmentId || 1))
-      formData.append('category_id', String(form.value.secondLevelCategoryId || 0))
-
-      console.log('文件上传FormData:', [...formData.entries()])
-      const result = await uploadFileApi(formData)
-      const docId = result.id || result.doc_id
-      if (docId && keywords.length > 0) {
-        await addKeywordsApi(docId, keywords)
+      if (form.value.description) {
+        formData.append('description', form.value.description)
       }
+      formData.append('scope', form.value.scope === 'public' ? 'school' : 'college')
+      if (keywords.length > 0) {
+        formData.append('keywords', JSON.stringify(keywords))
+      }
+
+      const result = await uploadFileApi(formData)
+      console.log('文件上传结果:', result)
       ElMessage.success('上传成功')
       emit('submit', {
         ...form.value,
         keywords: keywords.join(','),
-        collegeId: form.value.collegeId,
-        collegeName: form.value.collegeName,
       })
     } catch (error) {
       console.error('文件上传失败:', error)
@@ -360,164 +152,115 @@ function handleClose() {
 <template>
   <el-dialog
     :model-value="visible"
-    title="上传文件"
-    width="500px"
+    :title="createMode ? '创建文件' : '上传文件'"
+    width="600px"
     :close-on-click-modal="false"
     @update:model-value="handleClose"
   >
-    <el-form :model="form" label-width="100px" class="upload-form">
-      <el-form-item label="文件名" required>
-        <el-input v-model="form.title" placeholder="请输入文件名" />
-      </el-form-item>
+    <div class="mode-switch-wrapper">
+      <el-radio-group v-model="createMode">
+        <el-radio :value="true">创建文件</el-radio>
+        <el-radio :value="false">上传文件</el-radio>
+      </el-radio-group>
+    </div>
 
-      <el-form-item label="关键词" required>
-        <el-input v-model="form.keywords" placeholder="请输入关键词，用逗号或空格分隔" />
-      </el-form-item>
-
-      <el-form-item label="可见范围" required>
-        <el-radio-group v-model="form.scope">
-          <el-radio label="school">全校</el-radio>
-          <el-radio label="college">学院内部</el-radio>
-          <el-radio label="department">部门内部</el-radio>
-        </el-radio-group>
-      </el-form-item>
-
-      <el-form-item label="一级分类" required>
-        <el-select v-model="form.firstLevelCategoryId" placeholder="请选择一级分类" style="width: 100%">
-          <el-option
-            v-for="cat in firstLevelCategories"
-            :key="cat.id"
-            :label="cat.name"
-            :value="cat.id"
+    <div class="form-container">
+      <div v-if="!createMode" class="upload-area">
+        <div class="upload-header">
+          <el-input
+            v-model="form.title"
+            placeholder="请输入文件名"
+            class="title-input"
           />
-        </el-select>
-      </el-form-item>
+        </div>
 
-      <el-form-item label="二级分类" required>
-        <el-select
-          v-model="form.secondLevelCategoryId"
-          placeholder="请选择二级分类"
-          style="width: 100%"
-          :disabled="!form.firstLevelCategoryId"
-        >
-          <el-option
-            v-for="cat in secondLevelCategories"
-            :key="cat.id"
-            :label="cat.name"
-            :value="cat.id"
-          />
-        </el-select>
-      </el-form-item>
+        <div class="upload-center">
+          <el-upload
+            :auto-upload="false"
+            :file-list="uploadedFile ? [{ name: uploadedFile.name, size: uploadedFile.size }] : []"
+            :on-change="(file) => { if (file.raw) handleFileChange(file.raw) }"
+            :on-remove="handleRemove"
+            drag
+            accept=".pdf,.doc,.docx,.txt,.jpg,.png,.gif,.mp3,.wav,.mp4,.avi,.mkv,.zip,.rar"
+            class="upload-dragger"
+          >
+            <el-icon :size="48" color="#c0c4cc"><Upload /></el-icon>
+            <div class="el-upload__text">
+              将文件拖到此处，或<em>点击上传</em>
+            </div>
+          </el-upload>
+        </div>
 
-      <el-form-item>
-        <el-button
-          type="primary"
-          :loading="isAiClassifying"
-          @click="aiClassify"
-        >
-          AI智能分类
-        </el-button>
-      </el-form-item>
-
-      <el-form-item label="文件描述">
-        <el-input v-model="form.description" type="textarea" :rows="3" placeholder="请输入文件描述..." />
-      </el-form-item>
-
-      <div class="mode-switch">
-        <el-radio-group v-model="createMode">
-          <el-radio :value="false">上传文件</el-radio>
-          <el-radio :value="true">创建文件</el-radio>
-        </el-radio-group>
+        <div class="upload-footer">
+          <div class="footer-left">
+            <el-input
+              v-model="form.keywords"
+              placeholder="关键词，用逗号或空格分隔"
+              class="keywords-input"
+            />
+            <el-input
+              v-model="form.description"
+              type="textarea"
+              :rows="2"
+              placeholder="文件描述..."
+              class="description-input"
+            />
+            <el-radio-group v-model="form.scope" class="scope-group">
+              <el-radio label="public">公开</el-radio>
+              <el-radio label="private">私密</el-radio>
+            </el-radio-group>
+          </div>
+        </div>
       </div>
 
-      <el-form-item v-if="createMode" label="文件内容">
-        <el-input
-          v-model="form.content"
-          type="textarea"
-          :rows="6"
-          placeholder="请输入文件内容（Markdown格式，便于AI读取）..."
-          class="content-editor"
-        />
-        <div class="content-tip">
-          <el-icon size="14"><Lightbulb /></el-icon>
-          <span>建议使用Markdown格式编写，大模型更容易理解和解析</span>
+      <div v-else class="create-area">
+        <div class="create-header">
+          <el-input
+            v-model="form.title"
+            placeholder="请输入文件名"
+            class="title-input"
+          />
         </div>
-      </el-form-item>
 
-      <el-form-item v-else label="文件上传">
-        <el-upload
-          :auto-upload="false"
-          :file-list="uploadedFile ? [{ name: uploadedFile.name, size: uploadedFile.size }] : []"
-          :on-change="(file) => { if (file.raw) handleFileChange(file.raw) }"
-          :on-remove="handleRemove"
-          drag
-          accept=".pdf,.doc,.docx,.txt,.jpg,.png,.gif,.mp3,.wav,.mp4,.avi,.mkv,.zip,.rar"
-          class="upload-dragger"
-        >
-          <el-icon :size="48" color="#c0c4cc"><Upload /></el-icon>
-          <div class="el-upload__text">
-            将文件拖到此处，或<em>点击上传</em>
+        <div class="create-center">
+          <el-input
+            v-model="form.content"
+            type="textarea"
+            :rows="10"
+            placeholder="请输入文件内容（Markdown格式，便于AI读取）..."
+            class="content-editor"
+          />
+          <div class="content-tip">
+            <span>建议使用Markdown格式编写，大模型更容易理解和解析</span>
           </div>
-        </el-upload>
-        <div v-if="uploadedFile" class="uploaded-file-info" :class="{ 'file-too-large': isFileTooLarge }">
-          <el-icon :size="16" :class="{ 'loading-icon': isConverting }">
-            <FileText v-if="!isConverting && !isFileTooLarge" />
-            <Warning v-else-if="isFileTooLarge" />
-            <Loading v-else />
-          </el-icon>
-          <span>{{ uploadedFile.name }}</span>
-          <span class="file-size">{{ (uploadedFile.size / 1024 / 1024).toFixed(2) }} MB</span>
-          <span v-if="isConverting" class="converting-text">正在处理...</span>
-          <span v-if="isFileTooLarge" class="too-large-text">文件过大，请打包上传</span>
         </div>
-        <div class="file-limit-tip">
-          <el-popover
-            trigger="click"
-            placement="bottom"
-            width="320"
-          >
-            <template #reference>
-              <el-icon size="14" color="#909399"><InfoFilled /></el-icon>
-              <span>文件大小限制说明</span>
-            </template>
-            <div class="file-limit-content">
-              <div class="limit-item">
-                <span class="limit-label">图片类</span>
-                <span class="limit-value">PNG/JPG/JPEG/GIF/WEBP</span>
-                <span class="limit-size">上限 10MB</span>
-              </div>
-              <div class="limit-item">
-                <span class="limit-label">视频类</span>
-                <span class="limit-value">MP4/WEBM/MOV/AVI/MKV/FLV</span>
-                <span class="limit-size">上限 500MB</span>
-              </div>
-              <div class="limit-item">
-                <span class="limit-label">文档/音频类</span>
-                <span class="limit-value">PDF/DOC/DOCX/TXT/MP3/WAV</span>
-                <span class="limit-size">上限 50MB</span>
-              </div>
-              <div class="limit-item">
-                <span class="limit-label">其他文件</span>
-                <span class="limit-value">ZIP/RAR等</span>
-                <span class="limit-size">上限 50MB</span>
-              </div>
-              <div class="storage-note">
-                <span class="note-icon">⚠️</span>
-                <span>注意：由于浏览器存储限制，单个文件实际不能超过4MB</span>
-              </div>
-              <div class="storage-note warning-note">
-                <span class="note-icon">🚫</span>
-                <span>不能上传非法、非公开文件</span>
-              </div>
-            </div>
-          </el-popover>
+
+        <div class="create-footer">
+          <div class="footer-left">
+            <el-input
+              v-model="form.keywords"
+              placeholder="关键词，用逗号或空格分隔"
+              class="keywords-input"
+            />
+            <el-input
+              v-model="form.description"
+              type="textarea"
+              :rows="2"
+              placeholder="文件描述..."
+              class="description-input"
+            />
+            <el-radio-group v-model="form.scope" class="scope-group">
+              <el-radio label="public">公开</el-radio>
+              <el-radio label="private">私密</el-radio>
+            </el-radio-group>
+          </div>
         </div>
-      </el-form-item>
-    </el-form>
+      </div>
+    </div>
 
     <template #footer>
       <el-button @click="handleClose">取消</el-button>
-      <el-button type="primary" @click="handleSubmit" :disabled="isConverting || !uploadedFile && !createMode">
+      <el-button type="primary" @click="handleSubmit">
         {{ createMode ? '确认创建' : '确认上传' }}
       </el-button>
     </template>
@@ -525,163 +268,95 @@ function handleClose() {
 </template>
 
 <style scoped>
-.upload-form {
-  margin-top: var(--spacing-md);
+.mode-switch-wrapper {
+  position: absolute;
+  right: 20px;
+  top: 16px;
 }
 
-.upload-form :deep(.el-form-item) {
-  margin-bottom: var(--spacing-md);
+.form-container {
+  margin-top: 40px;
+}
+
+.upload-area,
+.create-area {
+  display: flex;
+  flex-direction: column;
+  height: 400px;
+  border: 2px dashed #d9d9d9;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.upload-header,
+.create-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+
+.title-input {
+  width: 100%;
+}
+
+.upload-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.create-center {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.content-editor {
+  flex: 1;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 14px;
+  resize: none;
+}
+
+.content-tip {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.upload-footer,
+.create-footer {
+  padding: 12px 16px;
+  border-top: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+
+.footer-left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.keywords-input {
+  width: 100%;
+}
+
+.description-input {
+  width: 100%;
+  resize: none;
+}
+
+.scope-group {
+  display: flex;
+  gap: 16px;
 }
 
 .upload-dragger {
   width: 100%;
-}
-
-.mode-switch {
-  display: flex;
-  justify-content: center;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--color-border);
-  margin-bottom: var(--spacing-md);
-}
-
-.mode-switch :deep(.el-radio) {
-  margin: 0 16px;
-}
-
-.content-editor {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
-  font-size: 13px;
-}
-
-.content-tip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 8px 12px;
-  background: var(--color-bg);
-  border-radius: var(--radius-base);
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-
-.uploaded-file-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  padding: 10px 14px;
-  background: var(--color-bg);
-  border-radius: var(--radius-base);
-  font-size: 13px;
-  color: var(--color-text-primary);
-}
-
-.file-size {
-  margin-left: auto;
-  color: var(--color-text-secondary);
-}
-
-.converting-text {
-  margin-left: 8px;
-  font-size: 12px;
-  color: var(--color-primary);
-}
-
-.loading-icon {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.file-limit-tip {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 8px;
-  font-size: 12px;
-  color: #909399;
-  cursor: pointer;
-  user-select: none;
-}
-
-.file-limit-tip:hover {
-  color: #409eff;
-}
-
-.file-limit-content {
-  padding: 8px 0;
-}
-
-.limit-item {
-  display: flex;
-  flex-direction: column;
-  padding: 8px 12px;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.limit-item:last-child {
-  border-bottom: none;
-}
-
-.limit-label {
-  font-weight: 600;
-  color: #303133;
-  font-size: 13px;
-  margin-bottom: 4px;
-}
-
-.limit-value {
-  font-size: 12px;
-  color: #606266;
-  margin-bottom: 2px;
-}
-
-.limit-size {
-  font-size: 12px;
-  color: #f56c6c;
-  font-weight: 500;
-}
-
-.file-too-large {
-  border-color: #f56c6c !important;
-  background-color: #fef0f0 !important;
-}
-
-.file-too-large .el-icon {
-  color: #f56c6c;
-}
-
-.too-large-text {
-  margin-left: 8px;
-  font-size: 12px;
-  color: #f56c6c;
-  font-weight: 500;
-}
-
-.storage-note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 8px 12px;
-  background: #fdf6ec;
-  border-radius: 4px;
-  font-size: 12px;
-  color: #e6a23c;
-}
-
-.warning-note {
-  background: #fef0f0;
-  color: #f56c6c;
-  font-weight: 500;
-}
-
-.note-icon {
-  font-size: 14px;
+  height: 100%;
 }
 </style>
