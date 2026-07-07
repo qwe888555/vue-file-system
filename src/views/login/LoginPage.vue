@@ -6,6 +6,7 @@ import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
 import { ssoLoginUrl, ssoCallbackApi, dingtalkQrApi } from '@/api/auth'
 import { setAccessToken, setRefreshToken } from '@/api/request'
+import QRCode from 'qrcode'
 
 const router = useRouter()
 const route = useRoute()
@@ -28,11 +29,16 @@ async function loadDingTalkQr() {
   qrError.value = ''
   qrCodeDataUrl.value = ''
   try {
-    const res = await dingtalkQrApi()
-    const QRCode = (await import('qrcode')).default
-    qrCodeDataUrl.value = await QRCode.toDataURL(res.auth_url, {
-      width: 180, margin: 1, color: { dark: '#1e293b', light: '#f8fafc' }
-    })
+    const redirectUri = 'http://8cf776461a66b614.natapp.cc/api/auth/dingtalk/redirect/'
+    const res = await dingtalkQrApi(redirectUri)
+    if (!res.auth_url) throw new Error('后端返回异常，请确认 Django 服务已启动')
+    const qrData = await QRCode.toString(res.auth_url, { type: 'svg', width: 240 })
+      .catch(() => QRCode.toDataURL(res.auth_url, { width: 240, margin: 1 }))
+      .catch(() => null)
+    if (!qrData) throw new Error('二维码生成失败')
+    qrCodeDataUrl.value = qrData.startsWith('data:')
+      ? qrData
+      : 'data:image/svg+xml,' + encodeURIComponent(qrData)
   } catch (e: any) {
     qrError.value = e?.response?.data?.detail || e?.message || '获取二维码失败'
   } finally {
@@ -166,13 +172,6 @@ async function handleSSOSelect(code: string) {
       <!-- 账号密码登录 -->
       <template v-if="loginMode === 'account'">
         <div class="login-brand">
-          <div class="brand-icon-box">
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#2563eb" stroke-width="1.5">
-              <rect x="3" y="3" width="18" height="18" rx="4" />
-              <path d="M3 9h18" />
-              <path d="M9 21V9" />
-            </svg>
-          </div>
           <h2 class="login-title">NISU-CD</h2>
           <p class="login-sub">资源系统 · 账号登录</p>
         </div>
@@ -209,17 +208,8 @@ async function handleSSOSelect(code: string) {
       <!-- 钉钉扫码登录 -->
       <template v-if="loginMode === 'qrcode'">
         <div class="login-brand">
-          <div class="brand-icon-box">
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#2563eb" stroke-width="1.5">
-              <rect x="3" y="3" width="18" height="18" rx="3" />
-              <rect x="6" y="6" width="5" height="5" rx="1" />
-              <rect x="13" y="6" width="5" height="5" rx="1" />
-              <rect x="6" y="13" width="5" height="5" rx="1" />
-              <path d="M16 16h2v2h-2zM13 13h2v2h-2zM18 14v4M16 18h4" />
-            </svg>
-          </div>
-          <h2 class="login-title">钉钉扫码登录</h2>
-          <p class="login-sub">请使用钉钉扫码登录</p>
+          <h2 class="login-title" style="color:#000">钉钉扫码登录</h2>
+          <p class="login-sub" style="color:#000">请使用钉钉扫码登录</p>
         </div>
         <div class="qrcode-wrap">
           <img v-if="qrCodeDataUrl" :src="qrCodeDataUrl" alt="钉钉扫码登录" class="qrcode-img" />
@@ -235,7 +225,13 @@ async function handleSSOSelect(code: string) {
             <button class="mt-2 text-xs text-[#2563eb] hover:underline" @click="loadDingTalkQr">重新获取</button>
           </div>
         </div>
-        <p class="qrcode-hint">打开钉钉扫一扫，确认登录</p>
+        <div class="qrcode-actions">
+          <p class="qrcode-hint">打开钉钉扫一扫，确认登录</p>
+          <button v-if="qrCodeDataUrl && !qrLoading" class="qrcode-refresh" @click="loadDingTalkQr">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            重新生成
+          </button>
+        </div>
       </template>
 
       <!-- SSO 弹窗 -->
@@ -259,7 +255,7 @@ async function handleSSOSelect(code: string) {
 }
 .login-page--embedded { height: auto; background: transparent; }
 
-.login-card-w { width: 100%; }
+.login-card-w { width: 100%; padding: 2px 8px; }
 .login-close {
   position: absolute; top: 12px; right: 12px; z-index: 2;
   width: 30px; height: 30px; border: none; border-radius: 50%;
@@ -269,73 +265,123 @@ async function handleSSOSelect(code: string) {
 }
 .login-close:hover { background: #e2e8f0; color: #0f172a; }
 
-/* 品牌 */
-.login-brand { text-align: center; margin-bottom: 28px; }
+/* ── 嵌入式亮色适配 ── */
+.login-page--embedded .login-title { color: #000; }
+.login-page--embedded .login-sub { color: #000; }
+.login-page--embedded .field-lbl { color: #000; font-weight: 700; }
+.login-page--embedded .login-tabs { background: rgba(0,0,0,0.06); }
+.login-page--embedded .tab-btn { color: rgba(255,255,255,0.35); }
+.login-page--embedded .tab-btn.active { background: #ffffffb0; color: #1e293b; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.login-page--embedded .tab-btn:hover:not(.active) { color: rgba(255,255,255,0.8); }
+.login-page--embedded .sso-divider .sso-line { background: #e2e8f0; }
+.login-page--embedded .sso-txt { color: #94a3b8; }
+.login-page--embedded .sso-btn {
+  border-color: rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.5);
+}
+.login-page--embedded .sso-btn:hover:not(:disabled) { border-color: #409eff; color: #409eff; background: rgba(64,158,255,0.06); }
+.login-page--embedded .err-msg { background: rgba(239,68,68,0.08); color: #f87171; }
+
+/* Element Plus 输入框 — 半透明玻璃质感 */
+.login-page--embedded :deep(.el-input__wrapper) {
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.15) !important;
+  background: rgba(255,255,255,0.1) !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  padding: 4px 16px !important;
+}
+.login-page--embedded :deep(.el-input__wrapper:hover) { box-shadow: 0 0 0 1px rgba(255,255,255,0.25) !important; }
+.login-page--embedded :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 2px rgba(64,158,255,0.2) !important; }
+.login-page--embedded :deep(.el-input__inner) { color: #0f172a !important; font-size: 15px !important; height: 46px !important; }
+.login-page--embedded :deep(.el-input__inner::placeholder) { color: #334155 !important; }
+
+/* ── 品牌 ── */
+.login-brand { text-align: center; margin-bottom: 32px; }
 .brand-icon-box {
   width: 46px; height: 46px; margin: 0 auto 12px;
   background: rgba(37,99,235,0.07); border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
 }
-.login-title { font-size: 20px; font-weight: 700; color: #0f172a; margin: 0 0 2px; }
-.login-sub { font-size: 13px; color: #64748b; margin: 0; }
+.login-title { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0 0 2px; }
+.login-sub { font-size: 14px; color: #64748b; margin: 0; }
 
-/* 表单 */
-.login-form { display: flex; flex-direction: column; gap: 18px; }
-.field-grp { display: flex; flex-direction: column; gap: 5px; }
-.field-lbl { font-size: 13px; font-weight: 600; color: #0f172a; }
-.err-msg { color: #ef4444; font-size: 13px; margin: 0; padding: 6px 10px; background: #fef2f2; border-radius: 8px; }
+/* ── 表单 ── */
+.login-form { display: flex; flex-direction: column; gap: 22px; }
+.field-grp { display: flex; flex-direction: column; gap: 6px; }
+.field-lbl { font-size: 16px; font-weight: 600; color: #0f172a; }
+.err-msg { color: #ef4444; font-size: 14px; margin: 0; padding: 8px 12px; background: #fef2f2; border-radius: 8px; }
 
 .login-btn {
-  width: 100%; height: 44px; border: none; border-radius: 10px;
-  font-size: 15px; font-weight: 600;
-  background: #2563eb; color: #fff; cursor: pointer;
-  transition: all 0.2s;
+  width: 100%; height: 48px; border: none; border-radius: 10px;
+  font-size: 16px; font-weight: 600;
+  background: linear-gradient(135deg, #409eff, #3b82f6);
+  color: #fff; cursor: pointer;
+  transition: all 0.25s;
 }
-.login-btn:hover:not(:disabled) { background: #1d4ed8; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37,99,235,0.25); }
+.login-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(59,130,246,0.25);
+}
+.login-btn:active:not(:disabled) { transform: translateY(0); }
 .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* SSO */
-.sso-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0; }
+.sso-divider { display: flex; align-items: center; gap: 14px; margin: 22px 0; }
 .sso-line { flex: 1; height: 1px; background: #e2e8f0; }
-.sso-txt { font-size: 13px; color: #94a3b8; white-space: nowrap; }
+.sso-txt { font-size: 14px; color: #94a3b8; white-space: nowrap; }
 
 .sso-btn {
-  width: 100%; height: 42px; border: 1px solid #e2e8f0; border-radius: 10px;
-  background: #fff; color: #475569; font-size: 14px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; height: 46px; border: 1px solid #e2e8f0; border-radius: 10px;
+  background: #fff; color: #475569; font-size: 15px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
   transition: all 0.2s;
 }
-.sso-btn:hover:not(:disabled) { border-color: #2563eb; color: #2563eb; background: #f8faff; }
+.sso-btn:hover:not(:disabled) { border-color: #409eff; color: #409eff; background: #f8faff; }
 .sso-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.sso-icon { width: 18px; height: 18px; flex-shrink: 0; }
+.sso-icon { width: 20px; height: 20px; flex-shrink: 0; }
 
 /* ── 登录方式切换 ── */
 .login-tabs {
-  display: flex; gap: 0; margin-bottom: 24px;
-  background: #f1f5f9; border-radius: 10px; padding: 3px;
+  display: flex; gap: 4px; margin-bottom: 28px;
+  background: rgba(255,255,255,0.06); border-radius: 12px; padding: 4px;
 }
 .tab-btn {
-  flex: 1; height: 36px; border: none; border-radius: 8px;
-  font-size: 13px; font-weight: 600; cursor: pointer;
-  background: transparent; color: #64748b; transition: all 0.2s;
+  flex: 1; height: 44px; border: none; border-radius: 9px;
+  font-size: 16px; font-weight: 700; cursor: pointer;
+  background: transparent; color: rgba(255,255,255,0.35); transition: all 0.25s;
+  letter-spacing: 0.02em;
 }
-.tab-btn.active { background: #fff; color: #2563eb; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-.tab-btn:hover:not(.active) { color: #334155; }
+.tab-btn.active {
+  background: #fff;
+  color: #1e293b;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.tab-btn:hover:not(.active) { color: rgba(255,255,255,0.8); }
 
 /* ── 扫码登录 ── */
 .qrcode-wrap {
   display: flex; justify-content: center; padding: 16px 0 8px;
 }
 .qrcode-img {
-  width: 180px; height: 180px; border-radius: 12px;
-  border: 1px solid #e2e8f0; padding: 8px; background: #fff;
+  width: 220px; height: 220px; border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12); padding: 8px; background: rgba(255,255,255,0.06);
 }
 .qrcode-hint {
-  text-align: center; font-size: 13px; color: #94a3b8; margin: 4px 0 0;
+  text-align: center; font-size: 14px; color: rgba(255,255,255,0.4); margin: 6px 0 0;
 }
+.qrcode-actions {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.qrcode-refresh {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: rgba(255,255,255,0.35); background: none; border: none;
+  cursor: pointer; transition: all 0.2s; padding: 4px 10px; border-radius: 6px;
+}
+.qrcode-refresh:hover { color: #409eff; background: rgba(64,158,255,0.1); }
+.qrcode-refresh svg { transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.qrcode-refresh:hover svg { transform: rotate(180deg); }
 .qrcode-placeholder {
-  width: 180px; height: 180px; border-radius: 12px;
-  border: 1px solid #e2e8f0; background: #fff;
+  width: 220px; height: 220px; border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
 }
 

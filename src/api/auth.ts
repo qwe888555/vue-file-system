@@ -42,9 +42,9 @@ export function ssoCallbackApi(code: string): Promise<LoginResult> {
   return request.post('/auth/sso/callback/', { code })
 }
 
-/** 钉钉扫码：获取扫码地址 */
-export function dingtalkQrApi(): Promise<{ auth_url: string; usage: string }> {
-  return request.get('/auth/dingtalk/qr/')
+/** 钉钉扫码：获取扫码地址（redirectUri 为钉钉回调地址，必须传） */
+export function dingtalkQrApi(redirectUri: string): Promise<{ auth_url: string; usage: string }> {
+  return request.get(`/auth/dingtalk/qr/?redirect_uri=${encodeURIComponent(redirectUri)}`)
 }
 
 /** 钉钉回调：用 authCode 换取 JWT 令牌 */
