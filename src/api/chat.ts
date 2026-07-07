@@ -3,10 +3,11 @@
 import request from './request'
 import type { Conversation, Message, PaginatedResult } from '@/types'
 
-/** 获取会话列表（文档 1.1）— 返回纯数组 */
+/** 获取会话列表（文档 1.1）— 兼容纯数组和分页格式 */
 export async function getConversationsApi(): Promise<Conversation[]> {
-  const res: Array<{ id: number; title: string; created_at: string; updated_at: string }> = await request.get('/chat/conversations/')
-  return res.map((item) => ({
+  const res: any = await request.get('/chat/conversations/')
+  const list = Array.isArray(res) ? res : (res?.results || [])
+  return list.map((item: any) => ({
     id: item.id,
     title: item.title || '',
     isFavorite: false,

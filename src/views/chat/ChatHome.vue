@@ -27,8 +27,7 @@ const showEntryAnim = ref(!hasPlayed)
 const showInstantContent = ref(hasPlayed)
 const inputText = ref('')
 const isRecording = ref(false)
-let mediaRecorder: MediaRecorder | null = null
-let audioChunks: Blob[] = []
+let speechRecognition: any = null
 
 // SSE
 const streamingContent = ref('')
@@ -39,10 +38,6 @@ let currentSSE: ReturnType<typeof useSSE> | null = null
 
 const isLoggedIn = computed(() => !!userStore.token)
 const isAdminUser = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin' || userStore.role === 'college_admin' || userStore.role === 'dept_admin')
-const displayName = computed(() => {
-  if (!userStore.userInfo) return ''
-  return userStore.userInfo.role_display || userStore.userInfo.username || ''
-})
 const hasActiveConversation = computed(() => chat.currentConversationId.value !== null)
 
 // ── 热点问题（API）──
@@ -95,7 +90,6 @@ async function handleLogout() {
     router.push('/')
   } catch {}
 }
-
 function handleNewConversation() {
   chat.createConversation()
 }
@@ -138,91 +132,24 @@ function handleFeedback(messageId: number, type: 'like' | 'dislike') {
   chat.submitFeedback(messageId, type)
 }
 
-/* ── 语音输入 ── */
+/* ── 语音转文字输入 ── */
 async function toggleRecording() {
-  if (isRecording.value) {
-    stopRecording()
-    return
+  if (isRecording.value) { speechRecognition?.stop(); isRecording.value = false; return }
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  if (!SpeechRecognition) { alert('你的浏览器不支持语音识别'); return }
+  const recognition = new SpeechRecognition()
+  recognition.lang = 'zh-CN'
+  recognition.continuous = false
+  recognition.interimResults = true
+  recognition.onresult = (e: any) => {
+    const result = e.results[e.results.length - 1]
+    inputText.value = result[0].transcript
   }
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    mediaRecorder = new MediaRecorder(stream)
-    audioChunks = []
-    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data) }
-    mediaRecorder.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop())
-      const blob = new Blob(audioChunks, { type: 'audio/wav' })
-      audioChunks = []
-      if (blob.size < 100) return // 太短忽略
-      await sendVoiceMessage(blob)
-    }
-    mediaRecorder.start()
-    isRecording.value = true
-  } catch { /* 麦克风权限拒绝 */ }
-}
-
-function stopRecording() {
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop()
-  }
-  isRecording.value = false
-}
-
-async function sendVoiceMessage(audioBlob: Blob) {
-  if (isStreaming.value) return
-  if (!chat.currentConversationId.value) {
-    const conv = await chat.createConversation()
-    if (!conv) return
-  }
-  const convId = chat.currentConversationId.value!
-  // 本地占位消息
-  chat.appendUserMessage('[语音消息]')
-  isStreaming.value = true
-  streamingContent.value = ''
-  streamingReferences.value = []
-
-  try {
-    const { voiceAskApi } = await import('@/api/chat')
-    const response = await voiceAskApi(audioBlob, convId)
-    if (!response.ok) { isStreaming.value = false; return }
-
-    const reader = response.body?.getReader()
-    if (!reader) { isStreaming.value = false; return }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let currentEvent = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        if (line.startsWith('event: ')) currentEvent = line.slice(7).trim()
-        else if (line.startsWith('data: ')) {
-          const dataStr = line.slice(6).trim()
-          try {
-            const data = JSON.parse(dataStr)
-            switch (currentEvent) {
-              case 'msg': streamingContent.value += data.content || ''; break
-              case 'done':
-                chat.appendAssistantMessage(streamingContent.value, streamingReferences.value, data.message_id)
-                isStreaming.value = false
-                streamingContent.value = ''
-                break
-              case 'references':
-                if (data.count > 0) streamingReferences.value = [{ id: 0, title: data.summary || '参考来源', summary: data.summary, status: 1 } as any]
-                break
-              case 'error': isStreaming.value = false; break
-            }
-          } catch {}
-        }
-      }
-    }
-  } catch { isStreaming.value = false }
+  recognition.onend = () => { isRecording.value = false }
+  recognition.onerror = () => { isRecording.value = false }
+  speechRecognition = recognition
+  recognition.start()
+  isRecording.value = true
 }
 onMounted(() => {
   chat.init()
@@ -302,9 +229,8 @@ onMounted(() => {
 
       <!-- 底部用户 -->
       <div v-if="isLoggedIn" class="sidebar-user-area">
-        <!-- 上拉菜单（非超级管理员） -->
         <Transition name="menu-up">
-          <div v-if="showUserMenu && userStore.role !== 'super_admin'" class="user-popup">
+          <div v-if="showUserMenu" class="user-popup">
             <div class="user-popup-item" @click="showUserMenu = false; showPersonalCenter = true">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
               <span>个人中心</span>
@@ -315,13 +241,13 @@ onMounted(() => {
             </div>
           </div>
         </Transition>
-        <div class="sidebar-user" @click="userStore.role === 'super_admin' ? handleLogout() : (showUserMenu = !showUserMenu)">
+        <div class="sidebar-user" @click="showUserMenu = !showUserMenu">
           <div class="su-avatar">
-            <span class="su-avatar-text">{{ displayName.charAt(0).toUpperCase() }}</span>
+            <span class="su-avatar-text">{{ (userStore.userInfo?.role_display || userStore.userInfo?.username || '?').charAt(0).toUpperCase() }}</span>
           </div>
           <div class="su-info">
             <span class="su-name">{{ userStore.userInfo?.username || '' }}</span>
-            <span class="su-role">{{ userStore.role === 'admin' || userStore.role === 'admin_csic' || userStore.role === 'admin_dept' || userStore.role === 'college_admin' ? '普通管理员' : (userStore.userInfo?.role_display || '') }}</span>
+            <span class="su-role">{{ userStore.userInfo?.role_display || '' }}</span>
           </div>
           <span class="su-status">已登录</span>
         </div>
@@ -879,7 +805,7 @@ onMounted(() => {
 .qq-btn {
   opacity: 0;
   transform: scale(0.7);
-  transition: opacity 0.3s ease-out, transform 0.3s ease-out, box-shadow 0.3s ease-out, background 0.2s, color 0.2s;
+  transition: opacity 0.3s ease-out, transform 1s ease-out, box-shadow 0.3s ease-out, background 0.2s, color 0.2s;
 }
 .quick-questions.wi-anim-in .qq-btn {
   opacity: 1;
