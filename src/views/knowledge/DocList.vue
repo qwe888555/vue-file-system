@@ -15,7 +15,7 @@ const editingFile = ref<KnowledgeFile | null>(null)
 const loading = ref(false)
 
 const createMode = ref(true)
-const selectedFiles = ref<File[]>([])
+const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string }[]>([])
 const showCreateForm = ref(false)
 const showPreviewDialog = ref(false)
 const previewContent = ref('')
@@ -43,7 +43,7 @@ function resetUploadForm() {
 }
 
 async function handleFileChange(file: File) {
-  selectedFiles.value.push(file)
+  selectedFiles.value.push({ file })
   const baseName = file.name.replace(/\.[^/.]+$/, '')
   if (!uploadForm.value.title) {
     uploadForm.value.title = baseName
@@ -72,30 +72,82 @@ async function handleFileChange(file: File) {
   }
 }
 
-function handleRemove(file: File) {
-  const index = selectedFiles.value.indexOf(file)
+function handleRemove(item: { file: File; docId?: number; previewContent?: string }) {
+  const index = selectedFiles.value.indexOf(item)
   if (index > -1) {
     selectedFiles.value.splice(index, 1)
   }
 }
 
-async function handlePreviewFile(file: File) {
-  previewFileName.value = file.name
-  const reader = new FileReader()
-  reader.onload = async (e) => {
-    const content = e.target?.result as string
-    
-    const ext = file.name.split('.').pop()?.toLowerCase()
-    if (['pdf', 'doc', 'docx'].includes(ext || '')) {
-      previewContent.value = '文档内容需要上传后才能预览，请先上传文件。'
-    } else if (['jpg', 'jpeg', 'png', 'gif'].includes(ext || '')) {
-      previewContent.value = `<img src="${content}" style="max-width: 100%; max-height: 600px; object-fit: contain;" />`
-    } else {
-      previewContent.value = content
-    }
+async function handlePreviewFile(item: { file: File; docId?: number; previewContent?: string }) {
+  previewFileName.value = item.file.name
+  
+  if (item.docId && item.previewContent) {
+    previewContent.value = item.previewContent
     showPreviewDialog.value = true
+    return
   }
-  reader.readAsText(file)
+  
+  if (item.docId) {
+    try {
+      const result = await previewDocApi(item.docId)
+      item.previewContent = result.content || '无法预览此文件内容'
+      previewContent.value = item.previewContent
+      showPreviewDialog.value = true
+      return
+    } catch (error) {
+      console.error('预览文件失败:', error)
+    }
+  }
+  
+  const ext = item.file.name.split('.').pop()?.toLowerCase()
+  if (['pdf', 'doc', 'docx'].includes(ext || '')) {
+    ElMessage.info('正在上传文件以获取预览内容...')
+    try {
+      const fileName = item.file.name.replace(/\.[^/.]+$/, '')
+      const formData = new FormData()
+      formData.append('file', item.file)
+      formData.append('title', uploadForm.value.title || fileName)
+      if (uploadForm.value.description) {
+        formData.append('description', uploadForm.value.description)
+      }
+      formData.append('scope', uploadForm.value.scope === 'public' ? 'school' : 'college')
+      
+      const result = await uploadFileApi(formData)
+      
+      if (result.id) {
+        item.docId = result.id
+        
+        const previewResult = await previewDocApi(result.id)
+        item.previewContent = previewResult.content || '无法预览此文件内容'
+        previewContent.value = item.previewContent
+        showPreviewDialog.value = true
+      } else {
+        previewContent.value = '文件上传成功，但无法获取文档ID进行预览。'
+        showPreviewDialog.value = true
+      }
+    } catch (error) {
+      console.error('上传文件失败:', error)
+      previewContent.value = '文件上传失败，无法预览。'
+      showPreviewDialog.value = true
+    }
+  } else if (['jpg', 'jpeg', 'png', 'gif'].includes(ext || '')) {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const content = e.target?.result as string
+      previewContent.value = `<img src="${content}" style="max-width: 100%; max-height: 600px; object-fit: contain;" />`
+      showPreviewDialog.value = true
+    }
+    reader.readAsDataURL(item.file)
+  } else {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const content = e.target?.result as string
+      previewContent.value = content
+      showPreviewDialog.value = true
+    }
+    reader.readAsText(item.file)
+  }
 }
 
 async function handlePreviewDoc(id: number, title: string) {
@@ -207,7 +259,8 @@ async function handleUploadSubmit() {
       const totalCount = selectedFiles.value.length
       
       for (let i = 0; i < totalCount; i++) {
-        const file = selectedFiles.value[i]
+        const item = selectedFiles.value[i]
+        const file = item.file
         const fileName = file.name.replace(/\.[^/.]+$/, '')
         
         const formData = new FormData()
@@ -223,7 +276,10 @@ async function handleUploadSubmit() {
           })
         }
 
-        await uploadFileApi(formData)
+        const result = await uploadFileApi(formData)
+        if (result.id) {
+          item.docId = result.id
+        }
         successCount++
       }
 
@@ -477,30 +533,30 @@ function saveFiles(files: KnowledgeFile[]) {
           <div class="upload-content-left">
             <div class="file-preview-list">
               <div
-                v-for="(file, index) in selectedFiles"
+                v-for="(item, index) in selectedFiles"
                 :key="index"
                 class="file-preview-item"
-                @click="handlePreviewFile(file)"
+                @click="handlePreviewFile(item)"
               >
                 <el-icon :size="32" class="preview-file-icon">
                   <Document />
                 </el-icon>
                 <div class="preview-file-info">
-                  <span class="preview-file-name">{{ file.name }}</span>
-                  <span class="preview-file-size">{{ (file.size / 1024).toFixed(1) }} KB</span>
+                  <span class="preview-file-name">{{ item.file.name }}</span>
+                  <span class="preview-file-size">{{ (item.file.size / 1024).toFixed(1) }} KB</span>
                 </div>
                 <div class="preview-file-actions">
                   <el-icon
                     :size="16"
                     class="preview-icon"
-                    @click.stop="handlePreviewFile(file)"
+                    @click.stop="handlePreviewFile(item)"
                   >
                     <Document />
                   </el-icon>
                   <el-icon
                     :size="16"
                     class="preview-remove-icon"
-                    @click.stop="handleRemove(file)"
+                    @click.stop="handleRemove(item)"
                   >
                     <Close />
                   </el-icon>
