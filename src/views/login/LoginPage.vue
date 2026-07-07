@@ -29,7 +29,7 @@ async function loadDingTalkQr() {
   qrError.value = ''
   qrCodeDataUrl.value = ''
   try {
-    const redirectUri = 'http://8cf776461a66b614.natapp.cc/api/auth/dingtalk/redirect/'
+    const redirectUri = 'https://visibly-sloppy-dairy.ngrok-free.dev/api/auth/dingtalk/redirect/'
     const res = await dingtalkQrApi(redirectUri)
     if (!res.auth_url) throw new Error('后端返回异常，请确认 Django 服务已启动')
     const qrData = await QRCode.toString(res.auth_url, { type: 'svg', width: 240 })

@@ -9,7 +9,10 @@ export const useUserStore = defineStore('user', () => {
   // ── State ──
   const token = ref<string>(getAccessToken())
   const refreshToken = ref<string>(getRefreshToken())
-  const userInfo = ref<UserInfo | null>(null)
+  function loadUser(): UserInfo | null {
+    try { return JSON.parse(localStorage.getItem('user') || 'null') } catch { return null }
+  }
+  const userInfo = ref<UserInfo | null>(loadUser())
 
   // ── Computed ──
   const isLoggedIn = computed(() => !!token.value)
