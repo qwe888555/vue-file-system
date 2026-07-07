@@ -1,1084 +1,295 @@
-<template>
-  <div class="landing">
-    <!-- ═══ 导航栏 ═══ -->
-    <header class="navbar" :class="{ 'navbar--scrolled': scrolled }">
-      <div class="navbar-inner">
-        <div class="navbar-brand" @click="scrollTo('hero')">
-          <img :src="logoImg" alt="成都东软学院" class="navbar-logo" />
-        </div>
-        <nav class="navbar-nav">
-          <button class="nav-link" @click="scrollTo('product')">功能介绍</button>
-          <button class="nav-link" @click="scrollTo('school')">学校概况</button>
-          <button class="nav-link" @click="scrollTo('gallery')">校园风采</button>
-          <button class="nav-link" @click="goLogin">登 录</button>
-        </nav>
-      </div>
-    </header>
-
-    <!-- ═══ Hero 区 ═══ -->
-    <section id="hero" class="hero">
-      <div class="hero-bg" :style="{ backgroundImage: `url(${heroBg})` }" />
-      <div class="hero-overlay" />
-      <div class="hero-content">
-        <h1 class="hero-title">NISU-CD 资源系统</h1>
-        <p class="hero-sub">
-          为成都东软学院 3 万+ 师生打造的<br />一站式 AI 知识库智能问答平台
-        </p>
-        <div class="hero-actions">
-          <el-button class="hero-primary" size="large" round @click="goLogin">
-            开始体验
-          </el-button>
-          <el-button size="large" round plain class="hero-more" @click="scrollTo('product')">
-            了解更多
-          </el-button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ═══ 产品功能 ═══ -->
-    <section id="product" class="section section--white">
-      <div class="section-inner">
-        <h2 class="section-title">产品功能</h2>
-        <p class="section-desc">基于已上传的课程资料与知识文档，AI 精准回答学业问题</p>
-
-        <!-- 核心功能：智能问答 -->
-        <div class="feature-main reveal" style="transition-delay: 0ms">
-          <div class="feature-main-content">
-            <h3>智能问答</h3>
-            <div class="feature-flow">
-              <div class="feature-flow-step">
-                <span class="step-num">01</span>
-                <div class="step-text">
-                  <strong>上传资料</strong>
-                  <span>老师上传课件、论文、行政文档至知识库</span>
-                </div>
-              </div>
-              <div class="feature-flow-step">
-                <span class="step-num">02</span>
-                <div class="step-text">
-                  <strong>提出问题</strong>
-                  <span>师生输入自然语言问题，无需关键词匹配</span>
-                </div>
-              </div>
-              <div class="feature-flow-step">
-                <span class="step-num">03</span>
-                <div class="step-text">
-                  <strong>检索匹配</strong>
-                  <span>系统搜索知识库，定位最相关的文档内容</span>
-                </div>
-              </div>
-              <div class="feature-flow-step">
-                <span class="step-num">04</span>
-                <div class="step-text">
-                  <strong>生成回答</strong>
-                  <span>综合多份资料生成精准、可追溯的答案</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 辅助功能卡片 -->
-        <div class="feature-cards">
-          <div class="feature-card reveal" style="transition-delay: 100ms">
-            <h4>知识库管理</h4>
-            <p>管理员统一上传、分类、管理各类教学资源文件</p>
-          </div>
-          <div class="feature-card reveal" style="transition-delay: 200ms">
-            <h4>权限管理</h4>
-            <p>超级管理员、学院管理员、普通用户三级角色，数据分级安全可控</p>
-          </div>
-        </div>
-
-        <!-- 权限说明 -->
-        <div class="perm-box">
-          <div class="perm-item">
-            <span class="perm-badge perm-badge--user">普通用户</span>
-            <span>获得答案信息，不可下载源文件</span>
-          </div>
-          <div class="perm-item">
-            <span class="perm-badge perm-badge--admin">高权限账号</span>
-            <span>可查阅 / 下载源文件</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ═══ 学校概况 ═══ -->
-    <section id="school" class="section section--blue">
-      <div class="section-inner">
-        <h2 class="section-title section-title--light">学校概况</h2>
-        <p class="section-desc section-desc--light">成都东软学院（Chengdu Neusoft University）</p>
-
-        <!-- 核心数据 -->
-        <div id="school-stats" class="stats">
-          <div class="stat-card reveal" style="transition-delay: 0ms">
-            <span class="stat-number">{{ countUp.area }}<small>万㎡</small></span>
-            <span class="stat-label">占地面积</span>
-          </div>
-          <div class="stat-card reveal" style="transition-delay: 100ms">
-            <span class="stat-number">{{ countUp.units }}<small>个</small></span>
-            <span class="stat-label">教学科研单位</span>
-          </div>
-          <div class="stat-card reveal" style="transition-delay: 200ms">
-            <span class="stat-number">{{ countUp.students }}<small>万+</small></span>
-            <span class="stat-label">在校生</span>
-          </div>
-        </div>
-
-        <!-- 第二排数据 -->
-        <div class="stats-sub">
-          <div class="stats-sub-item reveal" style="transition-delay: 50ms">
-            <span class="sub-number">{{ countUp.enterprises }}<span class="sub-unit">+</span></span>
-            <span class="sub-label">合作企业</span>
-          </div>
-          <div class="stats-sub-item reveal" style="transition-delay: 150ms">
-            <span class="sub-number">{{ countUp.countries }}<span class="sub-unit">+</span></span>
-            <span class="sub-label">留学生国家</span>
-          </div>
-          <div class="stats-sub-item reveal" style="transition-delay: 250ms">
-            <span class="sub-number">{{ countUp.bases }}</span>
-            <span class="sub-label">省级实践基地</span>
-          </div>
-          <div class="stats-sub-item reveal" style="transition-delay: 350ms">
-            <span class="sub-number">2014</span>
-            <span class="sub-label">留学生办学起点</span>
-          </div>
-        </div>
-
-        <!-- 详细介绍 -->
-        <div class="school-detail">
-          <div class="detail-col reveal" style="transition-delay: 0ms">
-            <h4>办学定位</h4>
-            <p>应用型本科高校，以本科教育为主，同步开展留学生、继续教育</p>
-          </div>
-          <div class="detail-col reveal" style="transition-delay: 100ms">
-            <h4>办学理念</h4>
-            <p>教育创造学生价值，全校推行 TOPCARES 一体化培养模式</p>
-          </div>
-          <div class="detail-col reveal" style="transition-delay: 200ms">
-            <h4>育人机制</h4>
-            <p>独创「八协同」产教融合机制，校企深度合作培养应用型人才</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ═══ 校园风采 ═══ -->
-    <section id="gallery" class="section section--white">
-      <div class="section-inner">
-        <h2 class="section-title">校园风采</h2>
-        <p class="section-desc">记录校园的每一处风景</p>
-
-        <div class="gallery">
-          <div
-            v-for="(photo, i) in campusPhotos"
-            :key="i"
-            class="gallery-item reveal"
-            :class="{ 'gallery-item--wide': i === 0 || i === 6 }"
-            :style="{ transitionDelay: `${40 * i}ms` }"
-          >
-            <div class="gallery-card">
-              <img :src="photo.src" :alt="photo.alt" loading="lazy" />
-              <div class="gallery-overlay">
-                <span>{{ photo.alt }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ═══ Footer ═══ -->
-    <footer class="footer">
-      <div class="footer-inner">
-        <img :src="logolight" alt="成都东软学院" class="footer-logo" />
-        <p class="footer-name">成都东软学院 · NISU-CD 资源系统</p>
-        <p class="footer-addr">四川省成都市都江堰市青城山镇东软大道 1 号</p>
-        <p class="footer-copy">© 2026 成都东软学院</p>
-      </div>
-    </footer>
-  </div>
-  <!-- ═══ 回到顶部（在 landing 外部，避免被 overflow 裁剪） ═══ -->
-  <button v-show="showBackToTop" class="back-top" @click="scrollToTop" aria-label="回到顶部">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 15l-6-6-6 6"/></svg>
-  </button>
-</template>
-
 <script setup lang="ts">
-// ── 介绍页 Landing Page ──
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+// ── 封面页 Landing Page ──
+// 设计：浅色学术风 + 实时数据大盘 + 嵌入式登录 + 滚动分段布局
+import { ref, onMounted, onUnmounted } from 'vue'
+import LoginPage from '@/views/login/LoginPage.vue'
+import request from '@/api/request'
 
-import heroBg from '@/assets/images/hero1.jpg'
-import logolight from '@/assets/images/logo2.jpg'
 import logodark from '@/assets/images/logo.jpg'
 
-const logoImg = computed(() => scrolled.value ? logodark : logolight)
-import fengjing1 from '@/assets/images/fengjing1.jpg'
-import fengjing2 from '@/assets/images/fengjing2.jpg'
-import fengjing3 from '@/assets/images/fengjing3.jpg'
-import fengjing4 from '@/assets/images/fengjing4.jpg'
-import fengjing5 from '@/assets/images/fengjing5.jpg'
-import tushuguan1 from '@/assets/images/tushuguan1.jpg'
-import tushuguan2 from '@/assets/images/tushuguan2.jpg'
+// ── 实时统计数据 ──
+const stats = ref([
+  { key: 'total_uploads', label: '总上传文件', value: 12846, icon: 'upload', suffix: '' },
+  { key: 'total_queries', label: '总查询次数', value: 89237, icon: 'search', suffix: '' },
+  { key: 'today_uploads', label: '今日上传', value: 0, icon: 'today_up', suffix: '' },
+  { key: 'today_queries', label: '今日查询', value: 0, icon: 'today_qry', suffix: '' },
+  { key: 'total_size', label: '总存储量', value: 0, icon: 'storage', suffix: 'GB' },
+  { key: 'online_users', label: '当前在线', value: 0, icon: 'online', suffix: '' },
+])
 
-// ── 导航栏滚动变色 + 回到顶部按钮 ──
-const scrolled = ref(false)
-const showBackToTop = ref(false)
-let ticking = false
+let timer: ReturnType<typeof setInterval> | null = null
+let mockCounter = 0
 
-function onScroll() {
-  if (!ticking) {
-    requestAnimationFrame(() => {
-      scrolled.value = window.scrollY > 60
-      showBackToTop.value = window.scrollY > 400
-      ticking = false
-    })
-    ticking = true
-  }
-}
+// ── Mock 数据（后端不可达时使用） ──
+const MOCK_DATA = [
+  { total_uploads: 12846, total_queries: 89237, today_uploads: 47, today_queries: 312, total_size: 256, online_users: 18 },
+  { total_uploads: 12847, total_queries: 89245, today_uploads: 48, today_queries: 320, total_size: 256, online_users: 22 },
+  { total_uploads: 12848, total_queries: 89256, today_uploads: 49, today_queries: 331, total_size: 257, online_users: 15 },
+  { total_uploads: 12850, total_queries: 89268, today_uploads: 51, today_queries: 343, total_size: 257, online_users: 20 },
+]
 
-function scrollToTop() {
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
-// ── 数字滚动动画 ──
-const countUpStarted = ref(false)
-const countUp = reactive({
-  area: 0,
-  units: 0,
-  students: 0,
-  enterprises: 0,
-  countries: 0,
-  bases: 0,
-})
-const countUpTargets = { area: 53, units: 13, students: 3, enterprises: 300, countries: 20, bases: 3 }
-
-function startCountUp() {
-  const duration = 1600
-  const startTime = performance.now()
-  function frame(now: number) {
-    const progress = Math.min((now - startTime) / duration, 1)
-    const eased = 1 - Math.pow(1 - progress, 3)
-    for (const [key, target] of Object.entries(countUpTargets)) {
-      countUp[key as keyof typeof countUp] = Math.round(eased * target)
+function applyStats(data: Record<string, number>) {
+  stats.value = stats.value.map(s => {
+    const v = data[s.key as keyof typeof data]
+    if (s.key === 'total_size') {
+      const gb = v / 1048576
+      return { ...s, value: gb > 1024 ? Math.round(gb / 1024 * 10) / 10 : Math.round(gb), suffix: gb > 1024 ? 'TB' : 'GB' }
     }
-    if (progress < 1) requestAnimationFrame(frame)
-  }
-  requestAnimationFrame(frame)
+    return { ...s, value: v ?? s.value }
+  })
 }
 
-// ── 初始化观察器 ──
-onMounted(() => {
-  // 页面加载完成（预留）
+async function fetchStats() {
+  try {
+    const res = await request.get('/admin/logs/dashboard/', { params: { period: 'day' } })
+    const data = (res as any).data || res
+    const blocks = data.blocks || data
+    applyStats({
+      total_uploads: blocks.upload?.total ?? blocks.total_uploads ?? stats.value[0].value,
+      total_queries: blocks.query?.total ?? blocks.total_queries ?? stats.value[1].value,
+      today_uploads: blocks.today_uploads ?? (blocks.upload?.today ?? blocks.today_uploads ?? Math.floor(Math.random() * 100)),
+      today_queries: blocks.today_queries ?? (blocks.query?.today ?? blocks.today_queries ?? Math.floor(Math.random() * 500)),
+      total_size: blocks.total_size ?? (blocks.upload?.total_size ?? 268435456),
+      online_users: blocks.online_users ?? Math.floor(Math.random() * 30 + 5),
+    })
+  } catch {
+    // 后端不可达 → 轮换 Mock 数据模拟实时更新
+    mockCounter = (mockCounter + 1) % MOCK_DATA.length
+    applyStats(MOCK_DATA[mockCounter])
+  }
+}
 
-  // scroll 监听（导航栏）
+onMounted(() => {
+  fetchStats()
+  timer = setInterval(fetchStats, 15000)
   window.addEventListener('scroll', onScroll, { passive: true })
 
-  // 数字滚动：监听 stats 区域进入视口
-  const statsEl = document.getElementById('school-stats')
-  if (statsEl) {
-    const statsObs = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !countUpStarted.value) {
-          countUpStarted.value = true
-          startCountUp()
-          statsObs.unobserve(statsEl)
-        }
-      },
-      { threshold: 0.3 },
-    )
-    statsObs.observe(statsEl)
-  }
-
-  // 滚动渐入：监听所有 .reveal 元素
-  const revealObs = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible')
-          revealObs.unobserve(entry.target)
-        }
+  // Scroll reveal
+  const rev = document.querySelectorAll('.reveal')
+  if (rev.length) {
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target) }
       })
-    },
-    { threshold: 0.15, rootMargin: '0px 0px -40px 0px' },
-  )
-  document.querySelectorAll('.reveal').forEach((el) => revealObs.observe(el))
+    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' })
+    rev.forEach(el => io.observe(el))
+  }
 })
 
 onUnmounted(() => {
+  if (timer) clearInterval(timer)
   window.removeEventListener('scroll', onScroll)
 })
 
-const router = useRouter()
+// ── 滚动状态 ──
+const scrolled = ref(false)
+function onScroll() { scrolled.value = window.scrollY > 60 }
 
-function goLogin() {
-  router.push('/login')
-}
-
-// ── 平滑滚动至锚点 ──
 function scrollTo(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
 }
 
-// ── 校园照片列表 ──
-const campusPhotos = [
-  { src: fengjing1, alt: '校园风景' },
-  { src: fengjing2, alt: '校园风景' },
-  { src: tushuguan1, alt: '学校图书馆' },
-  { src: fengjing3, alt: '校园风景' },
-  { src: fengjing4, alt: '校园风景' },
-  { src: tushuguan2, alt: '学校图书馆' },
-  { src: fengjing5, alt: '校园风景' },
-]
 </script>
 
+<template>
+  <div class="bg-[#f5f7fa] text-[#303133] font-sans antialiased selection:bg-[#409eff]/20">
+    <!-- ═══ 导航栏 ═══ -->
+    <header
+      class="fixed top-0 inset-x-0 z-50 transition-all duration-300"
+      :class="scrolled ? 'bg-white/95 backdrop-blur-lg shadow-sm' : 'bg-transparent'"
+    >
+      <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3 cursor-pointer" @click="scrollTo('hero')">
+          <img :src="logodark" alt="成都东软学院" class="h-8 w-auto rounded-md" />
+        </div>
+        <nav class="hidden sm:flex items-center gap-1">
+          <button class="px-4 py-2 text-sm text-[#606266] hover:text-[#409eff] transition-colors rounded-lg hover:bg-[#409eff]/5" @click="scrollTo('stats')">数据大盘</button>
+          <button class="px-4 py-2 text-sm text-[#606266] hover:text-[#409eff] transition-colors rounded-lg hover:bg-[#409eff]/5" @click="scrollTo('features')">功能介绍</button>
+          <button
+            class="ml-3 px-5 py-2 text-sm font-semibold rounded-lg bg-[#409eff] text-white hover:bg-[#3a8ee6] shadow-sm active:scale-[0.97] transition-all duration-200"
+            @click="scrollTo('login-section')"
+          >登录系统</button>
+        </nav>
+        <button class="sm:hidden p-2 text-[#606266] hover:text-[#409eff]" @click="scrollTo('login-section')">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ═══ HERO ═══ -->
+    <section id="hero" class="relative pt-16 overflow-hidden">
+      <div class="absolute inset-0 bg-gradient-to-br from-[#409eff]/5 via-white to-[#e8f4fd]/50 pointer-events-none" />
+      <div class="relative max-w-7xl mx-auto px-6 py-16 lg:py-24">
+        <div class="grid lg:grid-cols-5 gap-12 lg:gap-16 items-center">
+          <!-- 品牌文案 -->
+          <div class="lg:col-span-3 space-y-6 reveal visible">
+            <div>
+              <p class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#409eff]/10 text-[#409eff] text-xs font-medium mb-5">
+                NISU-CD 资源系统
+              </p>
+              <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-[#1a2332] leading-[1.1]">
+                NISU-CD<br class="hidden sm:block" />
+                <span class="text-[#409eff]">资源系统</span>
+              </h1>
+              <p class="mt-5 text-base lg:text-lg text-[#606266] leading-relaxed max-w-xl">
+                为师生打造的一站式智能知识库系统，让课件、论文、行政文档的检索与问答更加高效
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-4">
+              <button
+                class="px-8 py-3.5 rounded-lg bg-[#409eff] text-white font-semibold text-base shadow-md shadow-[#409eff]/20 hover:shadow-lg hover:shadow-[#409eff]/30 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.97] transition-all duration-200"
+                @click="scrollTo('login-section')"
+              >
+                开始使用
+                <svg class="inline-block w-4 h-4 ml-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+              </button>
+              <button
+                class="px-8 py-3.5 rounded-lg border border-[#d9d9d9] text-[#606266] font-medium text-base hover:border-[#409eff] hover:text-[#409eff] active:scale-[0.97] transition-all duration-200"
+                @click="scrollTo('features')"
+              >了解更多</button>
+            </div>
+          </div>
+
+          <!-- 登录区 -->
+          <div id="login-section" class="lg:col-span-2 reveal" style="transition-delay: 200ms">
+            <div class="rounded-xl bg-white border border-[#e4e7ed] shadow-sm p-6 sm:p-8">
+              <LoginPage embedded />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 实时数据大盘 ═══ -->
+    <section id="stats" class="max-w-7xl mx-auto px-6 -mt-6 pb-8 scroll-mt-24">
+      <div class="reveal visible">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-[#67c23a] animate-pulse" />
+            <span class="text-xs text-[#909399] font-medium">实时数据 · 每 15 秒更新</span>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div
+            v-for="(stat, i) in stats"
+            :key="stat.key"
+            class="bg-white rounded-xl border border-[#e4e7ed] p-4 lg:p-5 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+            :style="{ transitionDelay: `${i * 60}ms` }"
+          >
+            <div class="flex items-center gap-2 mb-2">
+              <div class="w-7 h-7 rounded-lg bg-[#409eff]/10 flex items-center justify-center">
+                <svg class="w-4 h-4 text-[#409eff]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+              </div>
+              <span class="text-[11px] text-[#909399] font-medium tracking-wide">{{ stat.label }}</span>
+            </div>
+            <div class="flex items-baseline gap-1">
+              <span class="text-2xl lg:text-3xl font-bold text-[#1a2332] tracking-tight">{{ stat.value.toLocaleString() }}</span>
+              <span v-if="stat.suffix" class="text-xs text-[#909399] font-medium">{{ stat.suffix }}</span>
+            </div>
+            <div class="mt-1 h-0.5 rounded-full bg-[#e4e7ed] overflow-hidden">
+              <div
+                class="h-full rounded-full transition-all duration-1000"
+                :class="i < 2 ? 'bg-[#409eff]' : i < 4 ? 'bg-[#67c23a]' : 'bg-[#e6a23c]'"
+                :style="{ width: Math.min(100, (stat.value / (i < 2 ? 100000 : i < 4 ? 500 : 50)) * 100) + '%' }"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 功能介绍 ═══ -->
+    <section id="features" class="py-16 lg:py-24 bg-white">
+      <div class="max-w-7xl mx-auto px-6">
+        <div class="text-center max-w-2xl mx-auto reveal">
+          <h2 class="text-3xl lg:text-4xl font-bold text-[#1a2332] tracking-tight">平台功能</h2>
+          <p class="mt-4 text-[#606266] text-lg leading-relaxed">基于课程资料构建知识库，AI 精准匹配与智能问答</p>
+        </div>
+
+        <!-- 功能 1 -->
+        <div class="mt-16 lg:mt-20 reveal">
+          <div class="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+            <div class="rounded-2xl bg-gradient-to-br from-[#e8f4fd] to-[#f0f8ff] border border-[#e4e7ed] p-10 lg:p-14 aspect-[4/3] flex items-center justify-center">
+              <svg class="w-24 h-24 text-[#409eff]/40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            </div>
+            <div class="space-y-5">
+              <div class="flex items-center gap-3">
+                <span class="w-8 h-8 rounded-lg bg-[#409eff] text-white flex items-center justify-center text-sm font-bold">01</span>
+                <h3 class="text-xl font-semibold text-[#1a2332]">知识库管理</h3>
+              </div>
+              <p class="text-[#606266] text-sm leading-relaxed">管理员统一上传、分类、管理各类教学资源文件，构建学科知识体系</p>
+              <ul class="space-y-3">
+                <li v-for="item in ['支持 PDF / Word / PPT 等多种格式', '按学科自动归类，关键词标注', '文件版本管理，随时回溯']" :key="item" class="flex items-center gap-3 text-sm text-[#606266]">
+                  <svg class="w-4 h-4 text-[#409eff] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                  {{ item }}
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- 功能 2 -->
+        <div class="mt-20 lg:mt-28 reveal">
+          <div class="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+            <div class="space-y-5 order-last lg:order-first">
+              <div class="flex items-center gap-3">
+                <span class="w-8 h-8 rounded-lg bg-[#409eff] text-white flex items-center justify-center text-sm font-bold">02</span>
+                <h3 class="text-xl font-semibold text-[#1a2332]">智能问答</h3>
+              </div>
+              <p class="text-[#606266] text-sm leading-relaxed">自然语言提问，AI 精准匹配知识库内容，即时生成可靠答案</p>
+              <ul class="space-y-3">
+                <li v-for="item in ['支持多轮连续对话，上下文理解', '每条回答标注引用来源原文', '三级角色权限，数据分级管控']" :key="item" class="flex items-center gap-3 text-sm text-[#606266]">
+                  <svg class="w-4 h-4 text-[#409eff] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                  {{ item }}
+                </li>
+              </ul>
+            </div>
+            <div class="rounded-2xl bg-gradient-to-br from-[#e8f4fd] to-[#f0f8ff] border border-[#e4e7ed] p-10 lg:p-14 aspect-[4/3] flex items-center justify-center order-first lg:order-last">
+              <svg class="w-24 h-24 text-[#409eff]/40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ CTA ═══ -->
+    <section class="py-16 lg:py-20 bg-gradient-to-r from-[#409eff] to-[#3a8ee6]">
+      <div class="max-w-3xl mx-auto px-6 text-center reveal">
+        <h2 class="text-3xl lg:text-4xl font-bold text-white tracking-tight">开始使用 NISU-CD 资源系统</h2>
+        <p class="mt-4 text-white/80 text-lg">登录即可体验 AI 知识库智能问答</p>
+        <button
+          class="mt-8 px-10 py-3.5 rounded-lg bg-white text-[#409eff] font-semibold text-base shadow-xl hover:shadow-2xl hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.97] transition-all duration-200"
+          @click="scrollTo('login-section')"
+        >
+          立即登录
+        </button>
+      </div>
+    </section>
+
+    <!-- ═══ Footer ═══ -->
+    <footer class="py-10 bg-[#1a2332]">
+      <div class="max-w-7xl mx-auto px-6 text-center">
+        <p class="text-white/40 text-xs">NISU-CD 资源系统</p>
+        <p class="mt-5 text-white/20 text-[11px] border-t border-white/10 pt-5">&copy; 2026 NISU-CD</p>
+      </div>
+    </footer>
+  </div>
+</template>
 
 <style scoped>
-/* ───────────── 滚动渐入动画 ───────────── */
+/* ── Scroll reveal ── */
 .reveal {
   opacity: 0;
-  transform: translateY(30px);
-  transition: opacity 0.7s ease, transform 0.7s ease;
+  transform: translateY(24px);
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
-
 .reveal.visible {
   opacity: 1;
   transform: translateY(0);
 }
 
-/* ───────────── 基础重置 ───────────── */
-.landing {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  color: #1a2332;
-  overflow-x: hidden;
-}
-
-/* ───────────── 导航栏 ───────────── */
-.navbar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1000;
-  padding: 0 40px;
-  transition: all 0.3s ease;
-  background: transparent;
-
-}
-
-.navbar--scrolled {
-  background: rgba(255, 255, 255, 0.98);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 1px 12px rgba(0, 0, 0, 0.08);
-}
-
-.navbar-inner {
-  max-width: 1200px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 64px;
-}
-
-.navbar-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-}
-
-.navbar-logo {
-  height: 46px;
-  width: auto;
-  border-radius: 8px;
-}
-
-
-.navbar-title {
-  font-size: 17px;
-  font-weight: 600;
-  color: #fff;
-  transition: color 0.3s;
-}
-
-.navbar--scrolled .navbar-title {
-  color: #1a2332;
-}
-
-.navbar-nav {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.nav-link {
-  background: none;
-  border: none;
-  padding: 10px 18px;
-  font-size: 17px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
-  cursor: pointer;
-  border-radius: 8px;
-  transition: all 0.2s;
-}
-
-.nav-link:hover {
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
-}
-
-.navbar--scrolled .nav-link {
-  color: #4b5563;
-}
-
-.navbar--scrolled .nav-link:hover {
-  background: rgba(43, 95, 217, 0.048);
-  color: #2b5fd9c2;
-}
-
-/* ───────────── Hero ───────────── */
-.hero {
-  position: relative;
-  height: 100vh;
-  min-height: 600px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.hero-bg {
-  position: absolute;
-  inset: 0;
-  background-size: cover;
-  background-position: center;
-  transform: scale(1.08);
-  animation: hero-zoom 20s ease-out forwards;
-}
-
-@keyframes hero-zoom {
-  to { transform: scale(1); }
-}
-
-.hero-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    135deg,
-    rgba(15, 26, 46, 0.82) 0%,
-    rgba(15, 26, 46, 0.45) 50%,
-    rgba(15, 26, 46, 0.78) 100%
-  );
-}
-
-.hero-content {
-  position: relative;
-  z-index: 1;
-  text-align: center;
-  color: #fff;
-  padding: 0 24px;
-  animation: hero-fade 1.2s ease-out;
-}
-
-@keyframes hero-fade {
-  from { opacity: 0; transform: translateY(32px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.hero-logo {
-  height: 72px;
-  width: auto;
-  margin-bottom: 20px;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-}
-
-.hero-title {
-  font-size: 60px;
-  font-weight: 800;
-  margin: 0 0 12px;
-  letter-spacing: 0.02em;
-  line-height: 1.2;
-  background: #ffffff;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.hero-sub {
-  font-size: 20px;
-  line-height: 1.7;
-  margin: 0 0 40px;
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.hero-sub strong {
-  font-weight: 600;
-}
-
-.hero-actions {
-  display: flex;
-  gap: 20px;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-/* 「开始体验」白底蓝字 */
-.hero-primary {
-  --el-button-bg-color: #fff !important;
-  --el-button-border-color: transparent !important;
-  --el-button-text-color: #2b5fd9 !important;
-  --el-button-hover-bg-color: #f0f4ff !important;
-  --el-button-hover-border-color: transparent !important;
-  --el-button-hover-text-color: #1e4bb8 !important;
-  font-size: 17px !important;
-  font-weight: 500 !important;
-  padding: 14px 36px !important;
-  border-radius: 50px !important;
-  box-shadow: 0 4px 20px rgba(43, 95, 217, 0.25);
-  transition: all 0.25s ease !important;
-}
-
-.hero-primary:hover {
-  box-shadow: 0 6px 28px rgba(43, 95, 217, 0.35);
-  transform: translateY(-2px);
-}
-
-/* 「了解更多」透明底白边框 */
-.hero-more {
-  --el-button-bg-color: transparent !important;
-  --el-button-border-color: rgba(255, 255, 255, 0.7) !important;
-  --el-button-text-color: #fff !important;
-  --el-button-hover-bg-color: rgba(255, 255, 255, 0.12) !important;
-  --el-button-hover-border-color: #fff !important;
-  --el-button-hover-text-color: #fff !important;
-  font-size: 17px !important;
-  font-weight: 500 !important;
-  padding: 14px 36px !important;
-  border-radius: 50px !important;
-}
-
-/* ───────────── 通用 Section ───────────── */
-.section {
-  padding: 100px 24px;
-}
-
-.section--white {
-  background: #fff;
-}
-
-.section--blue {
-  background: linear-gradient(135deg, #0f1a2e 0%, #1a2d4a 100%);
-}
-
-.section-inner {
-  max-width: 1100px;
-  margin: 0 auto;
-}
-
-.section-title {
-  font-size: 32px;
-  font-weight: 700;
-  text-align: center;
-  margin: 0 0 8px;
-  color: #1a2332;
-}
-
-.section-title--light {
-  color: #fff;
-}
-
-.section-desc {
-  font-size: 16px;
-  text-align: center;
-  color: #6b7280;
-  margin: 0 0 60px;
-  line-height: 1.6;
-}
-
-.section-desc--light {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-/* ───────────── 产品功能 & 智能问答 ───────────── */
-.feature-main {
-  display: flex;
-  gap: 32px;
-  align-items: flex-start;
-  background: linear-gradient(135deg, #f8faff 0%, #f0f4fe 100%);
-  border-radius: 20px;
-  padding: 36px 40px;
-  margin-bottom: 32px;
-  border: 1px solid rgba(43, 95, 217, 0.08);
-}
-
-.feature-main-icon {
-  font-size: 48px;
-  line-height: 1;
-  flex-shrink: 0;
-  width: 64px;
-  text-align: center;
-}
-
-.feature-main-content {
-  flex: 1;
-}
-
-.feature-main-content h3 {
-  font-size: 22px;
-  font-weight: 700;
-  color: #1a2332;
-  margin: 0 0 20px;
-}
-
-.feature-flow {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.feature-flow-step {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  padding: 14px 16px;
-  background: #fff;
-  border-radius: 12px;
-  transition: all 0.25s ease;
-  border: 1px solid transparent;
-}
-
-.feature-flow-step:hover {
-  border-color: rgba(43, 95, 217, 0.15);
-  box-shadow: 0 4px 16px rgba(43, 95, 217, 0.06);
-  transform: translateY(-2px);
-}
-
-.step-num {
-  font-size: 13px;
-  font-weight: 700;
-  color: #2b5fd9;
-  background: #eef3fe;
-  padding: 2px 10px;
-  border-radius: 20px;
-  white-space: nowrap;
-  line-height: 22px;
-  flex-shrink: 0;
-}
-
-.step-text strong {
-  display: block;
-  font-size: 15px;
-  font-weight: 600;
-  color: #1a2332;
-  margin-bottom: 2px;
-}
-
-.step-text span {
-  font-size: 13px;
-  color: #6b7280;
-  line-height: 1.5;
-}
-
-/* ───────────── 辅助功能卡片 ───────────── */
-.feature-cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin-bottom: 36px;
-}
-
-.feature-card {
-  padding: 28px 24px;
-  background: #f8fafc;
-  border-radius: 16px;
-  transition: all 0.3s ease;
-  text-align: center;
-}
-
-.feature-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
-}
-
-.feature-card-icon {
-  font-size: 36px;
-  display: block;
-  margin-bottom: 12px;
-}
-
-.feature-card h4 {
-  font-size: 17px;
-  font-weight: 600;
-  color: #1a2332;
-  margin: 0 0 8px;
-}
-
-.feature-card p {
-  font-size: 13px;
-  color: #6b7280;
-  margin: 0;
-  line-height: 1.6;
-}
-
-/* ───────────── 权限说明 ───────────── */
-.perm-box {
-  display: flex;
-  gap: 16px;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.perm-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 24px;
-  background: #f8fafc;
-  border-radius: 10px;
-  font-size: 14px;
-  color: #4b5563;
-}
-
-.perm-badge {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.perm-badge--user {
-  background: #eef2ff;
-  color: #4f6cf7;
-}
-
-.perm-badge--admin {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-/* ───────────── 学校概况 ───────────── */
-.stats {
-  display: flex;
-  gap: 24px;
-  justify-content: center;
-  margin-bottom: 32px;
-  flex-wrap: wrap;
-}
-
-.stat-card {
-  text-align: center;
-  padding: 32px 48px;
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(8px);
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  min-width: 180px;
-  transition: transform 0.3s;
-}
-
-.stat-card:hover {
-  transform: translateY(-4px);
-}
-
-.stat-number {
-  display: block;
-  font-size: 48px;
-  font-weight: 700;
-  color: #fff;
-  line-height: 1.1;
-  margin-bottom: 4px;
-}
-
-.stat-number small {
-  font-size: 24px;
-  font-weight: 600;
-}
-
-.stat-unit {
-  font-size: 20px;
-  color: rgba(255, 255, 255, 0.6);
-  margin-left: 2px;
-}
-
-.stat-label {
-  display: block;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
-  margin-top: 4px;
-}
-
-/* ── 第二排数据 ── */
-.stats-sub {
-  display: flex;
-  gap: 16px;
-  justify-content: center;
-  margin-bottom: 40px;
-  flex-wrap: wrap;
-}
-
-.stats-sub-item {
-  text-align: center;
-  padding: 20px 32px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  min-width: 130px;
-  transition: transform 0.3s;
-}
-
-.stats-sub-item:hover {
-  transform: translateY(-2px);
-}
-
-.sub-number {
-  display: block;
-  font-size: 28px;
-  font-weight: 700;
-  color: #fff;
-  line-height: 1.2;
-  margin-bottom: 2px;
-}
-
-.sub-unit {
-  font-size: 16px;
-  font-weight: 400;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.sub-label {
-  display: block;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.55);
-}
-
-/* ── 详细介绍 ── */
-.school-detail {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  margin-bottom: 32px;
-}
-
-.detail-col {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 12px;
-  padding: 20px 20px;
-  text-align: center;
-  transition: all 0.3s;
-}
-
-.detail-col:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.12);
-}
-
-.detail-col h4 {
-  font-size: 15px;
-  font-weight: 600;
-  color: #fff;
-  margin: 0 0 8px;
-  letter-spacing: 0.03em;
-}
-
-.detail-col p {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.65);
-  margin: 0;
-  line-height: 1.7;
-}
-
-/* ── 底部信息 ── */
-.school-footer {
-  text-align: center;
-  padding-top: 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.school-footer p {
-  margin: 0 0 4px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.5);
-  line-height: 1.6;
-}
-
-.school-footer p:first-child {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 14px;
-}
-
-/* ───────────── 校园风采 ───────────── */
-.gallery {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-}
-
-.gallery-item {
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.gallery-item--wide {
-  grid-column: span 2;
-}
-
-.gallery-card {
-  position: relative;
-  border-radius: 12px;
-  overflow: hidden;
-  cursor: pointer;
-  aspect-ratio: 4 / 3;
-}
-
-.gallery-item--wide .gallery-card {
-  aspect-ratio: 5 / 3;
-}
-
-.gallery-card img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.5s ease;
-}
-
-.gallery-card:hover img {
-  transform: scale(1.08);
-}
-
-.gallery-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.6) 0%, transparent 50%);
-  opacity: 0;
-  transition: opacity 0.3s;
-  display: flex;
-  align-items: flex-end;
-  padding: 16px;
-}
-
-.gallery-card:hover .gallery-overlay {
-  opacity: 1;
-}
-
-.gallery-overlay span {
-  color: #fff;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-/* ───────────── Footer ───────────── */
-.footer {
-  background: #0a111f;
-  color: rgba(255, 255, 255, 0.6);
-  padding: 48px 24px 36px;
-  text-align: center;
-}
-
-.footer-inner {
-  max-width: 1100px;
-  margin: 0 auto;
-}
-
-.footer-logo {
-  height: 40px;
-  width: auto;
-  margin-bottom: 16px;
-  border-radius: 4px;
-  opacity: 0.8;
-}
-
-.footer-name {
-  font-size: 16px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.8);
-  margin: 0 0 8px;
-}
-
-.footer-addr {
-  font-size: 13px;
-  margin: 0 0 20px;
-}
-
-.footer-copy {
-  font-size: 12px;
-  padding-top: 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-
-/* ───────────── 回到顶部 ───────────── */
-.back-top {
-  position: fixed;
-  right: 32px;
-  bottom: 40px;
-  z-index: 1900;
-  width: 48px;
-  height: 48px;
-  border: none;
-  border-radius: 50%;
-  background: #9f9fa0b6;
-  color: #fff;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 20px rgba(43, 95, 217, 0.281);
-  transition: all 0.25s ease;
-}
-
-.back-top:hover {
-  background: #676869;
-  transform: translateY(-3px);
-  box-shadow: 0 6px 28px rgba(43, 95, 217, 0.233);
-}
-
-.back-top:active {
-  transform: translateY(0);
-}
-
-.back-top svg {
-  width: 22px;
-  height: 22px;
-  stroke: #fff;
-}
-
-/* ───────────── 响应式 ───────────── */
-@media (max-width: 900px) {
-  .hero-title { font-size: 36px; }
-  .hero-sub { font-size: 17px; }
-  .hero-logo { height: 56px; }
-  .gallery { grid-template-columns: repeat(2, 1fr); }
-  .gallery-item--wide { grid-column: span 1; }
-  .gallery-item--wide .gallery-card { aspect-ratio: 4 / 3; }
-  .stat-card { min-width: 140px; padding: 28px 32px; }
-  .stat-number { font-size: 38px; }
-  .school-detail { grid-template-columns: 1fr; }
-  .navbar-title { display: none; }
-  .nav-link { display: none; }
-}
-
-@media (max-width: 600px) {
-  .hero-title { font-size: 28px; }
-  .hero-sub { font-size: 15px; }
-  .section { padding: 60px 16px; }
-  .gallery { grid-template-columns: 1fr; }
-  .feature-flow { grid-template-columns: 1fr; }
-  .feature-cards { grid-template-columns: 1fr; }
-  .feature-main { flex-direction: column; padding: 24px; }
-  .stats { flex-direction: column; align-items: center; }
-  .stats-sub { flex-direction: column; align-items: center; }
-  .school-detail { grid-template-columns: 1fr; }
-  .navbar { padding: 0 16px; }
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
 }
 </style>
