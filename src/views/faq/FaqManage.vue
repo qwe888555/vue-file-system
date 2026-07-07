@@ -57,7 +57,7 @@
         </div>
       </div>
 
-      <div v-if="!loading && list.length === 0" class="fm-empty">
+      <div v-if="!loading && pagedList.length === 0" class="fm-empty">
         <p>暂无数据</p>
       </div>
 

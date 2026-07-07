@@ -469,4 +469,8 @@ async function confirmBatchReset() {
   font-weight: 600;
   box-shadow: 0 2px 8px rgba(43, 95, 217, 0.12);
 }
+
+:deep(.table-pagination) {
+  justify-content: flex-start;
+}
 </style>
