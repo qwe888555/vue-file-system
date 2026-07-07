@@ -6,7 +6,7 @@ import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Check, Cl
 import MarkdownIt from 'markdown-it'
 import * as mammoth from 'mammoth'
 import type { KnowledgeFile } from '@/types'
-import { getDocDetailApi, deleteDocApi, downloadDocApi, previewDocApi, updateDocApi } from '@/api/knowledge'
+import { getDocDetailApi, deleteDocApi, downloadDocApi, previewDocApi, updateDocApi, extractFreshnessApi } from '@/api/knowledge'
 
 const route = useRoute()
 const router = useRouter()
@@ -215,10 +215,17 @@ async function loadFileContent() {
   
   try {
     const result = await previewDocApi(file.value.id)
+    console.log('预览接口响应:', result)
     
     if (result.content) {
-      if (previewType.value === 'markdown') {
+      const contentType = result.content_type || ''
+      
+      if (contentType.includes('markdown') || ['md', 'markdown'].includes(fileExtension.value)) {
         previewContent.value = md.render(result.content)
+      } else if (contentType.includes('text') || ['txt', 'html'].includes(fileExtension.value)) {
+        previewContent.value = result.content
+      } else if (contentType.includes('json')) {
+        previewContent.value = JSON.stringify(JSON.parse(result.content), null, 2)
       } else {
         previewContent.value = result.content
       }
@@ -229,31 +236,10 @@ async function loadFileContent() {
     console.error('获取文件预览失败:', error)
     
     if (file.value.content) {
-      if (previewType.value === 'markdown') {
+      if (['md', 'markdown'].includes(fileExtension.value)) {
         previewContent.value = md.render(file.value.content)
       } else {
         previewContent.value = file.value.content
-      }
-    } else if (file.value.fileData) {
-      if (previewType.value === 'text') {
-        const base64Data = file.value.fileData.split(',')[1]
-        const decoded = atob(base64Data)
-        previewContent.value = decoded
-      } else if (['doc', 'docx'].includes(fileExtension.value)) {
-        try {
-          const base64Data = file.value.fileData.split(',')[1]
-          const binaryData = atob(base64Data)
-          const arrayBuffer = new ArrayBuffer(binaryData.length)
-          const uint8Array = new Uint8Array(arrayBuffer)
-          for (let i = 0; i < binaryData.length; i++) {
-            uint8Array[i] = binaryData.charCodeAt(i)
-          }
-          const result = await mammoth.extractRawText({ arrayBuffer })
-          previewContent.value = result.value
-        } catch (err) {
-          console.error('Failed to extract text from Word document:', err)
-          previewContent.value = '无法解析Word文档内容，请下载查看'
-        }
       }
     } else {
       previewContent.value = ''
@@ -271,11 +257,48 @@ async function handleDownload() {
   if (!file.value) return
   
   try {
-    const blob = await downloadDocApi(file.value.id)
+    const { data: blob, headers } = await downloadDocApi(file.value.id)
+    
+    let fileName = file.value.title || 'download'
+    
+    const contentDisposition = headers['content-disposition'] || headers['Content-Disposition']
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+      if (match && match[1]) {
+        fileName = match[1].replace(/['"]/g, '')
+      }
+    }
+    
+    const contentType = headers['content-type'] || headers['Content-Type']
+    const extMap: Record<string, string> = {
+      'application/pdf': '.pdf',
+      'application/msword': '.doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+      'application/vnd.ms-excel': '.xls',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+      'application/vnd.ms-powerpoint': '.ppt',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+      'text/plain': '.txt',
+      'text/html': '.html',
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/gif': '.gif',
+      'application/json': '.json',
+      'application/zip': '.zip',
+      'application/rar': '.rar',
+    }
+    
+    if (contentType && extMap[contentType]) {
+      const ext = extMap[contentType]
+      if (!fileName.toLowerCase().endsWith(ext)) {
+        fileName += ext
+      }
+    }
+    
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = file.value.title
+    link.download = fileName
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -363,6 +386,20 @@ async function handleDelete() {
     .catch(() => {})
 }
 
+async function handleExtractFreshness() {
+  if (!file.value) return
+  
+  try {
+    ElMessage.info('正在AI提取发布日期...')
+    const result = await extractFreshnessApi(file.value.id)
+    ElMessage.success(`发布日期提取成功：${result.freshness}`)
+    file.value = { ...file.value, freshness: result.freshness }
+  } catch (error) {
+    console.error('提取发布日期失败:', error)
+    ElMessage.error('提取发布日期失败')
+  }
+}
+
 async function fetchDocDetail(id: number) {
   try {
     isLoading.value = true
@@ -397,6 +434,10 @@ onMounted(() => {
         <h2 class="page-title">{{ file?.title }}</h2>
       </div>
       <div class="header-actions">
+        <el-button @click="handleExtractFreshness" type="primary">
+          <el-icon><Edit /></el-icon>
+          AI提取日期
+        </el-button>
         <el-button @click="handleRename" type="primary">
           <el-icon><Edit /></el-icon>
           重命名
@@ -515,7 +556,7 @@ onMounted(() => {
             />
           </div>
 
-          <div v-else-if="previewType === 'markdown'" class="markdown-preview">
+          <div v-if="previewContent" class="content-preview">
             <div v-html="previewContent"></div>
           </div>
 
