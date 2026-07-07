@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { TransitionGroup } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getKeywordsApi } from '@/api/knowledge'
 import UploadFileForm from '@/components/knowledge/UploadFileForm.vue'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 
@@ -22,6 +21,7 @@ const pageSize = ref(8)
 const totalFiles = ref(0)
 
 const uploadedFiles = ref<KnowledgeFile[]>([])
+const keywordsCache = new Map<number, Keyword[]>()
 
 async function fetchFiles() {
   loading.value = true
@@ -30,8 +30,37 @@ async function fetchFiles() {
       page: currentPage.value,
       page_size: pageSize.value,
     })
+    console.log('文档列表响应:', JSON.stringify(res, null, 2))
     const data = res.results || res.data || res
-    uploadedFiles.value = Array.isArray(data) ? data : []
+    const newFiles = Array.isArray(data) ? data : []
+    
+    const promises = newFiles.map(async (file) => {
+      if (keywordsCache.has(file.id)) {
+        file.keywords = keywordsCache.get(file.id)!
+      } else {
+        try {
+          const keywords = await getKeywordsApi(file.id)
+          let keywordList: Keyword[] = []
+          if (Array.isArray(keywords)) {
+            keywordList = keywords.map((kw: any) => ({
+              id: kw.id,
+              phrase: kw.phrase || kw.keyword || kw.name || '',
+              match_type: kw.match_type || 'exact',
+              weight: kw.weight || 1,
+            })).filter((kw: Keyword) => kw.phrase)
+          }
+          keywordsCache.set(file.id, keywordList)
+          file.keywords = keywordList
+        } catch (error) {
+          console.error(`获取文件 ${file.title} 的关键词失败:`, error)
+          file.keywords = []
+        }
+      }
+    })
+    
+    await Promise.all(promises)
+    
+    uploadedFiles.value = newFiles
     totalFiles.value = res.total || res.count || uploadedFiles.value.length
   } catch (error: any) {
     console.error('获取文件列表失败:', error)
@@ -51,16 +80,8 @@ onMounted(() => {
 })
 
 function handleOpenUpload() {
-  console.log('handleOpenUpload called, showUploadDialog:', showUploadDialog.value)
   showUploadDialog.value = true
-  console.log('handleOpenUpload done, showUploadDialog:', showUploadDialog.value)
 }
-
-const recentFiles = computed(() => {
-  return [...uploadedFiles.value]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5)
-})
 
 const filteredFiles = computed(() => {
   if (!searchQuery.value) return uploadedFiles.value
@@ -110,6 +131,18 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+function formatDate(dateStr: string): string {
+  if (!dateStr) return '-'
+  const date = new Date(dateStr)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function handleFileClick(file: KnowledgeFile) {
   router.push(`/knowledge/detail/${file.id}`)
 }
@@ -152,6 +185,10 @@ function handleFormSubmit() {
   showUploadDialog.value = false
   fetchFiles()
 }
+
+function saveFiles(files: KnowledgeFile[]) {
+  localStorage.setItem('uploadedFiles', JSON.stringify(files))
+}
 </script>
 
 <template>
@@ -161,10 +198,6 @@ function handleFormSubmit() {
         <h2 class="page-title">知识库管理</h2>
         <p class="page-subtitle">管理和浏览所有上传的文档资源</p>
       </div>
-      <el-button type="primary" @click="handleOpenUpload" class="upload-btn">
-        <el-icon><Upload /></el-icon>
-        上传文件
-      </el-button>
     </div>
 
     <div class="search-section">
@@ -176,35 +209,23 @@ function handleFormSubmit() {
       />
     </div>
 
-    <div class="recent-section">
-      <div class="section-header">
-        <h3 class="section-title">
-          <el-icon><Clock /></el-icon>
-          最近上传
-        </h3>
-      </div>
-      <div class="recent-list">
-        <div
-          v-for="file in recentFiles"
-          :key="file.id"
-          class="recent-item"
-          @click="handleFileClick(file)"
-        >
-          <el-icon :color="fileTypeColors[file.fileType] || '#409eff'">
-            <component :is="fileTypeIcons[file.fileType] || 'Document'" />
-          </el-icon>
-          <span class="recent-name">{{ file.title }}</span>
-          <span class="recent-time">{{ file.createdAt }}</span>
+    <div class="upload-section" @click="handleOpenUpload">
+      <div class="upload-inner">
+        <div class="upload-icon-wrapper">
+          <el-icon :size="48" color="#409eff"><Upload /></el-icon>
         </div>
+        <h3 class="upload-title">上传文件</h3>
+        <p class="upload-desc">点击或拖拽文件到此处上传</p>
+        <p class="upload-tips">支持 PDF、Word、图片、音频、视频等格式</p>
       </div>
     </div>
 
-    <div class="file-grid-section">
+    <div class="file-table-section">
       <div class="section-header">
         <h3 class="section-title">
           <el-icon><FolderOpened /></el-icon>
           全部文件
-          <span class="file-count">{{ filteredFiles.length }}</span>
+          <span class="file-count">{{ totalFiles }}</span>
         </h3>
       </div>
 
@@ -213,42 +234,85 @@ function handleFormSubmit() {
         <p>暂无文件，请上传</p>
       </div>
 
-      <TransitionGroup v-else name="card" tag="div" class="file-grid">
-        <div
-          v-for="(file, index) in paginatedFiles"
-          :key="file.id"
-          class="file-card"
-          :style="{ animationDelay: `${index * 50}ms` }"
-          @click="handleFileClick(file)"
-        >
-          <div class="card-icon-wrapper" :style="{ background: fileTypeColors[file.fileType] + '15' }">
-            <el-icon :size="32" :color="fileTypeColors[file.fileType] || '#409eff'">
-              <component :is="fileTypeIcons[file.fileType] || 'Document'" />
-            </el-icon>
-          </div>
-          <div class="card-content">
-            <h4 class="card-title">{{ file.title }}</h4>
-            <p class="card-summary">{{ file.summary }}</p>
-            <div class="card-meta">
-              <el-tag size="small" type="primary">{{ file.collegeName }}</el-tag>
-              <el-tag v-for="kw in (file.keywords || []).slice(0, 3)" :key="kw.id" size="small" type="info">{{ kw.phrase }}</el-tag>
-              <el-tag size="small">{{ formatFileSize(file.fileSize) }}</el-tag>
+      <el-table
+        v-else
+        :data="paginatedFiles"
+        border
+        stripe
+        :loading="loading"
+        class="file-table"
+        @row-click="handleFileClick"
+      >
+        <el-table-column prop="title" label="文件名" min-width="200" show-overflow-tooltip>
+          <template #default="scope">
+            <div class="file-name-cell">
+              <el-icon :size="18" :color="fileTypeColors[scope.row.fileType] || '#409eff'" class="file-icon">
+                <component :is="fileTypeIcons[scope.row.fileType] || 'Document'" />
+              </el-icon>
+              <span class="file-title">{{ scope.row.title }}</span>
             </div>
-            <div class="card-footer">
-              <span class="card-author">{{ file.author }}</span>
-              <span class="card-date">{{ file.createdAt }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="categoryName" label="分类" min-width="120" align="center">
+          <template #default="scope">
+            <el-tag size="small" type="info" effect="plain">
+              {{ scope.row.categoryName || '未分类' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="collegeName" label="学院" min-width="120" align="center">
+          <template #default="scope">
+            <el-tag size="small" type="primary" effect="plain">
+              {{ scope.row.collegeName || '未归属' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="author" label="上传者" min-width="100" align="center" />
+
+        <el-table-column prop="keywords" label="关键词" min-width="150">
+          <template #default="scope">
+            <div class="keywords-cell">
+              <el-tag
+                v-for="kw in (scope.row.keywords || []).slice(0, 3)"
+                :key="kw.id"
+                size="small"
+                class="keyword-tag"
+              >
+                {{ kw.phrase }}
+              </el-tag>
+              <span v-if="(scope.row.keywords || []).length > 3" class="more-keywords">
+                +{{ (scope.row.keywords || []).length - 3 }}
+              </span>
             </div>
-          </div>
-          <div class="card-actions">
-            <el-button size="small" @click.stop="handleEdit(file)" type="text">
-              <el-icon><Edit /></el-icon>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="fileSize" label="大小" width="100" align="center">
+          <template #default="scope">
+            {{ formatFileSize(scope.row.fileSize) }}
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="createdAt" label="上传时间" min-width="160" align="center">
+          <template #default="scope">
+            {{ formatDate(scope.row.createdAt) }}
+          </template>
+        </el-table-column>
+
+        <el-table-column label="操作" width="120" align="center" fixed="right">
+          <template #default="scope">
+            <el-button size="small" @click.stop="handleEdit(scope.row)" type="primary" link>
+              编辑
             </el-button>
-            <el-button size="small" @click.stop="handleDelete(file)" type="text" danger>
-              <el-icon><Delete /></el-icon>
+            <el-button size="small" @click.stop="handleDelete(scope.row)" type="danger" link>
+              删除
             </el-button>
-          </div>
-        </div>
-      </TransitionGroup>
+          </template>
+        </el-table-column>
+      </el-table>
 
       <div class="pagination-wrapper">
         <el-pagination
@@ -310,10 +374,6 @@ function handleFormSubmit() {
   margin: 0;
 }
 
-.upload-btn {
-  height: 36px;
-}
-
 .search-section {
   margin-bottom: var(--spacing-xl);
 }
@@ -322,12 +382,77 @@ function handleFormSubmit() {
   max-width: 400px;
 }
 
-.recent-section {
+.upload-section {
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+  border: 2px dashed #c0c4cc;
+  border-radius: var(--radius-lg);
+  padding: 48px 24px;
+  margin-bottom: var(--spacing-xl);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: center;
+}
+
+.upload-section:hover {
+  border-color: #409eff;
+  background: linear-gradient(135deg, #ecf5ff 0%, #e0ebff 100%);
+  box-shadow: 0 4px 20px rgba(64, 158, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.upload-section:active {
+  transform: translateY(0);
+}
+
+.upload-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.upload-icon-wrapper {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(64, 158, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.upload-section:hover .upload-icon-wrapper {
+  transform: scale(1.1);
+  background: rgba(64, 158, 255, 0.2);
+}
+
+.upload-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.upload-desc {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.upload-tips {
+  font-size: 12px;
+  color: var(--color-info);
+  margin: 0;
+}
+
+.file-table-section {
   background: #fff;
   border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
-  margin-bottom: var(--spacing-xl);
+  padding-bottom: 80px;
   box-shadow: var(--shadow-sm);
+  position: relative;
 }
 
 .section-header {
@@ -355,57 +480,6 @@ function handleFormSubmit() {
   border-radius: var(--radius-lg);
 }
 
-.recent-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.recent-item {
-  display: flex;
-  align-items: center;
-  padding: 10px 12px;
-  border-radius: var(--radius-base);
-  cursor: pointer;
-  transition: background-color 0.2s;
-  min-width: 0;
-}
-
-.recent-item:hover {
-  background: var(--color-bg);
-}
-
-.recent-item :deep(.el-icon) {
-  margin-right: 10px;
-  flex-shrink: 0;
-}
-
-.recent-name {
-  flex: 1;
-  font-size: 14px;
-  color: var(--color-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.recent-time {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  margin-left: 16px;
-  flex-shrink: 0;
-}
-
-.file-grid-section {
-  background: #fff;
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
-  padding-bottom: 80px;
-  box-shadow: var(--shadow-sm);
-  position: relative;
-}
-
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -420,160 +494,66 @@ function handleFormSubmit() {
   font-size: 14px;
 }
 
-.file-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--spacing-lg);
+.file-table {
+  width: 100%;
 }
 
-.file-card {
-  position: relative;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
-  cursor: pointer;
-  transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), box-shadow 0.3s ease, border-color 0.3s ease;
-  overflow: hidden;
-  will-change: transform, opacity;
-  transform-style: preserve-3d;
-  backface-visibility: hidden;
+.file-table :deep(.el-table__header) {
+  background: var(--color-bg);
 }
 
-.file-card:hover {
-  border-color: var(--color-primary);
-  box-shadow: var(--shadow-base);
-  transform: translate3d(0, -6px, 0);
-}
-
-.card-enter-active {
-  animation: cardEnter 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
-
-.card-leave-active {
-  animation: cardLeave 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
-}
-
-.card-move {
-  transition: transform 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
-}
-
-@keyframes cardEnter {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, 30px, 0) scale(0.92);
-    filter: blur(4px);
-  }
-  60% {
-    opacity: 1;
-    transform: translate3d(0, -5px, 0) scale(1.02);
-    filter: blur(0);
-  }
-  100% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-    filter: blur(0);
-  }
-}
-
-@keyframes cardLeave {
-  0% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-    filter: blur(0);
-  }
-  100% {
-    opacity: 0;
-    transform: translate3d(0, -20px, 0) scale(0.96);
-    filter: blur(4px);
-  }
-}
-
-.card-icon-wrapper {
-  width: 64px;
-  height: 64px;
-  border-radius: var(--radius-lg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: var(--spacing-md);
-}
-
-.card-content {
-  position: relative;
-  z-index: 1;
-}
-
-.card-title {
-  font-size: 14px;
+.file-table :deep(.el-table__header th) {
   font-weight: 600;
   color: var(--color-text);
-  margin: 0 0 6px 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background: var(--color-bg);
+  border-bottom: 2px solid var(--color-primary);
 }
 
-.card-summary {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  margin: 0 0 10px 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  line-height: 1.5;
+.file-table :deep(.el-table__body tr) {
+  transition: background-color 0.2s ease;
 }
 
-.card-meta {
+.file-table :deep(.el-table__body tr:hover) {
+  background: #f5f7fa;
+}
+
+.file-table :deep(.el-table__body td) {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.file-name-cell {
   display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-icon {
+  flex-shrink: 0;
+}
+
+.file-title {
+  font-size: 14px;
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.keywords-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex-wrap: wrap;
 }
 
-.card-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.keyword-tag {
+  background: #f0f5ff;
+  color: #409eff;
+  border-color: #d6e4ff;
 }
 
-.card-author {
+.more-keywords {
   font-size: 12px;
   color: var(--color-text-secondary);
-}
-
-.card-date {
-  font-size: 12px;
-  color: var(--color-info);
-}
-
-.card-actions {
-  position: absolute;
-  top: var(--spacing-md);
-  right: var(--spacing-md);
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.file-card:hover .card-actions {
-  opacity: 1;
-}
-
-.card-actions :deep(.el-button) {
-  padding: 0;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: var(--radius-sm);
-}
-
-.upload-form {
-  margin-top: var(--spacing-md);
 }
 
 .pagination-wrapper {
@@ -632,13 +612,5 @@ function handleFormSubmit() {
   100% {
     transform: scale(1.1);
   }
-}
-
-.upload-form :deep(.el-form-item) {
-  margin-bottom: var(--spacing-md);
-}
-
-.upload-dragger {
-  width: 100%;
 }
 </style>

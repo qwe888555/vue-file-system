@@ -11,42 +11,45 @@
       :filters="defaultFilters"
       :page-size="15"
     >
-      <!-- 搜索栏（输入即搜，无搜索按钮） -->
+      <!-- 角色 Pills -->
       <template #search>
-        <el-input
-          v-model="keyword"
-          placeholder="搜索账号"
-          clearable
-          style="width: 200px"
-          @input="handleSearch"
-          @clear="handleSearch"
-        />
-        <el-select v-model="roleFilter" placeholder="全部角色" clearable style="width: 160px" @change="handleSearch">
-          <el-option label="全部角色" value="__all__" />
-          <el-option
+        <div class="role-pills">
+          <span class="role-label">账号角色：</span>
+          <span class="role-pill" :class="{ active: roleFilter === '__all__' }" @click="roleFilter = '__all__'">全部</span>
+          <span
             v-for="opt in roleOptions"
             :key="opt.value"
-            :label="opt.label"
-            :value="opt.value"
+            class="role-pill"
+            :class="{ active: roleFilter === opt.value }"
+            @click="roleFilter = opt.value"
+          >{{ opt.label }}</span>
+        </div>
+        <div class="search-row">
+          <el-input
+            v-model="keyword"
+            placeholder="搜索账号"
+            clearable
+            style="width: 200px"
+            @input="handleSearch"
+            @clear="handleSearch"
           />
-        </el-select>
-        <el-select
-          v-model="collegeFilter"
-          placeholder="全部学院/部门"
-          clearable
-          style="width: 160px"
-          :disabled="false"
-          @change="handleSearch"
-        >
-          <el-option label="全部学院/部门" value="__all__" />
-          <el-option
-            v-for="opt in orgOptions"
-            :key="opt.id"
-            :label="opt.name"
-            :value="opt.id"
-          />
-        </el-select>
-        <el-button @click="handleReset">重置</el-button>
+          <el-select
+            v-model="collegeFilter"
+            placeholder="全部学院/部门"
+            clearable
+            style="width: 160px"
+            @change="handleSearch"
+          >
+            <el-option label="全部学院/部门" value="__all__" />
+            <el-option
+              v-for="opt in orgOptions"
+              :key="opt.id"
+              :label="opt.name"
+              :value="opt.id"
+            />
+          </el-select>
+          <el-button @click="handleReset">重置</el-button>
+        </div>
       </template>
 
       <!-- 所属学院/部门列（优先学院名，没有则显示部门名） -->
@@ -156,20 +159,33 @@ onMounted(async () => {
     const [colRes, deptRes] = await Promise.all([getCollegesApi(), getDepartmentsApi()])
     colleges.value = colRes.results || []
     departments.value = deptRes.results || []
-    orgOptions.value = [
+    const allOptions = [
       ...colleges.value.map((c) => ({ id: `col_${c.id}`, name: c.name })),
       ...flattenDepts(departments.value),
     ]
+    // 非超级管理员且有 college_id → 下拉只返回该学院的选项
+    if (!isSuperAdmin.value && userCollegeId.value) {
+      orgOptions.value = allOptions.filter((o) => o.id === `col_${userCollegeId.value}`)
+    } else {
+      orgOptions.value = allOptions
+    }
   } catch {
     // 静默失败
   }
 })
 
 /** 合并学院+部门，供新增/编辑弹窗使用（带 group 标记） */
-const flattenOrgs = computed(() => [
-  ...colleges.value.map((c) => ({ id: `col_${c.id}`, name: c.name, group: '学院' as const })),
-  ...flattenDepts(departments.value).map((d) => ({ ...d, group: '部门' as const })),
-])
+const flattenOrgs = computed(() => {
+  const all = [
+    ...colleges.value.map((c) => ({ id: `col_${c.id}`, name: c.name, group: '学院' as const })),
+    ...flattenDepts(departments.value).map((d) => ({ ...d, group: '部门' as const })),
+  ]
+  // 非超级管理员且有 college_id → 下拉只返回该学院的选项
+  if (!isSuperAdmin.value && userCollegeId.value) {
+    return all.filter((o) => o.id === `col_${userCollegeId.value}`)
+  }
+  return all
+})
 
 /** 部门树 → 一维列表 */
 function flattenDepts(list: Department[], prefix = ''): OrgOption[] {
@@ -202,7 +218,7 @@ const columns = [
 // ── 角色筛选选项 ──
 const roleOptions = computed(() =>
   (Object.keys(ROLE_CONFIG) as UserRole[])
-    .filter((role) => role !== 'admin' && (isSuperAdmin.value ? true : role !== 'super_admin'))
+    .filter((role) => role !== 'admin' && role !== 'super_admin')
     .map((role) => ({ value: role, label: ROLE_CONFIG[role].label })),
 )
 
@@ -401,5 +417,56 @@ async function confirmBatchReset() {
 <style scoped>
 .page-container {
   padding: var(--spacing-lg, 16px);
+}
+
+.role-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #4b5563;
+  line-height: 1.6;
+  padding: 6px 0;
+  white-space: nowrap;
+}
+
+.role-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+  width: 100%;
+}
+
+.search-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+}
+
+.role-pill {
+  padding: 6px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #4b5563;
+  background: #f5f7fa;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  user-select: none;
+  line-height: 1.6;
+  border: 1px solid transparent;
+}
+
+.role-pill:hover {
+  background: #eef3fe;
+  color: #2b5fd9;
+}
+
+.role-pill.active {
+  background: #fff;
+  color: #2b5fd9;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(43, 95, 217, 0.12);
 }
 </style>
