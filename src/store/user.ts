@@ -2,7 +2,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { UserInfo, UserRole, LoginParams } from '@/types'
-import { loginApi, getUserInfoApi } from '@/api/auth'
+import { loginApi, getUserInfoApi, logoutApi } from '@/api/auth'
 import { setAccessToken, setRefreshToken, clearToken, getAccessToken, getRefreshToken } from '@/api/request'
 
 export const useUserStore = defineStore('user', () => {
@@ -39,6 +39,8 @@ export const useUserStore = defineStore('user', () => {
   }
 
   function logout() {
+    const rt = refreshToken.value
+    if (rt) logoutApi(rt).catch(() => {}) // 发后即忘，不等后端
     token.value = ''
     refreshToken.value = ''
     userInfo.value = null

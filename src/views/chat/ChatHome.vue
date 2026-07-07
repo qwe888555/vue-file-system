@@ -92,7 +92,7 @@ async function handleLogout() {
   try {
     await ElMessageBox.confirm('确定要退出登录吗？', '提示')
     userStore.logout()
-    router.push('/login')
+    router.push('/')
   } catch {}
 }
 
