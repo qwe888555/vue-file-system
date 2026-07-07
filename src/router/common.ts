@@ -15,6 +15,12 @@ const authRoutes: RouteRecordRaw[] = [
     meta: { title: '登录', hidden: true },
   },
   {
+    path: '/dingtalk-callback',
+    name: 'DingTalkCallback',
+    component: () => import('@/views/login/DingTalkCallback.vue'),
+    meta: { title: '钉钉登录回调', hidden: true },
+  },
+  {
     path: '/403',
     name: 'Forbidden',
     component: () => import('@/components/common/Error403.vue'),

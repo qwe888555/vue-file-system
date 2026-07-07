@@ -17,7 +17,7 @@ async function handleLogout() {
   try {
     await ElMessageBox.confirm('确认退出登录吗？', '提示')
     userStore.logout()
-    router.push('/login')
+    router.push('/')
   } catch {
     // 取消操作
   }
