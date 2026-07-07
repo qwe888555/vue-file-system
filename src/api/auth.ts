@@ -41,3 +41,18 @@ export function ssoLoginUrl(): string {
 export function ssoCallbackApi(code: string): Promise<LoginResult> {
   return request.post('/auth/sso/callback/', { code })
 }
+
+/** 钉钉扫码：获取扫码地址 */
+export function dingtalkQrApi(): Promise<{ auth_url: string; usage: string }> {
+  return request.get('/auth/dingtalk/qr/')
+}
+
+/** 钉钉回调：用 authCode 换取 JWT 令牌 */
+export function dingtalkCallbackApi(authCode: string): Promise<LoginResult> {
+  return request.post('/auth/dingtalk/callback/', { authCode })
+}
+
+/** 登出：将 refresh token 加入黑名单 */
+export function logoutApi(refresh: string): Promise<{ detail: string }> {
+  return request.post('/auth/logout/', { refresh })
+}

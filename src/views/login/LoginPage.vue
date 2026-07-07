@@ -1,21 +1,46 @@
 <script setup lang="ts">
 // ── 独立登录页（JWT + SSO） ──
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
-import { ssoLoginUrl, ssoCallbackApi } from '@/api/auth'
+import { ssoLoginUrl, ssoCallbackApi, dingtalkQrApi } from '@/api/auth'
 import { setAccessToken, setRefreshToken } from '@/api/request'
-import logodark from '@/assets/images/logo.jpg'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 
+const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
+
 const loading = ref(false)
 const errorMsg = ref('')
 const formRef = ref()
 const form = reactive({ username: '', password: '' })
+const loginMode = ref<'account' | 'qrcode'>('account')
+const qrCodeDataUrl = ref('')
+const qrLoading = ref(false)
+const qrError = ref('')
+
+// 生成钉钉二维码
+async function loadDingTalkQr() {
+  qrLoading.value = true
+  qrError.value = ''
+  qrCodeDataUrl.value = ''
+  try {
+    const res = await dingtalkQrApi()
+    const QRCode = (await import('qrcode')).default
+    qrCodeDataUrl.value = await QRCode.toDataURL(res.auth_url, {
+      width: 180, margin: 1, color: { dark: '#1e293b', light: '#f8fafc' }
+    })
+  } catch (e: any) {
+    qrError.value = e?.response?.data?.detail || e?.message || '获取二维码失败'
+  } finally {
+    qrLoading.value = false
+  }
+}
+
+watch(loginMode, (val) => { if (val === 'qrcode') loadDingTalkQr() })
 
 // SSO 状态
 const ssoDialogVisible = ref(false)
@@ -34,13 +59,7 @@ onMounted(async () => {
 
   loading.value = true
   try {
-    const ssoRes = await ssoCallbackApi(code)
-    setAccessToken(ssoRes.access)
-    setRefreshToken(ssoRes.refresh)
-    userStore.token = ssoRes.access
-    userStore.refreshToken = ssoRes.refresh
-    userStore.userInfo = ssoRes.user
-    // SSO 回调可能未返回 role，通过 getUserInfo 补取
+    await ssoCallbackApi(code)
     if (!userStore.role) {
       try { await userStore.getUserInfo() } catch {}
     }
@@ -65,7 +84,6 @@ async function handleLogin() {
   errorMsg.value = ''
   try {
     await userStore.login(form)
-    // 登录接口可能未返回 role，通过 getUserInfo 补取
     if (!userStore.role) {
       try { await userStore.getUserInfo() } catch {}
     }
@@ -119,7 +137,6 @@ async function handleSSOSelect(code: string) {
     userStore.token = ssoRes.access
     userStore.refreshToken = ssoRes.refresh
     userStore.userInfo = ssoRes.user
-    // SSO 回调可能未返回 role，通过 getUserInfo 补取
     if (!userStore.role) {
       try { await userStore.getUserInfo() } catch {}
     }
@@ -136,52 +153,97 @@ async function handleSSOSelect(code: string) {
 </script>
 
 <template>
-  <div class="login-page">
-    <div class="login-card">
-      <button class="login-close" @click="router.push('/')">✕</button>
-      <img :src="logodark" alt="成都东软学院" class="login-logo" />
-      <h2 class="login-title">NISU-CD 资源系统</h2>
-      <p class="login-desc">请输入账号密码登录</p>
+  <div :class="['login-page', { 'login-page--embedded': embedded }]">
+    <div class="login-card-w">
+      <button v-if="!embedded" class="login-close" @click="router.push('/')">✕</button>
 
-      <el-form ref="formRef" :model="form" :rules="rules" @keyup.enter="handleLogin">
-        <el-form-item prop="username">
-          <el-input v-model="form.username" placeholder="账号" prefix-icon="User" size="large" />
-        </el-form-item>
-        <el-form-item prop="password">
-          <el-input v-model="form.password" type="password" placeholder="密码" prefix-icon="Lock" size="large" show-password />
-        </el-form-item>
-        <p v-if="errorMsg" class="login-error">{{ errorMsg }}</p>
-        <el-form-item>
-          <el-button type="primary" :loading="loading" class="login-btn" size="large" @click="handleLogin">
-            登 录
-          </el-button>
-        </el-form-item>
-      </el-form>
-
-      <!-- SSO 统一登录 -->
-      <div class="sso-divider">
-        <span class="sso-divider-text">或</span>
+      <!-- 登录方式切换 -->
+      <div class="login-tabs">
+        <button class="tab-btn" :class="{ active: loginMode === 'account' }" @click="loginMode = 'account'">账号登录</button>
+        <button class="tab-btn" :class="{ active: loginMode === 'qrcode' }" @click="loginMode = 'qrcode'">扫码登录</button>
       </div>
 
-      <el-button :loading="ssoLoading" class="sso-btn" size="large" @click="handleSSOLogin">
-        <svg class="sso-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/>
-          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
-        </svg>
-        {{ ssoLoading ? '跳转中...' : '统一身份认证登录' }}
-      </el-button>
+      <!-- 账号密码登录 -->
+      <template v-if="loginMode === 'account'">
+        <div class="login-brand">
+          <div class="brand-icon-box">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#2563eb" stroke-width="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="4" />
+              <path d="M3 9h18" />
+              <path d="M9 21V9" />
+            </svg>
+          </div>
+          <h2 class="login-title">NISU-CD</h2>
+          <p class="login-sub">资源系统 · 账号登录</p>
+        </div>
 
-      <!-- SSO 测试账号选择 -->
+        <el-form ref="formRef" :model="form" :rules="rules" @keyup.enter="handleLogin" class="login-form">
+          <div class="field-grp">
+            <label class="field-lbl">账号</label>
+            <el-input v-model="form.username" placeholder="请输入工号或学号" size="large" />
+          </div>
+          <div class="field-grp">
+            <label class="field-lbl">密码</label>
+            <el-input v-model="form.password" type="password" placeholder="请输入密码" size="large" show-password />
+          </div>
+          <p v-if="errorMsg" class="err-msg">{{ errorMsg }}</p>
+          <button class="login-btn" :disabled="loading" @click="handleLogin">
+            {{ loading ? '登录中...' : '登 录' }}
+          </button>
+        </el-form>
+
+        <div class="sso-divider">
+          <span class="sso-line" />
+          <span class="sso-txt">或</span>
+          <span class="sso-line" />
+        </div>
+        <button class="sso-btn" :disabled="ssoLoading" @click="handleSSOLogin">
+          <svg class="sso-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M20 21a8 8 0 10-16 0" />
+          </svg>
+          <span>{{ ssoLoading ? '跳转中...' : '统一身份认证登录' }}</span>
+        </button>
+      </template>
+
+      <!-- 钉钉扫码登录 -->
+      <template v-if="loginMode === 'qrcode'">
+        <div class="login-brand">
+          <div class="brand-icon-box">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#2563eb" stroke-width="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="3" />
+              <rect x="6" y="6" width="5" height="5" rx="1" />
+              <rect x="13" y="6" width="5" height="5" rx="1" />
+              <rect x="6" y="13" width="5" height="5" rx="1" />
+              <path d="M16 16h2v2h-2zM13 13h2v2h-2zM18 14v4M16 18h4" />
+            </svg>
+          </div>
+          <h2 class="login-title">钉钉扫码登录</h2>
+          <p class="login-sub">请使用钉钉扫码登录</p>
+        </div>
+        <div class="qrcode-wrap">
+          <img v-if="qrCodeDataUrl" :src="qrCodeDataUrl" alt="钉钉扫码登录" class="qrcode-img" />
+          <div v-else-if="qrLoading" class="qrcode-placeholder">
+            <svg class="w-8 h-8 text-[#94a3b8] animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <p class="text-xs text-[#94a3b8] mt-2">获取二维码中...</p>
+          </div>
+          <div v-else-if="qrError" class="qrcode-placeholder">
+            <p class="text-xs text-[#ef4444]">{{ qrError }}</p>
+            <button class="mt-2 text-xs text-[#2563eb] hover:underline" @click="loadDingTalkQr">重新获取</button>
+          </div>
+        </div>
+        <p class="qrcode-hint">打开钉钉扫一扫，确认登录</p>
+      </template>
+
+      <!-- SSO 弹窗 -->
       <el-dialog v-model="ssoDialogVisible" title="选择测试账号" width="400px" destroy-on-close>
-        <div v-if="ssoAccounts.length" class="sso-account-list">
-          <div
-            v-for="acct in ssoAccounts"
-            :key="acct.code"
-            class="sso-account-item"
-            @click="handleSSOSelect(acct.code)"
-          >
-            <span class="sso-account-name">{{ acct.username || acct.code }}</span>
-            <span class="sso-account-role">{{ acct.description || acct.role }}</span>
+        <div v-if="ssoAccounts.length" class="sso-accts">
+          <div v-for="acct in ssoAccounts" :key="acct.code" class="sso-acct" @click="handleSSOSelect(acct.code)">
+            <span class="sso-acct-name">{{ acct.username || acct.code }}</span>
+            <span class="sso-acct-role">{{ acct.description || acct.role }}</span>
           </div>
         </div>
         <el-empty v-else description="暂无可用测试账号" :image-size="60" />
@@ -192,201 +254,112 @@ async function handleSSOSelect(code: string) {
 
 <style scoped>
 .login-page {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
-  background: #f0f2f5;
+  display: flex; align-items: center; justify-content: center;
+  height: 100vh; background: #f8fafc;
 }
+.login-page--embedded { height: auto; background: transparent; }
 
-.login-card {
-  position: relative;
-  width: 420px;
-  padding: 40px 40px 32px;
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  text-align: center;
-  animation: card-in 0.3s ease;
-}
-
-@keyframes card-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
+.login-card-w { width: 100%; }
 .login-close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: #f0f2f5;
-  border-radius: 50%;
-  font-size: 16px;
-  color: #8e95a6;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  line-height: 1;
+  position: absolute; top: 12px; right: 12px; z-index: 2;
+  width: 30px; height: 30px; border: none; border-radius: 50%;
+  background: #f1f5f9; color: #64748b; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; transition: all 0.2s;
 }
+.login-close:hover { background: #e2e8f0; color: #0f172a; }
 
-.login-close:hover {
-  background: #e4e7ed;
-  color: #1a2332;
+/* 品牌 */
+.login-brand { text-align: center; margin-bottom: 28px; }
+.brand-icon-box {
+  width: 46px; height: 46px; margin: 0 auto 12px;
+  background: rgba(37,99,235,0.07); border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
 }
+.login-title { font-size: 20px; font-weight: 700; color: #0f172a; margin: 0 0 2px; }
+.login-sub { font-size: 13px; color: #64748b; margin: 0; }
 
-.login-logo {
-  height: 48px;
-  width: auto;
-  border-radius: 6px;
-  display: block;
-  margin: 20px auto;
-}
-
-.login-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: #1a2332;
-  margin: 6px 0 6px;
-}
-
-.login-desc {
-  font-size: 14px;
-  color: #8e95a6;
-  margin: 0 0 24px;
-}
-
-.login-error {
-  color: #f56c6c;
-  font-size: 13px;
-  margin: -8px 0 16px;
-  text-align: left;
-}
+/* 表单 */
+.login-form { display: flex; flex-direction: column; gap: 18px; }
+.field-grp { display: flex; flex-direction: column; gap: 5px; }
+.field-lbl { font-size: 13px; font-weight: 600; color: #0f172a; }
+.err-msg { color: #ef4444; font-size: 13px; margin: 0; padding: 6px 10px; background: #fef2f2; border-radius: 8px; }
 
 .login-btn {
-  width: 100%;
-  height: 48px;
-  border-radius: 12px;
-  font-size: 15px;
-  font-weight: 550;
-  letter-spacing: 0.02em;
-  background: #2b5fd9;
-  border: none;
-  transition: all 0.2s ease;
+  width: 100%; height: 44px; border: none; border-radius: 10px;
+  font-size: 15px; font-weight: 600;
+  background: #2563eb; color: #fff; cursor: pointer;
+  transition: all 0.2s;
 }
-
-.login-btn:hover {
-  background: #1e4bb8;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(43, 95, 217, 0.3);
-}
+.login-btn:hover:not(:disabled) { background: #1d4ed8; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37,99,235,0.25); }
+.login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* SSO */
-.sso-divider {
-  display: flex;
-  align-items: center;
-  margin: 20px 0 16px;
-}
-
-.sso-divider::before,
-.sso-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: #e4e9f0;
-}
-
-.sso-divider-text {
-  padding: 0 16px;
-  font-size: 13px;
-  color: #b0b8c8;
-}
+.sso-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0; }
+.sso-line { flex: 1; height: 1px; background: #e2e8f0; }
+.sso-txt { font-size: 13px; color: #94a3b8; white-space: nowrap; }
 
 .sso-btn {
-  width: 100%;
-  height: 44px;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.sso-icon {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-}
-
-.sso-account-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.sso-account-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-radius: 10px;
-  background: #f8fafc;
-  cursor: pointer;
+  width: 100%; height: 42px; border: 1px solid #e2e8f0; border-radius: 10px;
+  background: #fff; color: #475569; font-size: 14px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
   transition: all 0.2s;
-  border: 1px solid transparent;
+}
+.sso-btn:hover:not(:disabled) { border-color: #2563eb; color: #2563eb; background: #f8faff; }
+.sso-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sso-icon { width: 18px; height: 18px; flex-shrink: 0; }
+
+/* ── 登录方式切换 ── */
+.login-tabs {
+  display: flex; gap: 0; margin-bottom: 24px;
+  background: #f1f5f9; border-radius: 10px; padding: 3px;
+}
+.tab-btn {
+  flex: 1; height: 36px; border: none; border-radius: 8px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  background: transparent; color: #64748b; transition: all 0.2s;
+}
+.tab-btn.active { background: #fff; color: #2563eb; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.tab-btn:hover:not(.active) { color: #334155; }
+
+/* ── 扫码登录 ── */
+.qrcode-wrap {
+  display: flex; justify-content: center; padding: 16px 0 8px;
+}
+.qrcode-img {
+  width: 180px; height: 180px; border-radius: 12px;
+  border: 1px solid #e2e8f0; padding: 8px; background: #fff;
+}
+.qrcode-hint {
+  text-align: center; font-size: 13px; color: #94a3b8; margin: 4px 0 0;
+}
+.qrcode-placeholder {
+  width: 180px; height: 180px; border-radius: 12px;
+  border: 1px solid #e2e8f0; background: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
 }
 
-.sso-account-item:hover {
-  border-color: #2b5fd9;
-  background: #f0f4fe;
+/* SSO 弹窗 */
+.sso-accts { display: flex; flex-direction: column; gap: 8px; }
+.sso-acct {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-radius: 10px; background: #f8fafc;
+  cursor: pointer; transition: all 0.2s; border: 1px solid transparent;
 }
+.sso-acct:hover { border-color: #2563eb; background: #f0f4fe; }
+.sso-acct-name { font-size: 14px; font-weight: 500; color: #0f172a; }
+.sso-acct-role { font-size: 12px; color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 4px; }
 
-.sso-account-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: #1a2332;
-}
-
-.sso-account-role {
-  font-size: 12px;
-  color: #8e95a6;
-  background: #eef0f4;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-/* Element Plus 输入框覆盖 */
+/* Element Plus 覆盖 */
 :deep(.el-input__wrapper) {
-  border-radius: 12px;
-  padding: 4px 16px;
-  box-shadow: 0 0 0 1px #e4e9f0 !important;
-  background: #f8fafc;
-  transition: all 0.2s ease;
+  border-radius: 10px; padding: 2px 14px;
+  box-shadow: 0 0 0 1px #e2e8f0 !important;
+  background: #fff; transition: all 0.2s;
 }
-
-:deep(.el-input__wrapper:hover) {
-  box-shadow: 0 0 0 1px #c8d0dd !important;
-  background: #fff;
-}
-
-:deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 2px rgba(43, 95, 217, 0.2) !important;
-  background: #fff;
-}
-
-:deep(.el-input__inner) {
-  height: 48px;
-  font-size: 14px;
-  color: #1a2332;
-}
-
-:deep(.el-form-item) {
-  margin-bottom: 20px;
-}
+:deep(.el-input__wrapper:hover) { box-shadow: 0 0 0 1px #cbd5e1 !important; }
+:deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important; }
+:deep(.el-input__inner) { height: 42px; font-size: 14px; color: #0f172a; }
+:deep(.el-input__inner::placeholder) { color: #94a3b8; }
+:deep(.el-form-item) { margin-bottom: 0; }
+:deep(.el-form-item__error) { padding-top: 4px; font-size: 12px; }
 </style>

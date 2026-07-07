@@ -24,12 +24,14 @@
     "markdown-it": "^14.3.0",
     "marked": "^18.0.5",
     "pinia": "^3.0.4",
+    "qrcode": "^1.5.4",
     "vue": "^3.5.38",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.2",
     "@types/node": "^26.0.1",
+    "@types/qrcode": "^1.5.6",
     "@typescript-eslint/eslint-plugin": "^8.62.1",
     "@typescript-eslint/parser": "^8.62.1",
     "@vitejs/plugin-vue": "^6.0.7",
