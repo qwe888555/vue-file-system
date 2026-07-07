@@ -171,13 +171,21 @@ function startRecording(): Promise<Blob | null> {
   return new Promise(async (resolve) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mr = new MediaRecorder(stream)
+      // 优先使用浏览器原生支持的格式（Chrome: webm; Edge: webm; Firefox: ogg）
+      const mimeType = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+        'audio/mp4',
+      ].find(t => MediaRecorder.isTypeSupported(t)) || ''
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : {})
       const chunks: Blob[] = []
       mediaRecorder = mr
       mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
       mr.onstop = () => {
         stream.getTracks().forEach(t => t.stop())
-        const blob = new Blob(chunks, { type: 'audio/wav' })
+        // 使用实际编码类型，后端会自动转码
+        const blob = new Blob(chunks, { type: mimeType || 'audio/webm' })
         resolve(blob.size > 100 ? blob : null)
       }
       mr.onerror = () => resolve(null)
@@ -194,7 +202,7 @@ function stopRecording() {
   isRecording.value = false
 }
 
-/* ── 按钮①：语音转文字（录音 → 自动发问） ── */
+/* ── 语音转文字（录音 → 期望后端返回 asr_text → 填入输入框） ── */
 async function handleSTT() {
   if (isRecording.value) { stopRecording(); return }
   const blob = await startRecording()
@@ -204,15 +212,14 @@ async function handleSTT() {
     if (!conv) return
   }
   const convId = chat.currentConversationId.value!
-  chat.appendUserMessage('[语音消息]')
-  isStreaming.value = true
-  streamingContent.value = ''
+  inputText.value = '语音识别中…'
+  let gotText = false
   try {
     const { voiceAskApi } = await import('@/api/chat')
     const response = await voiceAskApi(blob, convId)
-    if (!response.ok) { isStreaming.value = false; return }
+    if (!response.ok) { inputText.value = ''; return }
     const reader = response.body?.getReader()
-    if (!reader) { isStreaming.value = false; return }
+    if (!reader) { inputText.value = ''; return }
     const decoder = new TextDecoder(); let buffer = ''; let currentEvent = ''
     while (true) {
       const { done, value } = await reader.read()
@@ -225,19 +232,33 @@ async function handleSTT() {
           try {
             const data = JSON.parse(line.slice(6).trim())
             switch (currentEvent) {
+              case 'asr_text':
+                gotText = true
+                inputText.value = data.text || ''
+                break
               case 'token':
-              case 'msg': streamingContent.value += data.content || ''; break
-              case 'done': chat.appendAssistantMessage(streamingContent.value, undefined, data.message_id); isStreaming.value = false; streamingContent.value = ''; break
-              case 'error': isStreaming.value = false; break
+              case 'msg':
+                // AI 回答来了但没有 asr_text → 走兜底：发语音消息
+                if (!gotText && inputText.value === '语音识别中…') {
+                  inputText.value = ''
+                  chat.appendUserMessage('[语音消息]')
+                  streamingContent.value = data.content || ''
+                  isStreaming.value = true
+                }
+                break
+              case 'done':
+                if (!gotText) isStreaming.value = false
+                break
             }
           } catch {}
         }
       }
     }
-  } catch { isStreaming.value = false }
+  } catch { inputText.value = '' }
+  if (!gotText && inputText.value === '语音识别中…') inputText.value = ''
 }
 
-/* ── 按钮②：发送语音消息（录音 → 预览 → 发送） ── */
+/* ── 语音消息（录音 → 预览 → 发送） ── */
 const voicePreviewUrl = ref('')
 const showVoicePreview = ref(false)
 let pendingVoiceBlob: Blob | null = null
@@ -293,7 +314,11 @@ async function confirmVoicePreview() {
   try {
     const { voiceAskApi } = await import('@/api/chat')
     const response = await voiceAskApi(blob, convId)
-    if (!response.ok) { isStreaming.value = false; return }
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '')
+      ElMessage.error(errBody ? `语音请求失败: ${errBody}` : `语音请求失败 (${response.status})`)
+      isStreaming.value = false; return
+    }
     const reader = response.body?.getReader()
     if (!reader) { isStreaming.value = false; return }
     const decoder = new TextDecoder(); let buffer = ''; let currentEvent = ''
@@ -311,13 +336,13 @@ async function confirmVoicePreview() {
               case 'token':
               case 'msg': streamingContent.value += data.content || ''; break
               case 'done': chat.appendAssistantMessage(streamingContent.value, undefined, data.message_id); isStreaming.value = false; streamingContent.value = ''; break
-              case 'error': isStreaming.value = false; break
+              case 'error': ElMessage.error(data.message || 'AI 回答失败'); isStreaming.value = false; break
             }
           } catch {}
         }
       }
     }
-  } catch { isStreaming.value = false }
+  } catch (e: any) { ElMessage.error('语音发送异常: ' + (e?.message || '')); isStreaming.value = false }
 }
 onMounted(() => {
   chat.init()
@@ -578,17 +603,12 @@ onMounted(() => {
             <button v-if="isStreaming" class="cancel-btn" @click="cancelStreaming" title="取消">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2"/></svg>
             </button>
-            <button class="voice-btn stt-btn" :class="{ recording: isRecording }" @click="handleSTT" title="语音转文字">
+            <button class="voice-btn" :class="{ recording: isRecording }" @click="handleSTT" title="语音转文字">🎤</button>
+            <button class="voice-btn" :class="{ recording: isRecording }" @click="handleVoiceMsg" title="语音消息">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
                 <path d="M10 2a3 3 0 00-3 3v4a3 3 0 106 0V5a3 3 0 00-3-3zM5 9a5 5 0 0010 0h-1.5a3.5 3.5 0 01-7 0H5z"/>
                 <path d="M9.25 13.5v2.75h1.5V13.5h-1.5z"/>
                 <path d="M6 14.5h8v1.5H6z"/>
-              </svg>
-            </button>
-            <button class="voice-btn voice-msg-btn" :class="{ recording: isRecording }" @click="handleVoiceMsg" title="发送语音消息">
-              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
-                <path d="M10 2a3 3 0 00-3 3v4a3 3 0 106 0V5a3 3 0 00-3-3zm4 7.5A5 5 0 015 9H3.5a6.5 6.5 0 0013 0H14z"/>
-                <path d="M9.25 13.5v2.75h1.5V13.5h-1.5z"/>
               </svg>
             </button>
             <button class="send-fab" :disabled="!inputText.trim() || isStreaming" @click="sendMessage">
