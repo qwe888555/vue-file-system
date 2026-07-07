@@ -13,7 +13,17 @@ export function getDocListApi(params: {
   startDate?: string
   endDate?: string
 }): Promise<PaginatedResult<KnowledgeFile>> {
-  return request.get('/knowledge/docs/', { params })
+  return request.get('/knowledge/docs/', { 
+    params: {
+      page_number: params.page,
+      page_size: params.page_size,
+      keyword: params.keyword,
+      category: params.category,
+      college_id: params.collegeId,
+      start_date: params.startDate,
+      end_date: params.endDate,
+    }
+  })
 }
 
 /** 文档详情 */
@@ -120,12 +130,18 @@ export interface Keyword {
 export function getKeywordsApi(docId: number): Promise<Keyword[]> {
   return request.get(`/knowledge/docs/${docId}/keywords/`)
 }
-export function addKeywordApi(docId: number, keywords: string[]): Promise<void> {
+export function addKeywordApi(docId: number, phrase: string, match_type: string = 'exact', weight: number = 1): Promise<void> {
   return request.post(`/knowledge/docs/${docId}/keywords/create/`, {
-    keywords,
-    match_type: 'exact',
-    weight: 1,
+    phrase,
+    match_type,
+    weight,
   })
+}
+
+export async function addKeywordsApi(docId: number, keywords: string[]): Promise<void> {
+  for (const phrase of keywords) {
+    await addKeywordApi(docId, phrase.trim())
+  }
 }
 export function updateKeywordApi(id: number, data: { phrase: string; match_type: string; weight: number }): Promise<void> {
   return request.put(`/knowledge/keywords/${id}/`, data)
