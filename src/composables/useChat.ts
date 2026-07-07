@@ -151,6 +151,17 @@ export function useChat() {
     }
     if (!messagesMap.value[id]) messagesMap.value[id] = []
     messagesMap.value[id].push(msg)
+
+    // 第一条用户消息自动生成标题并同步到后端
+    if (messagesMap.value[id].length === 1) {
+      const title = content.slice(0, 18) + (content.length > 18 ? '…' : '')
+      const conv = conversations.value.find(c => c.id === id)
+      if (conv) {
+        conv.title = title
+        renameConversationApi(id, title).catch(() => {})
+        saveCache()
+      }
+    }
     return msg
   }
 
@@ -168,12 +179,11 @@ export function useChat() {
     }
     if (!messagesMap.value[id]) messagesMap.value[id] = []
     messagesMap.value[id].push(msg)
-    // 更新对话标题（首条消息时自动生成并同步到后端）
+    // 如果标题为空，用 AI 回答作为后备标题
     const conv = conversations.value.find(c => c.id === id)
-    if (conv && messagesMap.value[id].length === 2) {
-      const title = content.slice(0, 30) + (content.length > 30 ? '…' : '')
+    if (conv && !conv.title && messagesMap.value[id].length === 2) {
+      const title = content.slice(0, 18) + (content.length > 18 ? '…' : '')
       conv.title = title
-      // 同步到后端，下次登录时标题保留
       renameConversationApi(id, title).catch(() => {})
       saveCache()
     }

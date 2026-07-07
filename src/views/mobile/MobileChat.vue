@@ -15,7 +15,8 @@ const chat = useChat()
 const inputText = ref('')
 const isStreaming = ref(false)
 const isRecording = ref(false)
-let speechRecognition: any = null
+let mediaRecorder: MediaRecorder | null = null
+let audioChunks: Blob[] = []
 const streamingContent = ref('')
 const streamingReferences = ref<KnowledgeFile[]>([])
 let currentSSE: ReturnType<typeof useSSE> | null = null
@@ -72,22 +73,61 @@ function handleLogout() {
 
 /* ── 语音转文字输入 ── */
 async function toggleRecording() {
-  if (isRecording.value) { speechRecognition?.stop(); isRecording.value = false; return }
-  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-  if (!SpeechRecognition) { alert('你的浏览器不支持语音识别'); return }
-  const recognition = new SpeechRecognition()
-  recognition.lang = 'zh-CN'
-  recognition.continuous = false
-  recognition.interimResults = true
-  recognition.onresult = (e: any) => {
-    const result = e.results[e.results.length - 1]
-    inputText.value = result[0].transcript
+  if (isRecording.value) { mediaRecorder?.stop(); isRecording.value = false; return }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    mediaRecorder = new MediaRecorder(stream)
+    audioChunks = []
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data) }
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop())
+      const blob = new Blob(audioChunks, { type: 'audio/wav' })
+      audioChunks = []
+      if (blob.size < 100) return
+      await sendVoiceMessage(blob)
+    }
+    mediaRecorder.start()
+    isRecording.value = true
+  } catch { /* 权限拒绝 */ }
+}
+async function sendVoiceMessage(audioBlob: Blob) {
+  if (isStreaming.value) return
+  if (!chat.currentConversationId.value) {
+    const conv = await chat.createConversation()
+    if (!conv) return
   }
-  recognition.onend = () => { isRecording.value = false }
-  recognition.onerror = () => { isRecording.value = false }
-  speechRecognition = recognition
-  recognition.start()
-  isRecording.value = true
+  const convId = chat.currentConversationId.value!
+  chat.appendUserMessage('[语音消息]')
+  isStreaming.value = true
+  streamingContent.value = ''
+  try {
+    const { voiceAskApi } = await import('@/api/chat')
+    const response = await voiceAskApi(audioBlob, convId)
+    if (!response.ok) { isStreaming.value = false; return }
+    const reader = response.body?.getReader()
+    if (!reader) { isStreaming.value = false; return }
+    const decoder = new TextDecoder(); let buffer = ''; let currentEvent = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n'); buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('event: ')) currentEvent = line.slice(7).trim()
+        else if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6).trim())
+            switch (currentEvent) {
+              case 'token':
+              case 'msg': streamingContent.value += data.content || ''; break
+              case 'done': chat.appendAssistantMessage(streamingContent.value, undefined, data.message_id); isStreaming.value = false; streamingContent.value = ''; break
+              case 'error': isStreaming.value = false; break
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch { isStreaming.value = false }
 }
 
 onMounted(() => {
