@@ -28,7 +28,9 @@ async function loadDingTalkQr() {
   qrError.value = ''
   qrCodeDataUrl.value = ''
   try {
-    const res = await dingtalkQrApi()
+    const publicUrl = import.meta.env.VITE_PUBLIC_URL || window.location.origin
+    const redirectUri = `${publicUrl.replace(/\/$/, '')}/dingtalk-callback`
+    const res = await dingtalkQrApi(redirectUri)
     const QRCode = (await import('qrcode')).default
     qrCodeDataUrl.value = await QRCode.toDataURL(res.auth_url, {
       width: 180, margin: 1, color: { dark: '#1e293b', light: '#f8fafc' }

@@ -2,6 +2,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import LoginPage from '@/views/login/LoginPage.vue'
 import request from '@/api/request'
+import { getAccessToken } from '@/api/request'
+import { getUploadStatsApi, getQueryStatsApi } from '@/api/admin'
 import logodark from '@/assets/images/logo.jpg'
 
 interface DashboardBlock {
@@ -11,8 +13,8 @@ interface DashboardBlock {
 interface DashboardResponse { period: string; blocks: Record<string, DashboardBlock> }
 
 const stats = ref([
-  { key: 'total_uploads', label: '总上传', value: 12846, suffix: '' },
-  { key: 'total_queries', label: '总查询', value: 89237, suffix: '' },
+  { key: 'total_uploads', label: '总上传', value: 0, suffix: '' },
+  { key: 'total_queries', label: '总查询', value: 0, suffix: '' },
   { key: 'today_uploads', label: '今日上传', value: 0, suffix: '' },
   { key: 'today_queries', label: '今日查询', value: 0, suffix: '' },
   { key: 'total_size', label: '总存储', value: 0, suffix: 'GB' },
@@ -21,9 +23,13 @@ const stats = ref([
 
 let timer: ReturnType<typeof setInterval> | null = null
 let mc = 0
+
+// Mock: [累计上传, 累计查询, 今日上传, 今日查询, 存储(bytes), 在线]
 const MOCK = [
-  { up: 12846, qry: 89237, sz: 268435456, on: 18 },
-  { up: 12848, qry: 89245, sz: 269484032, on: 22 },
+  [12846, 89237, 47, 312, 268435456, 18],
+  [12848, 89245, 48, 320, 269484032, 22],
+  [12850, 89256, 49, 331, 270532608, 15],
+  [12852, 89268, 51, 343, 271581184, 20],
 ]
 
 function fmtSize(b: number) {
@@ -33,44 +39,59 @@ function fmtSize(b: number) {
 }
 function ok(b: DashboardBlock | undefined) { return !!b && !('error' in b) }
 
+function applyStatsVals(cumUp: number, cumQry: number, todayUp: number, todayQry: number, sizeBytes: number, online: number) {
+  const f = fmtSize(sizeBytes)
+  stats.value = stats.value.map(s => {
+    switch (s.key) {
+      case 'total_uploads': return { ...s, value: cumUp }
+      case 'total_queries': return { ...s, value: cumQry }
+      case 'today_uploads': return { ...s, value: todayUp }
+      case 'today_queries': return { ...s, value: todayQry }
+      case 'total_size':    return { ...s, value: f.v, suffix: f.s }
+      case 'online_users':  return { ...s, value: online }
+      default: return s
+    }
+  })
+}
+
 async function fetchStats() {
   try {
-    const r = await request.get('/admin/logs/dashboard/', { params: { period: 'day' } }) as unknown as DashboardResponse
-    const b = r?.blocks
-    if (!b) throw Error('no blocks')
-    const up = ok(b.upload) ? b.upload : null
-    const qy = ok(b.query) ? b.query : null
-    const ol = ok(b.online) ? b.online : null
-    const ut = up?.total ?? 0; const qt = qy?.total ?? 0; const sz = up?.total_size ?? 0; const on = ol?.online_users ?? 0
-    const f = fmtSize(sz)
-    stats.value = stats.value.map(s => {
-      switch (s.key) {
-        case 'total_uploads': return { ...s, value: ut }
-        case 'total_queries': return { ...s, value: qt }
-        case 'today_uploads': return { ...s, value: ut }
-        case 'today_queries': return { ...s, value: qt }
-        case 'total_size':    return { ...s, value: f.v, suffix: f.s }
-        case 'online_users':  return { ...s, value: on }
-        default: return s
-      }
-    })
+    // 并行请求：累计 stats + 周期 dashboard
+    const [cumUp, cumQry, dash] = await Promise.all([
+      getUploadStatsApi().catch(() => null),
+      getQueryStatsApi().catch(() => null),
+      request.get('/admin/logs/dashboard/', { params: { period: 'day' } }) as Promise<DashboardResponse>,
+    ])
+
+    const cumulativeTotalUploads = cumUp?.total ?? 0
+    const cumulativeTotalQueries = cumQry?.total ?? 0
+
+    const b = dash?.blocks
+    const up = b && ok(b.upload) ? b.upload : null
+    const qy = b && ok(b.query) ? b.query : null
+    const ol = b && ok(b.online) ? b.online : null
+
+    applyStatsVals(
+      cumulativeTotalUploads,
+      cumulativeTotalQueries,
+      up?.total ?? 0,
+      qy?.total ?? 0,
+      up?.total_size ?? 0,
+      ol?.online_users ?? 0,
+    )
   } catch {
-    mc = (mc + 1) % MOCK.length; const m = MOCK[mc]; const f = fmtSize(m.sz)
-    stats.value = stats.value.map(s => {
-      switch (s.key) {
-        case 'total_uploads': return { ...s, value: m.up }
-        case 'total_queries': return { ...s, value: m.qry }
-        case 'today_uploads': return { ...s, value: m.up }
-        case 'today_queries': return { ...s, value: m.qry }
-        case 'total_size':    return { ...s, value: f.v, suffix: f.s }
-        case 'online_users':  return { ...s, value: m.on }
-        default: return s
-      }
-    })
+    // 后端不可达 → 轮换 Mock
+    mc = (mc + 1) % MOCK.length; const m = MOCK[mc]
+    applyStatsVals(m[0], m[1], m[2], m[3], m[4], m[5])
   }
 }
 
-onMounted(() => { fetchStats(); timer = setInterval(fetchStats, 15000) })
+onMounted(() => {
+  if (getAccessToken()) {
+    fetchStats()
+    timer = setInterval(fetchStats, 15000)
+  }
+})
 onUnmounted(() => { if (timer) clearInterval(timer) })
 </script>
 

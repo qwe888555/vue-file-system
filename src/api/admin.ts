@@ -122,3 +122,17 @@ export function getDepartmentsApi(params?: {
 }): Promise<{ count: number; results: Department[] }> {
   return request.get('/admin/departments/', { params })
 }
+
+// ══════════════════════════════════════
+//  统计累计接口 — /api/admin/logs/*/stats/
+// ══════════════════════════════════════
+
+/** 全平台历史累计上传总条数 */
+export function getUploadStatsApi(): Promise<{ total: number }> {
+  return request.get('/admin/logs/upload/stats/')
+}
+
+/** 全平台历史累计查询总条数 */
+export function getQueryStatsApi(): Promise<{ total: number }> {
+  return request.get('/admin/logs/query/stats/')
+}
