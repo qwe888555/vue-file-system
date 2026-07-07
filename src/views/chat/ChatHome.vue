@@ -5,7 +5,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { KnowledgeFile } from '@/types'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
@@ -27,7 +27,6 @@ const showEntryAnim = ref(!hasPlayed)
 const showInstantContent = ref(hasPlayed)
 const inputText = ref('')
 const isRecording = ref(false)
-let speechRecognition: any = null
 
 // SSE
 const streamingContent = ref('')
@@ -90,10 +89,35 @@ async function handleLogout() {
     router.push('/')
   } catch {}
 }
+function cancelStreaming() {
+  currentSSE?.close()
+  isStreaming.value = false
+  streamingContent.value = ''
+}
+const renamingId = ref<number | null>(null)
+const renameText = ref('')
+const renameInput = ref<HTMLInputElement | null>(null)
+
+function startRename(conv: any) {
+  renamingId.value = conv.id
+  renameText.value = conv.title || ''
+  setTimeout(() => renameInput.value?.focus(), 50)
+}
+async function confirmRename(id: number) {
+  if (renameText.value.trim()) {
+    await chat.renameConversation(id, renameText.value.trim())
+  }
+  renamingId.value = null
+}
+
 function handleNewConversation() {
+  cancelStreaming()
   chat.createConversation()
 }
-async function handleSelectConversation(id: number) { await chat.selectConversation(id) }
+async function handleSelectConversation(id: number) {
+  cancelStreaming()
+  await chat.selectConversation(id)
+}
 async function handleDeleteConversation(id: number) { await chat.deleteConversation(id) }
 function handleBackToList() { chat.currentConversationId.value = null }
 function toggleToolsMenu() { showToolsMenu.value = !showToolsMenu.value }
@@ -116,7 +140,14 @@ async function sendMessage() {
   streamingContent.value = ''
   streamingReferences.value = []
 
+  // 30 秒超时自动取消
+  const timeoutId = setTimeout(() => {
+    if (isStreaming.value) { cancelStreaming(); ElMessage.warning('AI 回复超时，可重新提问') }
+  }, 30000)
+
   currentSSE = useSSE(convId, text, () => {
+    clearTimeout(timeoutId)
+    if (!isStreaming.value) return // 已被取消
     isStreaming.value = false
     const realId = currentSSE?.messageId?.value
     chat.appendAssistantMessage(streamingContent.value, streamingReferences.value, realId || undefined)
@@ -132,24 +163,186 @@ function handleFeedback(messageId: number, type: 'like' | 'dislike') {
   chat.submitFeedback(messageId, type)
 }
 
-/* ── 语音转文字输入 ── */
-async function toggleRecording() {
-  if (isRecording.value) { speechRecognition?.stop(); isRecording.value = false; return }
-  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-  if (!SpeechRecognition) { alert('你的浏览器不支持语音识别'); return }
-  const recognition = new SpeechRecognition()
-  recognition.lang = 'zh-CN'
-  recognition.continuous = false
-  recognition.interimResults = true
-  recognition.onresult = (e: any) => {
-    const result = e.results[e.results.length - 1]
-    inputText.value = result[0].transcript
+/* ── 语音录制（通用） ── */
+let mediaRecorder: MediaRecorder | null = null
+
+/** 开始录音，返回录制的 Blob（停止后 resolve） */
+function startRecording(): Promise<Blob | null> {
+  return new Promise(async (resolve) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // 优先使用浏览器原生支持的格式（Chrome: webm; Edge: webm; Firefox: ogg）
+      const mimeType = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+        'audio/mp4',
+      ].find(t => MediaRecorder.isTypeSupported(t)) || ''
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : {})
+      const chunks: Blob[] = []
+      mediaRecorder = mr
+      mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
+      mr.onstop = () => {
+        stream.getTracks().forEach(t => t.stop())
+        // 使用实际编码类型，后端会自动转码
+        const blob = new Blob(chunks, { type: mimeType || 'audio/webm' })
+        resolve(blob.size > 100 ? blob : null)
+      }
+      mr.onerror = () => resolve(null)
+      mr.start()
+      isRecording.value = true
+    } catch { resolve(null) }
+  })
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
   }
-  recognition.onend = () => { isRecording.value = false }
-  recognition.onerror = () => { isRecording.value = false }
-  speechRecognition = recognition
-  recognition.start()
-  isRecording.value = true
+  isRecording.value = false
+}
+
+/* ── 语音转文字（录音 → 期望后端返回 asr_text → 填入输入框） ── */
+async function handleSTT() {
+  if (isRecording.value) { stopRecording(); return }
+  const blob = await startRecording()
+  if (!blob) return
+  if (!chat.currentConversationId.value) {
+    const conv = await chat.createConversation()
+    if (!conv) return
+  }
+  const convId = chat.currentConversationId.value!
+  inputText.value = '语音识别中…'
+  let gotText = false
+  try {
+    const { voiceAskApi } = await import('@/api/chat')
+    const response = await voiceAskApi(blob, convId)
+    if (!response.ok) { inputText.value = ''; return }
+    const reader = response.body?.getReader()
+    if (!reader) { inputText.value = ''; return }
+    const decoder = new TextDecoder(); let buffer = ''; let currentEvent = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n'); buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('event: ')) currentEvent = line.slice(7).trim()
+        else if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6).trim())
+            switch (currentEvent) {
+              case 'asr_text':
+                gotText = true
+                inputText.value = data.text || ''
+                break
+              case 'token':
+              case 'msg':
+                // AI 回答来了但没有 asr_text → 走兜底：发语音消息
+                if (!gotText && inputText.value === '语音识别中…') {
+                  inputText.value = ''
+                  chat.appendUserMessage('[语音消息]')
+                  streamingContent.value = data.content || ''
+                  isStreaming.value = true
+                }
+                break
+              case 'done':
+                if (!gotText) isStreaming.value = false
+                break
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch { inputText.value = '' }
+  if (!gotText && inputText.value === '语音识别中…') inputText.value = ''
+}
+
+/* ── 语音消息（录音 → 预览 → 发送） ── */
+const voicePreviewUrl = ref('')
+const showVoicePreview = ref(false)
+let pendingVoiceBlob: Blob | null = null
+let voiceAudioEl: HTMLAudioElement | null = null
+const isVoicePlaying = ref(false)
+
+async function handleVoiceMsg() {
+  if (isRecording.value) { stopRecording(); return }
+  const blob = await startRecording()
+  if (!blob) return
+  pendingVoiceBlob = blob
+  voicePreviewUrl.value = URL.createObjectURL(blob)
+  voiceAudioEl = new Audio(voicePreviewUrl.value)
+  voiceAudioEl.onended = () => { isVoicePlaying.value = false }
+  showVoicePreview.value = true
+}
+
+function playVoicePreview() {
+  if (!voiceAudioEl) return
+  if (isVoicePlaying.value) { voiceAudioEl.pause(); voiceAudioEl.currentTime = 0; isVoicePlaying.value = false; return }
+  voiceAudioEl.play(); isVoicePlaying.value = true
+}
+
+function cancelVoicePreview() {
+  voiceAudioEl?.pause()
+  voiceAudioEl = null
+  if (voicePreviewUrl.value) URL.revokeObjectURL(voicePreviewUrl.value)
+  voicePreviewUrl.value = ''
+  pendingVoiceBlob = null
+  showVoicePreview.value = false
+  isVoicePlaying.value = false
+}
+
+async function confirmVoicePreview() {
+  voiceAudioEl?.pause()
+  voiceAudioEl = null
+  showVoicePreview.value = false
+  isVoicePlaying.value = false
+  if (!pendingVoiceBlob) return
+  const blob = pendingVoiceBlob
+  pendingVoiceBlob = null
+  if (voicePreviewUrl.value) URL.revokeObjectURL(voicePreviewUrl.value)
+  voicePreviewUrl.value = ''
+  // 发送到 voice-ask
+  if (!chat.currentConversationId.value) {
+    const conv = await chat.createConversation()
+    if (!conv) return
+  }
+  const convId = chat.currentConversationId.value!
+  chat.appendUserMessage('[语音消息]')
+  isStreaming.value = true
+  streamingContent.value = ''
+  try {
+    const { voiceAskApi } = await import('@/api/chat')
+    const response = await voiceAskApi(blob, convId)
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '')
+      ElMessage.error(errBody ? `语音请求失败: ${errBody}` : `语音请求失败 (${response.status})`)
+      isStreaming.value = false; return
+    }
+    const reader = response.body?.getReader()
+    if (!reader) { isStreaming.value = false; return }
+    const decoder = new TextDecoder(); let buffer = ''; let currentEvent = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n'); buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('event: ')) currentEvent = line.slice(7).trim()
+        else if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6).trim())
+            switch (currentEvent) {
+              case 'token':
+              case 'msg': streamingContent.value += data.content || ''; break
+              case 'done': chat.appendAssistantMessage(streamingContent.value, undefined, data.message_id); isStreaming.value = false; streamingContent.value = ''; break
+              case 'error': ElMessage.error(data.message || 'AI 回答失败'); isStreaming.value = false; break
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch (e: any) { ElMessage.error('语音发送异常: ' + (e?.message || '')); isStreaming.value = false }
 }
 onMounted(() => {
   chat.init()
@@ -214,9 +407,21 @@ onMounted(() => {
             </svg>
           </div>
           <div class="conv-item-content">
-            <span class="conv-item-title">{{ conv.title || '新对话' }}</span>
+            <input
+              v-if="renamingId === conv.id"
+              class="conv-rename-input"
+              v-model="renameText"
+              @blur="confirmRename(conv.id)"
+              @keyup.enter="confirmRename(conv.id)"
+              @click.stop
+              ref="renameInput"
+            />
+            <span v-else class="conv-item-title">{{ conv.title || '新对话' }}</span>
             <span class="conv-item-time">{{ conv.updatedAt?.slice(5, 10) }}</span>
           </div>
+          <button class="conv-item-edit" @click.stop="startRename(conv)" title="重命名">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M12.146.854a.5.5 0 01.708 0l2.292 2.292a.5.5 0 010 .708l-10 10a.5.5 0 01-.168.11l-4 1.5a.5.5 0 01-.64-.64l1.5-4a.5.5 0 01.11-.168l10-10z"/></svg>
+          </button>
           <button class="conv-item-del" @click.stop="handleDeleteConversation(conv.id)">×</button>
         </div>
         <div v-if="chat.loading.value" class="sidebar-loading">
@@ -395,8 +600,12 @@ onMounted(() => {
               :disabled="isStreaming"
               @keyup.enter="sendMessage"
             />
-            <button class="mic-btn" :class="{ recording: isRecording }" @click="toggleRecording" title="语音输入">
-              <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
+            <button v-if="isStreaming" class="cancel-btn" @click="cancelStreaming" title="取消">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2"/></svg>
+            </button>
+            <button class="voice-btn" :class="{ recording: isRecording }" @click="handleSTT" title="语音转文字">🎤</button>
+            <button class="voice-btn" :class="{ recording: isRecording }" @click="handleVoiceMsg" title="语音消息">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
                 <path d="M10 2a3 3 0 00-3 3v4a3 3 0 106 0V5a3 3 0 00-3-3zM5 9a5 5 0 0010 0h-1.5a3.5 3.5 0 01-7 0H5z"/>
                 <path d="M9.25 13.5v2.75h1.5V13.5h-1.5z"/>
                 <path d="M6 14.5h8v1.5H6z"/>
@@ -416,6 +625,32 @@ onMounted(() => {
     <!-- ═══ 弹窗 ═══ -->
     <PersonalCenter v-if="showPersonalCenter" @close="showPersonalCenter = false" />
     <ChatLoginDialog v-if="showLoginDialog" @success="handleLoginSuccess" @cancel="handleLoginCancel" />
+
+    <!-- 语音预览弹窗 -->
+    <Transition name="panel">
+      <div v-if="showVoicePreview" class="voice-preview-overlay" @click.self="cancelVoicePreview">
+        <div class="voice-preview-card">
+          <div class="vp-header">
+            <span>语音预览</span>
+            <button class="vp-close" @click="cancelVoicePreview">×</button>
+          </div>
+          <div class="vp-body">
+            <div class="vp-wave" :class="{ playing: isVoicePlaying }">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <button class="vp-play-btn" @click="playVoicePreview">
+              <svg v-if="!isVoicePlaying" viewBox="0 0 20 20" width="24" height="24" fill="currentColor"><path d="M5 3l12 7-12 7V3z"/></svg>
+              <svg v-else viewBox="0 0 20 20" width="24" height="24" fill="currentColor"><path d="M6 3h3v14H6V3zm5 0h3v14h-3V3z"/></svg>
+            </button>
+            <p class="vp-hint">点击播放试听，确认后发送</p>
+          </div>
+          <div class="vp-footer">
+            <button class="vp-btn vp-cancel" @click="cancelVoicePreview">重录</button>
+            <button class="vp-btn vp-confirm" @click="confirmVoicePreview">发送</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -601,8 +836,19 @@ onMounted(() => {
   flex-shrink: 0;
   transition: opacity 0.15s;
 }
-.conv-item:hover .conv-item-del { opacity: 1; }
+.conv-item:hover .conv-item-del,
+.conv-item:hover .conv-item-edit { opacity: 1; }
 .conv-item-del:hover { color: #f56c6c; }
+
+.conv-item-edit {
+  opacity: 0; background: none; border: none; color: #aeaeb2;
+  cursor: pointer; padding: 0 2px; transition: opacity 0.15s; flex-shrink: 0;
+}
+.conv-item-edit:hover { color: #409eff; }
+.conv-rename-input {
+  width: 100%; height: 24px; padding: 0 4px; border: 1px solid #409eff;
+  border-radius: 4px; font-size: 13px; outline: none; background: #fff;
+}
 
 .sidebar-loading { display: flex; justify-content: center; gap: 4px; padding: 20px; }
 .load-dot {
@@ -1016,15 +1262,57 @@ onMounted(() => {
 .send-fab:disabled { background: #d9d9d9; cursor: not-allowed; }
 
 /* 语音输入按钮 */
-.mic-btn {
+.voice-btn {
   width: 34px; height: 34px; border-radius: 50%;
   border: none; background: transparent; color: #8e9ebd;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.2s; flex-shrink: 0; padding: 0;
 }
-.mic-btn:hover { background: rgba(64,158,255,0.08); color: #409eff; }
-.mic-btn.recording { color: #f56c6c; animation: micPulse 1s ease-in-out infinite; }
+.voice-btn:hover { background: rgba(64,158,255,0.08); color: #409eff; }
+.voice-btn.recording { color: #f56c6c; animation: micPulse 1s ease-in-out infinite; }
 @keyframes micPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* 语音预览弹窗 */
+.voice-preview-overlay {
+  position: fixed; inset: 0; z-index: 2000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.35);
+}
+.voice-preview-card {
+  width: 300px; background: #fff; border-radius: 20px;
+  overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+  animation: dialogIn 0.25s ease;
+}
+.vp-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid #f0f0f0;
+  font-weight: 600; font-size: 15px;
+}
+.vp-close { width: 28px; height: 28px; border: none; background: none; font-size: 20px; color: #999; cursor: pointer; }
+.vp-body { display: flex; flex-direction: column; align-items: center; padding: 32px 20px; gap: 16px; }
+.vp-wave { display: flex; align-items: center; gap: 3px; height: 32px; }
+.vp-wave span {
+  width: 4px; height: 100%; border-radius: 2px; background: #409eff;
+  animation: waveAnim 0.6s ease-in-out infinite alternate;
+}
+.vp-wave.playing span:nth-child(1) { animation-delay: 0s; }
+.vp-wave.playing span:nth-child(2) { animation-delay: 0.1s; }
+.vp-wave.playing span:nth-child(3) { animation-delay: 0.2s; }
+.vp-wave.playing span:nth-child(4) { animation-delay: 0.3s; }
+.vp-wave.playing span:nth-child(5) { animation-delay: 0.4s; }
+@keyframes waveAnim { 0% { height: 8px; } 100% { height: 32px; } }
+.vp-play-btn {
+  width: 56px; height: 56px; border-radius: 50%; border: none;
+  background: #409eff; color: #fff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.vp-hint { font-size: 13px; color: #8e8e93; margin: 0; }
+.vp-footer { display: flex; gap: 12px; padding: 0 20px 20px; }
+.vp-btn { flex: 1; height: 42px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; }
+.vp-cancel { background: #f5f5f5; color: #666; }
+.vp-cancel:hover { background: #e8e8e8; }
+.vp-confirm { background: #409eff; color: #fff; }
+.vp-confirm:hover { background: #3a8ee6; }
 
 </style>
 <style>
