@@ -168,10 +168,13 @@ export function useChat() {
     }
     if (!messagesMap.value[id]) messagesMap.value[id] = []
     messagesMap.value[id].push(msg)
-    // 更新对话标题（首条消息）
+    // 更新对话标题（首条消息时自动生成并同步到后端）
     const conv = conversations.value.find(c => c.id === id)
     if (conv && messagesMap.value[id].length === 2) {
-      conv.title = content.slice(0, 30) + (content.length > 30 ? '…' : '')
+      const title = content.slice(0, 30) + (content.length > 30 ? '…' : '')
+      conv.title = title
+      // 同步到后端，下次登录时标题保留
+      renameConversationApi(id, title).catch(() => {})
       saveCache()
     }
     return msg
