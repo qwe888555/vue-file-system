@@ -2,7 +2,7 @@
 import { ref, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
-import { uploadFileApi, uploadTextApi, getFirstLevelCategoriesApi, getSecondLevelCategoriesApi } from '@/api/knowledge'
+import { uploadFileApi, uploadTextApi, getFirstLevelCategoriesApi, getSecondLevelCategoriesApi, addKeywordsApi } from '@/api/knowledge'
 
 const props = defineProps<{
   visible: boolean
@@ -295,16 +295,19 @@ async function handleSubmit() {
 
   if (createMode.value) {
     try {
-      await uploadTextApi({
+      const result = await uploadTextApi({
         title: form.value.title,
         content: form.value.content,
         description: form.value.description || undefined,
         college_id: form.value.collegeId || 1,
         category_id: form.value.secondLevelCategoryId,
-        keywords,
         visibility: 'public',
         scope: form.value.scope,
       })
+      const docId = result.id || result.doc_id
+      if (docId && keywords.length > 0) {
+        await addKeywordsApi(docId, keywords)
+      }
       ElMessage.success('创建成功')
       emit('submit', {
         ...form.value,
@@ -327,10 +330,13 @@ async function handleSubmit() {
       formData.append('college_id', String(form.value.collegeId || 1))
       formData.append('department_id', String(form.value.departmentId || 1))
       formData.append('category_id', String(form.value.secondLevelCategoryId || 0))
-      formData.append('keywords', keywords.join(','))
 
       console.log('文件上传FormData:', [...formData.entries()])
-      await uploadFileApi(formData)
+      const result = await uploadFileApi(formData)
+      const docId = result.id || result.doc_id
+      if (docId && keywords.length > 0) {
+        await addKeywordsApi(docId, keywords)
+      }
       ElMessage.success('上传成功')
       emit('submit', {
         ...form.value,
