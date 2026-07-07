@@ -125,6 +125,7 @@ async function handleLogout() {
   width: 222px;
   height: 100%;
   background: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', Roboto, sans-serif;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;

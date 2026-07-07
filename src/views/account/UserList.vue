@@ -240,9 +240,15 @@ async function getLocalAccounts(params: {
   department_id?: number | null
   keyword?: string
 }) {
+  // 兜底：非超级管理员且有 college_id → 强制限制学院范围（不依赖过滤器链路）
+  const collegeId = params.college_id ?? (!isSuperAdmin.value ? userCollegeId.value : undefined)
+  if (!isSuperAdmin.value && !userCollegeId.value) {
+    console.warn('[UserList] 非超级管理员但 college_id 为空，无法限制学院范围', userStore.userInfo)
+  }
+
   const res = await getAccountsApi({
     role: params.role,
-    college: params.college_id ?? undefined,
+    college: collegeId ?? undefined,
   })
   const list = res.results
 
@@ -318,9 +324,9 @@ function handleSearch() {
   }
 
   // 始终显式传筛选值（null=不过滤），覆盖 useTableQuery 内部残留
-  if (collegeFilter.value !== '__all__' && collegeFilter.value.startsWith('col_')) {
+  if (collegeFilter.value?.startsWith('col_')) {
     params.college_id = Number(collegeFilter.value.slice(4))
-  } else if (collegeFilter.value !== '__all__' && collegeFilter.value.startsWith('dept_')) {
+  } else if (collegeFilter.value?.startsWith('dept_')) {
     params.department_id = Number(collegeFilter.value.slice(5))
     params.college_id = null
   } else if (!isSuperAdmin.value && userCollegeId.value) {
