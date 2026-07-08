@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search, Close, Plus, Check } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getDocDetailApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, downloadDocApi, batchDeleteDocsApi, addKeywordApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getDocDetailApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, downloadDocApi, batchDeleteDocsApi } from '@/api/knowledge'
 import mammoth from 'mammoth'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 
@@ -419,13 +419,6 @@ async function handleUploadSubmit() {
         const result = await uploadFileApi(formData)
         if (result.id) {
           item.docId = result.id
-          
-          if (item.keywords) {
-            const itemKeywords = [...new Set(item.keywords.split(/[,，、\s]+/).map(kw => kw.trim()).filter(kw => kw))]
-            for (const kw of itemKeywords) {
-              await addKeywordApi(result.id, kw)
-            }
-          }
         }
         successCount++
       }
