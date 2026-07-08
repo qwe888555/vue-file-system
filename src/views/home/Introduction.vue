@@ -1,27 +1,22 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import LoginPage from '@/views/login/LoginPage.vue'
 import request from '@/api/request'
-import { getUploadStatsApi, getQueryStatsApi } from '@/api/admin'
 import logodark from '@/assets/images/logo2.jpg'
 import heroBg from '@/assets/images/hero3.jpg'
 
-/* Dashboard 聚合接口（GET /api/admin/logs/dashboard/） */
-interface GroupCount { key: string; label: string; count: number }
-interface DashboardUpload {
-  total: number; total_size: number; error?: string
-  by_status?: GroupCount[]; by_file_type?: GroupCount[]; by_college?: GroupCount[]
-}
-interface DashboardQuery {
-  total: number; avg_hit_count?: number; avg_response_ms?: number; like_rate?: number; error?: string
-  by_feedback?: GroupCount[]
-}
-interface DashboardOnline { online_users: number; window_minutes: number; as_of: string; error?: string }
-interface DashboardBlocks {
-  upload: DashboardUpload; query: DashboardQuery; online: DashboardOnline
+/* Dashboard 聚合接口 v1.1 — AllowAny，无需鉴权 */
+interface DashboardBlock {
+  total?: number; total_size?: number; error?: string
   [key: string]: unknown
 }
-interface DashboardResponse { period: string; start_at: string; end_at: string; blocks: DashboardBlocks }
+interface DashboardResponse {
+  period: string; start_at: string; end_at: string
+  blocks: {
+    upload: DashboardBlock; query: DashboardBlock
+    sensitive: DashboardBlock; login: DashboardBlock; operation: DashboardBlock
+  }
+}
 
 const stats = ref([
   { key: 'total_uploads', label: '总上传', value: 0, suffix: '' },
@@ -29,17 +24,16 @@ const stats = ref([
   { key: 'today_uploads', label: '今日上传', value: 0, suffix: '' },
   { key: 'today_queries', label: '今日查询', value: 0, suffix: '' },
   { key: 'total_size', label: '总存储', value: 0, suffix: 'GB' },
-  { key: 'online_users', label: '当前在线', value: 0, suffix: '' },
+  { key: 'total_operation', label: '今日操作', value: 0, suffix: '' },
 ])
 
-let timer: ReturnType<typeof setInterval> | null = null
 let mc = 0
 
 const MOCK = [
-  [12846, 89237, 47, 312, 268435456, 18],
-  [12848, 89245, 48, 320, 269484032, 22],
-  [12850, 89256, 49, 331, 270532608, 15],
-  [12852, 89268, 51, 343, 271581184, 20],
+  [42, 150, 52428800, 5, 28, 12],
+  [45, 160, 53428800, 6, 30, 15],
+  [38, 140, 51428800, 3, 25, 10],
+  [50, 170, 54428800, 7, 32, 18],
 ]
 
 function fmtSize(b: number) {
@@ -49,16 +43,16 @@ function fmtSize(b: number) {
 }
 function ok(b: { error?: string } | undefined) { return !!b && !('error' in b) }
 
-function applyStatsVals(cumUp: number, cumQry: number, todayUp: number, todayQry: number, sizeBytes: number, online: number) {
+function applyStatsVals(upload: number, query: number, sizeBytes: number, _sensitive: number, _login: number, operation: number) {
   const f = fmtSize(sizeBytes)
   stats.value = stats.value.map(s => {
     switch (s.key) {
-      case 'total_uploads': return { ...s, value: cumUp }
-      case 'total_queries': return { ...s, value: cumQry }
-      case 'today_uploads': return { ...s, value: todayUp }
-      case 'today_queries': return { ...s, value: todayQry }
+      case 'total_uploads': return { ...s, value: upload }
+      case 'total_queries': return { ...s, value: query }
+      case 'today_uploads': return { ...s, value: upload }
+      case 'today_queries': return { ...s, value: query }
       case 'total_size':    return { ...s, value: f.v, suffix: f.s }
-      case 'online_users':  return { ...s, value: online }
+      case 'total_operation': return { ...s, value: operation }
       default: return s
     }
   })
@@ -66,18 +60,14 @@ function applyStatsVals(cumUp: number, cumQry: number, todayUp: number, todayQry
 
 async function fetchStats() {
   try {
-    const [cumUp, cumQry, dash] = await Promise.all([
-      getUploadStatsApi().catch(() => null),
-      getQueryStatsApi().catch(() => null),
-      request.get('/admin/logs/dashboard/', { params: { period: 'day' } }) as Promise<DashboardResponse>,
-    ])
-    const cumulativeTotalUploads = cumUp?.total ?? 0
-    const cumulativeTotalQueries = cumQry?.total ?? 0
+    const dash = await request.get('/admin/logs/dashboard/', { params: { period: 'day' } }) as Promise<DashboardResponse>
     const b = dash?.blocks
     const up = b && ok(b.upload) ? b.upload : null
     const qy = b && ok(b.query) ? b.query : null
-    const ol = b && ok(b.online) ? b.online : null
-    applyStatsVals(cumulativeTotalUploads, cumulativeTotalQueries, up?.total ?? 0, qy?.total ?? 0, up?.total_size ?? 0, ol?.online_users ?? 0)
+    const sn = b && ok(b.sensitive) ? b.sensitive : null
+    const lg = b && ok(b.login) ? b.login : null
+    const op = b && ok(b.operation) ? b.operation : null
+    applyStatsVals(up?.total ?? 0, qy?.total ?? 0, up?.total_size ?? 0, sn?.total ?? 0, lg?.total ?? 0, op?.total ?? 0)
   } catch {
     mc = (mc + 1) % MOCK.length; const m = MOCK[mc]
     applyStatsVals(m[0], m[1], m[2], m[3], m[4], m[5])
@@ -86,9 +76,7 @@ async function fetchStats() {
 
 onMounted(() => {
   fetchStats()
-  timer = setInterval(fetchStats, 15000)
 })
-onUnmounted(() => { if (timer) clearInterval(timer) })
 
 </script>
 
@@ -143,7 +131,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
               <div class="d-bar" />
               <div class="d-lbl">{{ stats[3].label }}</div>
             </div>
-            <!-- 当前在线 -->
+            <!-- 今日操作 -->
             <div class="d-item" style="--d:0.26s;--x:12px">
               <div class="d-num d-num--amber">{{ stats[5].value.toLocaleString() }}</div>
               <div class="d-bar" />

@@ -61,7 +61,9 @@ const noAuthPaths = [
   '/auth/login/',
   '/auth/refresh/',
   '/auth/sso/callback/',
-  '/admin/logs/dashboard/', // Dashboard 聚合接口（后端 AllowAny）
+  '/auth/dingtalk/qr/',
+  '/auth/dingtalk/callback/',
+  '/admin/logs/dashboard/',
 ]
 
 instance.interceptors.request.use(
