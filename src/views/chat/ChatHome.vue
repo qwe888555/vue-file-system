@@ -25,7 +25,7 @@ const hasPlayed = sessionStorage.getItem('hasPlayHomeAnimation') === 'true'
 const showEntryAnim = ref(!hasPlayed)
 const showInstantContent = ref(hasPlayed)
 const inputText = ref('')
-const isRecording = ref(false)
+const isRecording = ref(false)    // 🎤 语音转文字
 
 // SSE
 const streamingContent = ref('')
@@ -206,8 +206,8 @@ function startRecording(): Promise<Blob | null> {
         resolve(blob.size > 100 ? blob : null)
       }
       mr.onerror = () => resolve(null)
-      mr.start()
-      isRecording.value = true
+	      mr.start()
+	      isRecording.value = true
     } catch { resolve(null) }
   })
 }
@@ -224,7 +224,7 @@ let speechRecognition: any = null
 
 async function handleSTT() {
   // 如果正在录音中，点击则停止
-  if (isRecording.value) {
+  if (isRecording.value || isRecording.value) {
     if (speechRecognition) {
       speechRecognition.stop()
       speechRecognition = null
@@ -345,6 +345,7 @@ async function handleVoiceMsg() {
   if (isRecording.value) { stopRecording(); return }
   const blob = await startRecording()
   if (!blob) return
+  // startRecording 已设置 isRecording=true，停止后自然变为 false
   pendingVoiceBlob = blob
   voicePreviewUrl.value = URL.createObjectURL(blob)
   voiceAudioEl = new Audio(voicePreviewUrl.value)
