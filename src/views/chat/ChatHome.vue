@@ -2,7 +2,7 @@
 // ── 智能问答主页面 ──
 // 豆包风格：简洁、留白、圆润
 
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -21,7 +21,6 @@ const sidebarOpen = ref(true)
 const showLoginDialog = ref(false)
 const showPersonalCenter = ref(false)
 const showUserMenu = ref(false)
-const showToolsMenu = ref(false)
 const hasPlayed = sessionStorage.getItem('hasPlayHomeAnimation') === 'true'
 const showEntryAnim = ref(!hasPlayed)
 const showInstantContent = ref(hasPlayed)
@@ -103,10 +102,15 @@ function startRename(conv: any) {
   renameText.value = conv.title || ''
   setTimeout(() => renameInput.value?.focus(), 50)
 }
+/** 保存改名 */
 async function confirmRename(id: number) {
   if (renameText.value.trim()) {
     await chat.renameConversation(id, renameText.value.trim())
   }
+  renamingId.value = null
+}
+/** 取消改名（恢复原名） */
+function cancelRename() {
   renamingId.value = null
 }
 
@@ -120,13 +124,15 @@ async function handleSelectConversation(id: number) {
 }
 async function handleDeleteConversation(id: number) { await chat.deleteConversation(id) }
 function handleBackToList() { chat.currentConversationId.value = null }
-function toggleToolsMenu() { showToolsMenu.value = !showToolsMenu.value }
-function handleDocumentAction() { showToolsMenu.value = false; /* TODO: 文档相关操作 */ }
-function handleLanguageSetting() { showToolsMenu.value = false; /* TODO: 语言设置 */ }
 
 async function sendMessage() {
   const text = inputText.value.trim()
   if (!text || isStreaming.value) return
+  // 电脑端必须登录才能使用
+  if (!isLoggedIn.value) {
+    showLoginDialog.value = true
+    return
+  }
   currentSSE?.close()
   if (!chat.currentConversationId.value) {
     const conv = await chat.createConversation()
@@ -163,7 +169,7 @@ function handleFeedback(messageId: number, type: 'like' | 'dislike') {
   chat.submitFeedback(messageId, type)
 }
 
-/* ── 语音录制（通用） ── */
+/* ── 语音录制（通用，供后端降级 & 语音消息使用） ── */
 let mediaRecorder: MediaRecorder | null = null
 
 /** 开始录音，返回录制的 Blob（停止后 resolve） */
@@ -171,7 +177,6 @@ function startRecording(): Promise<Blob | null> {
   return new Promise(async (resolve) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      // 优先使用浏览器原生支持的格式（Chrome: webm; Edge: webm; Firefox: ogg）
       const mimeType = [
         'audio/webm;codecs=opus',
         'audio/webm',
@@ -184,7 +189,6 @@ function startRecording(): Promise<Blob | null> {
       mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
       mr.onstop = () => {
         stream.getTracks().forEach(t => t.stop())
-        // 使用实际编码类型，后端会自动转码
         const blob = new Blob(chunks, { type: mimeType || 'audio/webm' })
         resolve(blob.size > 100 ? blob : null)
       }
@@ -202,9 +206,64 @@ function stopRecording() {
   isRecording.value = false
 }
 
-/* ── 语音转文字（录音 → 期望后端返回 asr_text → 填入输入框） ── */
+/* ── 语音转文字（优先使用浏览器原生 Web Speech API，降级到后端 ASR） ── */
+let speechRecognition: any = null
+
 async function handleSTT() {
-  if (isRecording.value) { stopRecording(); return }
+  // 如果正在录音中，点击则停止
+  if (isRecording.value) {
+    if (speechRecognition) {
+      speechRecognition.stop()
+      speechRecognition = null
+    }
+    stopRecording()
+    return
+  }
+
+  // 方案一：浏览器原生 Web Speech API（Chrome / Edge / Safari 支持）
+  const SpeechAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  if (SpeechAPI) {
+    try {
+      const recognition = new SpeechAPI()
+      recognition.lang = 'zh-CN'
+      recognition.interimResults = true
+      recognition.continuous = true
+      speechRecognition = recognition
+
+      inputText.value = ''
+      isRecording.value = true
+
+      recognition.onresult = (event: any) => {
+        let transcript = ''
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i]
+          transcript += result[0].transcript
+        }
+        inputText.value = transcript
+      }
+
+      recognition.onerror = (event: any) => {
+        isRecording.value = false
+        speechRecognition = null
+        if (event.error !== 'no-speech' && event.error !== 'aborted') {
+          ElMessage.error('语音识别错误: ' + event.error)
+        }
+      }
+
+      recognition.onend = () => {
+        isRecording.value = false
+        speechRecognition = null
+      }
+
+      recognition.start()
+      return
+    } catch {
+      // Web Speech API 初始化失败，降级到后端方案
+      speechRecognition = null
+    }
+  }
+
+  // 方案二：后端 ASR（向后兼容）
   const blob = await startRecording()
   if (!blob) return
   if (!chat.currentConversationId.value) {
@@ -217,9 +276,13 @@ async function handleSTT() {
   try {
     const { voiceAskApi } = await import('@/api/chat')
     const response = await voiceAskApi(blob, convId)
-    if (!response.ok) { inputText.value = ''; return }
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '')
+      ElMessage.error(`语音请求失败 (${response.status}): ${errText}`)
+      inputText.value = ''; return
+    }
     const reader = response.body?.getReader()
-    if (!reader) { inputText.value = ''; return }
+    if (!reader) { ElMessage.error('无法读取语音响应'); inputText.value = ''; return }
     const decoder = new TextDecoder(); let buffer = ''; let currentEvent = ''
     while (true) {
       const { done, value } = await reader.read()
@@ -258,7 +321,7 @@ async function handleSTT() {
   if (!gotText && inputText.value === '语音识别中…') inputText.value = ''
 }
 
-/* ── 语音消息（录音 → 预览 → 发送） ── */
+/* ── 语音消息（录音 → 预览播放 → 发送给 AI 回答） ── */
 const voicePreviewUrl = ref('')
 const showVoicePreview = ref(false)
 let pendingVoiceBlob: Blob | null = null
@@ -344,9 +407,19 @@ async function confirmVoicePreview() {
     }
   } catch (e: any) { ElMessage.error('语音发送异常: ' + (e?.message || '')); isStreaming.value = false }
 }
+/** 全局点击空白取消改名 */
+function handleBlankClick(e: MouseEvent) {
+  if (renamingId.value === null) return
+  const el = e.target as HTMLElement
+  // 点击这些元素不取消
+  if (el.closest('.conv-rename-input, .conv-rename-confirm, .sidebar-new-chat, .conv-item-edit, .conv-item-icon')) return
+  cancelRename()
+}
+
 onMounted(() => {
   chat.init()
   loadHotQuestions()
+  document.addEventListener('mousedown', handleBlankClick)
   if (showEntryAnim.value) {
     // 首次进入：播放完整动画，2600ms 后写入标记
     setTimeout(() => {
@@ -357,6 +430,9 @@ onMounted(() => {
     // 非首次：直接显示完整内容
     showInstantContent.value = true
   }
+})
+onUnmounted(() => {
+  document.removeEventListener('mousedown', handleBlankClick)
 })
 </script>
 
@@ -399,7 +475,7 @@ onMounted(() => {
           :key="conv.id"
           class="conv-item"
           :class="{ active: conv.id === chat.currentConversationId.value }"
-          @click="handleSelectConversation(conv.id)"
+          @click="renamingId !== conv.id && handleSelectConversation(conv.id)"
         >
           <div class="conv-item-icon">
             <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
@@ -407,22 +483,27 @@ onMounted(() => {
             </svg>
           </div>
           <div class="conv-item-content">
-            <input
-              v-if="renamingId === conv.id"
-              class="conv-rename-input"
-              v-model="renameText"
-              @blur="confirmRename(conv.id)"
-              @keyup.enter="confirmRename(conv.id)"
-              @click.stop
-              ref="renameInput"
-            />
+            <div v-if="renamingId === conv.id" class="conv-rename-row">
+              <input
+                class="conv-rename-input"
+                v-model="renameText"
+                @keyup.enter="confirmRename(conv.id)"
+                @click.stop
+                ref="renameInput"
+              />
+              <button class="conv-rename-confirm" @click.stop="confirmRename(conv.id)" title="保存">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                  <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                </svg>
+              </button>
+            </div>
             <span v-else class="conv-item-title">{{ conv.title || '新对话' }}</span>
             <span class="conv-item-time">{{ conv.updatedAt?.slice(5, 10) }}</span>
           </div>
-          <button class="conv-item-edit" @click.stop="startRename(conv)" title="重命名">
+          <button v-if="renamingId !== conv.id" class="conv-item-edit" @click.stop="startRename(conv)" title="重命名">
             <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M12.146.854a.5.5 0 01.708 0l2.292 2.292a.5.5 0 010 .708l-10 10a.5.5 0 01-.168.11l-4 1.5a.5.5 0 01-.64-.64l1.5-4a.5.5 0 01.11-.168l10-10z"/></svg>
           </button>
-          <button class="conv-item-del" @click.stop="handleDeleteConversation(conv.id)">×</button>
+          <button v-if="renamingId !== conv.id" class="conv-item-del" @click.stop="handleDeleteConversation(conv.id)">×</button>
         </div>
         <div v-if="chat.loading.value" class="sidebar-loading">
           <span class="load-dot" /><span class="load-dot" /><span class="load-dot" />
@@ -565,33 +646,6 @@ onMounted(() => {
           <div class="input-anim-border">
             <div class="spin spin-inside"></div>
             <div class="chat-input-wrapper">
-            <div class="input-extra-wrap">
-              <button class="input-extra-btn" @click="toggleToolsMenu">
-                <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
-                  <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" />
-                </svg>
-              </button>
-              <Transition name="tools">
-                <div v-if="showToolsMenu" class="tools-menu">
-                  <div class="tools-menu-item" @click="handleDocumentAction">
-                    <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
-                      <path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z" />
-                      <path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
-                    </svg>
-                    <span>文档相关操作</span>
-                  </div>
-                  <div class="tools-menu-item" @click="handleLanguageSetting">
-                    <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
-                      <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z" />
-                      <path d="M6.5 10c0 1.5.5 3 1.5 4.5.5.7 1 1.2 1.5 1.5.5-.3 1-.8 1.5-1.5 1-1.5 1.5-3 1.5-4.5s-.5-3-1.5-4.5c-.5-.7-1-1.2-1.5-1.5-.5.3-1 .8-1.5 1.5C7 7 6.5 8.5 6.5 10z" />
-                      <path d="M3.5 7.5h13" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round" />
-                      <path d="M3.5 12.5h13" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round" />
-                    </svg>
-                    <span>语言设置</span>
-                  </div>
-                </div>
-              </Transition>
-            </div>
             <input
               v-model="inputText"
               type="text"
@@ -797,6 +851,8 @@ onMounted(() => {
   cursor: pointer;
   transition: background 0.15s;
   position: relative;
+  overflow: hidden;
+  min-width: 0;
 }
 .conv-item:hover { background: #f5f5f5; }
 .conv-item.active { background: #f0f0f0; }
@@ -845,10 +901,20 @@ onMounted(() => {
   cursor: pointer; padding: 0 2px; transition: opacity 0.15s; flex-shrink: 0;
 }
 .conv-item-edit:hover { color: #409eff; }
+.conv-rename-row {
+  display: flex; align-items: center; gap: 4px;
+  min-width: 0; overflow: hidden;
+}
 .conv-rename-input {
-  width: 100%; height: 24px; padding: 0 4px; border: 1px solid #409eff;
+  flex: 1; min-width: 0; height: 24px; padding: 0 4px; border: 1px solid #409eff;
   border-radius: 4px; font-size: 13px; outline: none; background: #fff;
 }
+.conv-rename-confirm {
+  width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 4px; background: #409eff; color: #fff;
+  cursor: pointer; flex-shrink: 0; transition: background 0.15s;
+}
+.conv-rename-confirm:hover { background: #3a8ee6; }
 
 .sidebar-loading { display: flex; justify-content: center; gap: 4px; padding: 20px; }
 .load-dot {
@@ -1206,46 +1272,6 @@ onMounted(() => {
   50% { scale: 0.75; }
 }
 
-.input-extra-btn {
-  display: flex; align-items: center; justify-content: center;
-  background: none; border: none; cursor: pointer;
-  padding: 10px; border-radius: 10px;
-  color: #409eff; flex-shrink: 0;
-  transition: background 0.15s;
-}
-.input-extra-btn:hover { background: rgba(64,158,255,0.1); }
-.input-extra-btn svg { width: 20px; height: 20px; }
-
-/* 工具菜单 */
-.input-extra-wrap { position: relative; }
-.tools-menu {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  width: 180px;
-  background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-  border: 1px solid #eee;
-  overflow: hidden;
-  z-index: 50;
-}
-.tools-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  font-size: 13px;
-  color: #555;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.tools-menu-item:hover { background: #f5f8ff; color: #409eff; }
-.tools-menu-item svg { color: #8e8e93; }
-.tools-menu-item:hover svg { color: #409eff; }
-.tools-menu-item + .tools-menu-item { border-top: 1px solid #f5f5f5; }
-.tools-enter-active, .tools-leave-active { transition: all 0.15s ease; }
-.tools-enter-from, .tools-leave-to { opacity: 0; transform: translateY(6px); }
 .input-field {
   flex: 1; border: none; background: transparent; outline: none;
   font-size: 14px; color: #1f1f1f; padding: 8px 0; min-height: 24px;

@@ -92,9 +92,39 @@ function startRecording(): Promise<Blob | null> {
 }
 function stopRecording() { if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop(); isRecording.value = false }
 
-/* ── 语音转文字 ── */
+/* ── 语音转文字（优先使用浏览器原生 Web Speech API，降级到后端 ASR） ── */
+let speechRecognition: any = null
+
 async function handleSTT() {
-  if (isRecording.value) { stopRecording(); return }
+  if (isRecording.value) {
+    if (speechRecognition) { speechRecognition.stop(); speechRecognition = null }
+    stopRecording(); return
+  }
+
+  // 方案一：浏览器原生 Web Speech API
+  const SpeechAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  if (SpeechAPI) {
+    try {
+      const recognition = new SpeechAPI()
+      recognition.lang = 'zh-CN'; recognition.interimResults = true; recognition.continuous = true
+      speechRecognition = recognition
+      inputText.value = ''; isRecording.value = true
+      recognition.onresult = (event: any) => {
+        let transcript = ''
+        for (let i = event.resultIndex; i < event.results.length; i++) transcript += event.results[i][0].transcript
+        inputText.value = transcript
+      }
+      recognition.onerror = (event: any) => {
+        isRecording.value = false; speechRecognition = null
+        if (event.error !== 'no-speech' && event.error !== 'aborted') ElMessage.error('语音识别错误: ' + event.error)
+      }
+      recognition.onend = () => { isRecording.value = false; speechRecognition = null }
+      recognition.start()
+      return
+    } catch { speechRecognition = null }
+  }
+
+  // 方案二：后端 ASR
   const blob = await startRecording()
   if (!blob) return
   if (!chat.currentConversationId.value) { const conv = await chat.createConversation(); if (!conv) return }
@@ -410,8 +440,9 @@ onMounted(() => {
 .m-input-area { flex-shrink: 0; padding: 8px 12px 12px; }
 .m-input-wrap {
   display: flex; align-items: center; gap: 8px;
-  background: #f5f5f5; border-radius: 22px;
+  background: #fff; border-radius: 22px;
   padding: 4px 4px 4px 16px;
+  border: 2px solid #d0d5dd;
 }
 .m-input { flex: 1; border: none; background: none; outline: none; font-size: 15px; padding: 8px 0; color: #1f1f1f; }
 .m-input::placeholder { color: #aaa; }

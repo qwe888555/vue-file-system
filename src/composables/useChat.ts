@@ -130,12 +130,16 @@ export function useChat() {
   }
 
   async function renameConversation(id: number, title: string) {
+    // 先乐观更新本地（即时生效）
+    const conv = conversations.value.find(c => c.id === id)
+    if (conv) conv.title = title
+    saveCache()
+    // 再异步同步后端（失败也不影响本地显示）
     try {
       const updated = await renameConversationApi(id, title)
-      const conv = conversations.value.find(c => c.id === id)
       if (conv && updated) conv.title = updated.title
       saveCache()
-    } catch { /* 忽略 */ }
+    } catch { /* 后端同步失败，本地已更新，不影响用户体验 */ }
   }
 
   /** 添加用户消息到当前对话（本地即时） */
