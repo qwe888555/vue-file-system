@@ -22,8 +22,21 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Clean build cache
+        run: rm -rf dist node_modules/.vite
+
       - name: Build project
         run: npm run build
+
+      - name: Clean old assets on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          script: rm -rf ${{ secrets.PROJECT_PATH }}/assets/*
 
       - name: Deploy to server via SCP
         uses: appleboy/scp-action@v0.1.7
