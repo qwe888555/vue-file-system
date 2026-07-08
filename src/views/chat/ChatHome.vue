@@ -60,7 +60,7 @@ async function loadHotQuestions() {
 
 const topQuestions = computed(() =>
   hotQuestions.value.map(q => ({
-    text: q.question,
+    text: q.question.split('：')[0].split(':')[0], // 冒号后内容不显示
     icon: SEED_ICONS[Object.keys(SEED_ICONS).find(k => q.question.includes(k)) || ''] || '💬',
     count: q.count,
   }))
@@ -181,7 +181,15 @@ let mediaRecorder: MediaRecorder | null = null
 function startRecording(): Promise<Blob | null> {
   return new Promise(async (resolve) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // 16kHz 单声道，与 ASR 模型匹配
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      })
       const mimeType = [
         'audio/webm;codecs=opus',
         'audio/webm',
@@ -371,6 +379,12 @@ async function confirmVoicePreview() {
   if (voicePreviewUrl.value) URL.revokeObjectURL(voicePreviewUrl.value)
   voicePreviewUrl.value = ''
   // 发送到 voice-ask
+  if (blob.size < 512) {
+    ElMessage.warning('录音时间太短，请重新录制'); return
+  }
+  if (blob.size > 10 * 1024 * 1024) {
+    ElMessage.warning('录音文件超过 10MB 限制'); return
+  }
   if (!chat.currentConversationId.value) {
     const conv = await chat.createConversation()
     if (!conv) return
@@ -401,6 +415,9 @@ async function confirmVoicePreview() {
           try {
             const data = JSON.parse(line.slice(6).trim())
             switch (currentEvent) {
+              case 'asr_text':
+                // ASR 识别结果（语音转文字），已显示在输入框中
+                break
               case 'token':
               case 'msg': streamingContent.value += data.content || ''; break
               case 'done': chat.appendAssistantMessage(streamingContent.value, undefined, data.message_id); isStreaming.value = false; streamingContent.value = ''; break
@@ -618,12 +635,11 @@ onUnmounted(() => {
               你好！有什么可以帮助你的？
               <span v-if="showInstantContent || !showEntryAnim" class="title-scanline" />
             </h2>
-            <div v-if="topQuestions.length" class="quick-questions" :class="{ 'wi-anim-in': !showEntryAnim, instant: showInstantContent }">
+            <div v-if="topQuestions.length" class="quick-questions">
               <button
-                v-for="(q, qi) in topQuestions"
+                v-for="q in topQuestions"
                 :key="q.text"
                 class="qq-btn"
-                :style="{ transitionDelay: showInstantContent ? '0ms' : `${qi * 70}ms` }"
                 @click="quickQuestion(q.text)"
               >{{ q.text }}</button>
             </div>
@@ -1059,7 +1075,7 @@ onUnmounted(() => {
   text-align: center;
 }
 .welcome-icon {
-  margin-bottom: 60px;
+  margin-bottom: 24px;
   width: 72px; height: 72px;
   display: flex; align-items: center; justify-content: center;
   position: relative; z-index: 1;
@@ -1104,49 +1120,23 @@ onUnmounted(() => {
 }
 
 /* ═══ 快捷按钮入场（分层延时 + 外发光脉冲） ═══ */
-.quick-questions {
-  opacity: 0;
-}
-.quick-questions.wi-anim-in {
-  opacity: 1;
-}
-.quick-questions.instant {
-  opacity: 1;
-}
-.quick-questions.instant .qq-btn {
-  opacity: 1;
-  transform: scale(1);
-  transition: none;
-  box-shadow: none;
-}
-.qq-btn {
-  opacity: 0;
-  transform: scale(0.7);
-  transition: opacity 0.3s ease-out, transform 1s ease-out, box-shadow 0.3s ease-out, background 0.2s, color 0.2s;
-}
-.quick-questions.wi-anim-in .qq-btn {
-  opacity: 1;
-  transform: scale(1);
-  animation: btnGlowPulse 0.3s ease-out forwards;
-}
-@keyframes btnGlowPulse {
-  0%   { box-shadow: 0 0 12px rgba(80,160,255,0.4); }
-  100% { box-shadow: 0 0 8px rgba(80,160,255,0); }
-}
 
 /* 快捷提问胶囊按钮 */
 .quick-questions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 0 0;
+  align-items: center;
+  justify-content: center;
   max-width: 600px;
   margin: 0 auto;
   position: relative;
   z-index: 1;
 }
 .qq-btn {
-  padding: 10px 16px;
-  background: #f0f0f5;
+  padding: 8px 18px;
+  background: #f0f2f5;
   border: none;
   border-radius: 20px;
   font-size: 13px;
@@ -1154,12 +1144,11 @@ onUnmounted(() => {
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  width: auto;
 }
 .qq-btn:hover {
-  background: #e0e3ed;
-  color: #409eff;
+  background: #e5e6eb;
+  color: #1e80ff;
 }
 
 /* ═══ 输入栏 ═══ */
