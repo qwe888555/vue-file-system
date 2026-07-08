@@ -85,12 +85,12 @@
           <el-input v-model="editForm.answer" type="textarea" :rows="5" />
         </el-form-item>
         <el-form-item label="分类">
-          <el-select v-model="editForm.category" placeholder="选择分类" style="width:100%">
+          <el-select v-model="editForm.category" placeholder="选择分类" class="w-full">
             <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="标签">
-          <el-select v-model="editForm.tags" multiple filterable allow-create default-first-option placeholder="输入标签后回车" style="width:100%">
+          <el-select v-model="editForm.tags" multiple filterable allow-create default-first-option placeholder="输入标签后回车" class="w-full">
             <el-option v-for="tag in existingTags" :key="tag" :label="tag" :value="tag" />
           </el-select>
         </el-form-item>
