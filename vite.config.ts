@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: {
         '/api': {
-	          target: env.VITE_API_PROXY || 'http://d28d9a26.natappfree.cc',
+	          target: env.VITE_API_PROXY || '',
           changeOrigin: true,
           secure: false,
           headers: { 'ngrok-skip-browser-warning': 'true' },

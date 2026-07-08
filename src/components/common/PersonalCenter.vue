@@ -1,15 +1,16 @@
 <script setup lang="ts">
 // ── 个人中心弹窗：修改密码 + 个人资料 ──
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
-import { changePasswordApi, updateProfileApi } from '@/api/auth'
+import { changePasswordApi, updateProfileApi, getUserInfoApi } from '@/api/auth'
 
 const emit = defineEmits<{ close: [] }>()
 const userStore = useUserStore()
 
 const activeTab = ref<'profile' | 'password'>('profile')
 const saving = ref(false)
+const errors = reactive({ phone: '', email: '' })
 
 // 个人资料表单
 const profileForm = reactive({
@@ -22,19 +23,49 @@ const profileForm = reactive({
 // 修改密码表单
 const pwdForm = reactive({ old_password: '', new_password: '' })
 
+// 打开时从接口获取最新用户信息
+onMounted(async () => {
+  try {
+    const res = await getUserInfoApi()
+    userStore.userInfo = res
+    profileForm.first_name = res.first_name || ''
+    profileForm.last_name = res.last_name || ''
+    profileForm.email = res.email || ''
+    profileForm.phone = res.phone || ''
+  } catch {
+    // 静默，使用已有缓存
+  }
+})
+
+function validatePhone(val: string) {
+  if (!val) { errors.phone = ''; return }
+  const cleaned = val.replace(/\D/g, '')
+  if (cleaned.length !== 11) { errors.phone = '请输入 11 位手机号码'; return }
+  if (!/^1[3-9]\d{9}$/.test(cleaned)) { errors.phone = '手机号格式不正确，请核对号码'; return }
+  if (/^(\d)\1{10}$/.test(cleaned)) { errors.phone = '手机号格式不正确，请核对号码'; return }
+  errors.phone = ''
+}
+
+function onPhoneInput(e: Event) {
+  const input = e.target as HTMLInputElement
+  const filtered = input.value.replace(/\D/g, '')
+  if (filtered !== input.value) {
+    input.value = filtered
+    profileForm.phone = filtered
+  }
+}
+
+function validateEmail(val: string) {
+  if (!val) { errors.email = ''; return }
+  errors.email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val) ? '' : '邮箱格式不正确'
+}
+
 async function handleSaveProfile() {
-  // 手机号校验：只能包含数字，可选 + 开头
+  validatePhone(profileForm.phone)
+  validateEmail(profileForm.email)
+  if (errors.phone || errors.email) return
   const phone = profileForm.phone.trim()
-  if (phone && !/^\+?\d{6,15}$/.test(phone)) {
-    ElMessage.warning('手机号格式不正确，请输入 6-15 位数字')
-    return
-  }
-  // 邮箱格式校验
   const email = profileForm.email.trim()
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    ElMessage.warning('邮箱格式不正确')
-    return
-  }
   saving.value = true
   try {
     const res = await updateProfileApi({
@@ -102,6 +133,20 @@ async function handleChangePassword() {
         </div>
         <div class="pc-row">
           <div class="pc-field">
+            <label>学院</label>
+            <input :value="userStore.userInfo?.college_name || '-'" disabled class="pc-input" />
+          </div>
+          <div class="pc-field">
+            <label>部门</label>
+            <input :value="userStore.userInfo?.department_name || '-'" disabled class="pc-input" />
+          </div>
+        </div>
+        <div class="pc-field">
+          <label>注册时间</label>
+          <input :value="userStore.userInfo?.date_joined?.slice(0, 10) || '-'" disabled class="pc-input" />
+        </div>
+        <div class="pc-row">
+          <div class="pc-field">
             <label>姓</label>
             <input v-model="profileForm.last_name" class="pc-input" placeholder="姓" />
           </div>
@@ -112,11 +157,13 @@ async function handleChangePassword() {
         </div>
         <div class="pc-field">
           <label>邮箱</label>
-          <input v-model="profileForm.email" class="pc-input" placeholder="邮箱" />
+          <input v-model="profileForm.email" class="pc-input" :class="{ 'input-error': errors.email }" placeholder="邮箱" @input="validateEmail(profileForm.email)" />
+          <span v-if="errors.email" class="field-error">{{ errors.email }}</span>
         </div>
         <div class="pc-field">
           <label>手机号</label>
-          <input v-model="profileForm.phone" class="pc-input" placeholder="手机号" />
+          <input v-model="profileForm.phone" class="pc-input" :class="{ 'input-error': errors.phone }" placeholder="手机号" maxlength="11" @input="onPhoneInput($event); validatePhone(profileForm.phone)" />
+          <span v-if="errors.phone" class="field-error">{{ errors.phone }}</span>
         </div>
         <button class="pc-submit" :disabled="saving" @click="handleSaveProfile">
           {{ saving ? '保存中...' : '保存' }}
@@ -192,6 +239,9 @@ async function handleChangePassword() {
 }
 .pc-input:focus { border-color: #2b5fd9; }
 .pc-input:disabled { background: #f8fafc; color: #b0b8c8; }
+.input-error { border-color: #e74c3c !important; }
+.field-error { font-size: 12px; color: #e74c3c; margin-top: 2px; }
+.optional { font-size: 11px; color: #b0b8c8; font-weight: 400; }
 .pc-submit {
   height: 42px; border: none; border-radius: 10px;
   background: #2b5fd9; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;

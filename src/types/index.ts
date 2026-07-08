@@ -11,6 +11,9 @@ export interface UserInfo {
   college_name: string | null
   department_id: number | null
   department_name: string | null
+  phone?: string
+  avatar?: string
+  date_joined?: string
   is_staff: boolean
   is_superuser: boolean
   permissions: {
