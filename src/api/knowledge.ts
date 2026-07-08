@@ -108,7 +108,7 @@ export function deleteDocApi(id: number): Promise<void> {
 
 /** 批量删除文档 */
 export function batchDeleteDocsApi(ids: number[]): Promise<void> {
-  return request.post('/knowledge/docs/batch/', { ids })
+  return request.delete('/knowledge/docs/batch/', { data: { ids } })
 }
 
 /** AI提取发布日期 */

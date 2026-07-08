@@ -48,6 +48,8 @@ export const useUserStore = defineStore('user', () => {
     refreshToken.value = ''
     userInfo.value = null
     clearToken()
+    // 清除缓存，避免切换账号后看到上个账号的对话记录
+    localStorage.removeItem('chat_conversations_cache')
   }
 
   function clearTokenOnly() {

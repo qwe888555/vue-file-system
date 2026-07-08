@@ -28,9 +28,24 @@ const router = createRouter({
   routes,
 })
 
+// ── 移动端检测 ──
+function isMobileDevice(): boolean {
+  // 屏幕宽度 < 768px 视为移动端
+  if (typeof window !== 'undefined' && window.innerWidth < 768) return true
+  // userAgent 检测
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent.toLowerCase() : ''
+  return /mobile|android|iphone|ipad|phone/i.test(ua)
+}
+
 // ── 路由守卫：权限拦截 + 登录校验 ──
 router.beforeEach(async (to, _from, next) => {
   const userStore = useUserStore()
+
+  // 移动端自动跳转到移动端页面
+  if (isMobileDevice() && !to.path.startsWith('/mobile')) {
+    next('/mobile/chat')
+    return
+  }
 
   // 白名单：首页、异常页（首页 meta.hidden 由 common.ts 标记）
   if (to.meta.hidden) {
