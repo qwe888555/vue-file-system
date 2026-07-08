@@ -282,23 +282,44 @@ async function handleConfirmInfo() {
 }
 
 async function handleUploadSubmit() {
-  if (!uploadForm.value.keywords) {
-    ElMessage.warning('请输入关键词')
-    return
-  }
   if (!uploadForm.value.scope) {
     ElMessage.warning('请选择可见范围')
     return
   }
 
-  const keywords = uploadForm.value.keywords
-    .split(/[,，、\s]+/)
-    .map((kw) => kw.trim())
-    .filter((kw) => kw)
+  let keywords: string[] = []
+  
+  if (createMode.value) {
+    if (!uploadForm.value.keywords) {
+      ElMessage.warning('请输入关键词')
+      return
+    }
+    keywords = uploadForm.value.keywords
+      .split(/[,，、\s]+/)
+      .map((kw) => kw.trim())
+      .filter((kw) => kw)
 
-  if (keywords.length === 0) {
-    ElMessage.warning('请输入关键词')
-    return
+    if (keywords.length === 0) {
+      ElMessage.warning('请输入关键词')
+      return
+    }
+  } else {
+    if (selectedFiles.value.length === 0) {
+      ElMessage.warning('请选择要上传的文件')
+      return
+    }
+    
+    for (const item of selectedFiles.value) {
+      if (!item.keywords) {
+        ElMessage.warning(`文件 "${item.title || item.file.name}" 缺少关键词，请先确认信息`)
+        return
+      }
+      const itemKeywords = item.keywords.split(/[,，、\s]+/).map(kw => kw.trim()).filter(kw => kw)
+      if (itemKeywords.length === 0) {
+        ElMessage.warning(`文件 "${item.title || item.file.name}" 缺少关键词，请先确认信息`)
+        return
+      }
+    }
   }
 
   if (createMode.value) {
@@ -398,6 +419,13 @@ async function fetchFiles() {
         file.keywords = keywordsCache.get(file.id)!
       } else {
         file.keywords = []
+      }
+      
+      if (file.created_at && !file.createdAt) {
+        file.createdAt = file.created_at
+      }
+      if (file.updated_at && !file.updatedAt) {
+        file.updatedAt = file.updated_at
       }
     })
     
@@ -624,12 +652,14 @@ function handleSelectionChange(val: KnowledgeFile[]) {
   selectedDocIds.value = val.map(item => item.id)
 }
 
-function handleEditSubmit(data: { title: string; keywords: Keyword[] }) {
+function handleEditSubmit(data: { title: string; description: string; keywords: Keyword[] }) {
   if (editingFile.value) {
     editingFile.value.title = data.title
+    editingFile.value.summary = data.description
     editingFile.value.keywords = data.keywords
     saveFiles(uploadedFiles.value)
     ElMessage.success('编辑成功')
+    fetchFiles()
   }
   showEditDialog.value = false
 }

@@ -2,13 +2,22 @@
   <el-dialog
     :model-value="visible"
     title="编辑文件"
-    width="500px"
+    width="550px"
     :close-on-click-modal="false"
     @update:model-value="handleClose"
   >
     <el-form :model="form" label-width="100px" class="edit-form">
       <el-form-item label="文件名" required>
         <el-input v-model="form.title" placeholder="请输入文件名" />
+      </el-form-item>
+
+      <el-form-item label="描述">
+        <el-input
+          v-model="form.description"
+          type="textarea"
+          :rows="4"
+          placeholder="请输入文件描述"
+        />
       </el-form-item>
 
       <el-form-item label="关键词">
@@ -52,7 +61,7 @@
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { addKeywordApi, deleteKeywordApi, updateKeywordApi } from '@/api/knowledge'
+import { addKeywordApi, deleteKeywordApi, updateKeywordApi, updateDocApi } from '@/api/knowledge'
 
 const props = defineProps<{
   visible: boolean
@@ -61,11 +70,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'submit', data: { title: string; keywords: Keyword[] }): void
+  (e: 'submit', data: { title: string; description: string; keywords: Keyword[] }): void
 }>()
 
 const form = ref({
   title: '',
+  description: '',
   keywords: [] as Keyword[],
 })
 
@@ -77,6 +87,7 @@ watch(
   (visible) => {
     if (visible && props.file) {
       form.value.title = props.file.title
+      form.value.description = props.file.summary || ''
       form.value.keywords = [...(props.file.keywords || [])]
       originalKeywords.value = [...(props.file.keywords || [])]
     } else if (!visible) {
@@ -87,6 +98,7 @@ watch(
 
 function resetForm() {
   form.value.title = ''
+  form.value.description = ''
   form.value.keywords = []
   originalKeywords.value = []
   keywordRefs.value = []
@@ -111,13 +123,14 @@ async function handleSubmit() {
   }
 
   const validKeywords = form.value.keywords.filter((kw) => kw.phrase.trim())
-  if (!validKeywords.length) {
-    ElMessage.warning('关键词不能为空')
-    return
-  }
 
   try {
     if (props.file?.id) {
+      await updateDocApi(props.file.id, {
+        title: form.value.title.trim(),
+        description: form.value.description.trim(),
+      })
+
       const originalMap = new Map(originalKeywords.value.map((kw) => [kw.id, kw]))
       const currentMap = new Map(validKeywords.map((kw) => [kw.id, kw]))
 
@@ -131,7 +144,9 @@ async function handleSubmit() {
       const toUpdate = validKeywords.filter((kw) => kw.id && originalMap.get(kw.id)?.phrase !== kw.phrase)
 
       if (toAdd.length > 0) {
-        await addKeywordApi(props.file!.id, toAdd.map((kw) => kw.phrase))
+        for (const kw of toAdd) {
+          await addKeywordApi(props.file!.id, kw.phrase.trim())
+        }
       }
 
       for (const kw of toUpdate) {
@@ -143,13 +158,14 @@ async function handleSubmit() {
       }
     }
   } catch (error) {
-    console.error('关键词操作失败:', error)
-    ElMessage.error('关键词操作失败，请重试')
+    console.error('编辑文件失败:', error)
+    ElMessage.error('编辑文件失败，请重试')
     return
   }
 
   emit('submit', {
     title: form.value.title.trim(),
+    description: form.value.description.trim(),
     keywords: validKeywords,
   })
 }
