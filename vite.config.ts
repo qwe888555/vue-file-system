@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: {
         '/api': {
-	          target: env.VITE_API_PROXY || 'https://visibly-sloppy-dairy.ngrok-free.dev',
+	          target: env.VITE_API_PROXY || '',
           changeOrigin: true,
           secure: false,
           headers: { 'ngrok-skip-browser-warning': 'true' },
