@@ -540,10 +540,6 @@ onUnmounted(() => {
       <div v-if="isLoggedIn" class="sidebar-user-area">
         <Transition name="menu-up">
           <div v-if="showUserMenu" class="user-popup">
-            <div class="user-popup-item" @click="showUserMenu = false; showPersonalCenter = true">
-              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
-              <span>个人中心</span>
-            </div>
             <div class="user-popup-item" @click="showUserMenu = false; handleLogout()">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M3 3h6v2H5v10h4v2H3V3zm12.5 5H11V6h4.5L19 10l-3.5 4H11v-2h4.5L16 10l-1.5-2z"/></svg>
               <span>退出登录</span>
