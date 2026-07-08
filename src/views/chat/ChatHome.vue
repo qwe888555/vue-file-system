@@ -5,13 +5,13 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import type { KnowledgeFile } from '@/types'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ChatLoginDialog from '@/components/chat/ChatLoginDialog.vue'
-import PersonalCenter from '@/components/common/PersonalCenter.vue'
+import SidebarUser from '@/components/common/SidebarUser.vue'
 
 const userStore = useUserStore()
 const router = useRouter()
@@ -19,8 +19,6 @@ const chat = useChat()
 
 const sidebarOpen = ref(true)
 const showLoginDialog = ref(false)
-const showPersonalCenter = ref(false)
-const showUserMenu = ref(false)
 const hasPlayed = sessionStorage.getItem('hasPlayHomeAnimation') === 'true'
 const showEntryAnim = ref(!hasPlayed)
 const showInstantContent = ref(hasPlayed)
@@ -81,13 +79,6 @@ function handleLoginSuccess() {
   chat.fetchConversations()
 }
 function handleLoginCancel() { showLoginDialog.value = false }
-async function handleLogout() {
-  try {
-    await ElMessageBox.confirm('确定要退出登录吗？', '提示')
-    userStore.logout()
-    router.push('/')
-  } catch {}
-}
 function cancelStreaming() {
   currentSSE?.close()
   isStreaming.value = false
@@ -535,38 +526,8 @@ onUnmounted(() => {
           暂无对话
         </div>
       </div>
-
-      <!-- 底部用户 -->
-      <div v-if="isLoggedIn" class="sidebar-user-area">
-        <Transition name="menu-up">
-          <div v-if="showUserMenu" class="user-popup">
-            <div class="user-popup-item" @click="showUserMenu = false; handleLogout()">
-              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M3 3h6v2H5v10h4v2H3V3zm12.5 5H11V6h4.5L19 10l-3.5 4H11v-2h4.5L16 10l-1.5-2z"/></svg>
-              <span>退出登录</span>
-            </div>
-          </div>
-        </Transition>
-        <div class="sidebar-user" @click="showUserMenu = !showUserMenu">
-          <div class="su-avatar">
-            <span class="su-avatar-text">{{ (userStore.userInfo?.role_display || userStore.userInfo?.username || '?').charAt(0).toUpperCase() }}</span>
-          </div>
-          <div class="su-info">
-            <span class="su-name">{{ userStore.userInfo?.username || '' }}</span>
-            <span class="su-role">{{ userStore.userInfo?.role_display || '' }}</span>
-          </div>
-          <span class="su-status">已登录</span>
-        </div>
-      </div>
-      <div v-else class="sidebar-user" @click="showLoginDialog = true">
-        <div class="su-avatar">
-          <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
-            <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/>
-          </svg>
-        </div>
-        <span class="su-name">未登录</span>
-      </div>
+      <SidebarUser @login="showLoginDialog = true" />
     </aside>
-
     <!-- ═══ 右侧主区域 ═══ -->
     <div class="chat-main" :class="{ 'sidebar-collapsed': !sidebarOpen }">
       <!-- 顶部栏 -->
@@ -695,7 +656,6 @@ onUnmounted(() => {
     </div>
 
     <!-- ═══ 弹窗 ═══ -->
-    <PersonalCenter v-if="showPersonalCenter" @close="showPersonalCenter = false" />
     <ChatLoginDialog v-if="showLoginDialog" @success="handleLoginSuccess" @cancel="handleLoginCancel" />
 
     <!-- 语音预览弹窗 -->

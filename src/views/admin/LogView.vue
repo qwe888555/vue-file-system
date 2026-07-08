@@ -6,6 +6,12 @@ import LogList from '@/components/logs/loglist.vue'
 
 type TabType = 'dashboard' | 'upload' | 'query' | 'sensitive' | 'login' | 'operation'
 const activeTab = ref<TabType>('dashboard')
+const loadedTabs = ref<Set<string>>(new Set(['dashboard']))
+
+function onTabClick(key: TabType) {
+  activeTab.value = key
+  loadedTabs.value.add(key)
+}
 
 // ── Dashboard ──
 const dashboardData = ref<any>(null)
@@ -41,8 +47,8 @@ const logTabs = [
 
     <!-- 选项卡 -->
     <div class="log-tabs">
-      <button :class="{ active: activeTab === 'dashboard' }" @click="activeTab = 'dashboard'">概览</button>
-      <button v-for="tab in logTabs" :key="tab.key" :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key as TabType">{{ tab.label }}</button>
+      <button :class="{ active: activeTab === 'dashboard' }" @click="onTabClick('dashboard')">概览</button>
+      <button v-for="tab in logTabs" :key="tab.key" :class="{ active: activeTab === tab.key }" @click="onTabClick(tab.key as TabType)">{{ tab.label }}</button>
     </div>
 
     <!-- ══════ 概览 Dashboard ══════ -->
@@ -72,14 +78,15 @@ const logTabs = [
     </div>
 
     <!-- ══════ 各 Tab 内容 ══════ -->
-    <LogList
-      v-for="t in logTabs"
-      :key="t.key"
-      v-show="activeTab === t.key"
-      :tab="t.key"
-      :endpoint="t.endpoint"
-      :stats-endpoint="t.stats"
-    />
+    <template v-for="t in logTabs" :key="t.key">
+      <LogList
+        v-if="loadedTabs.has(t.key)"
+        v-show="activeTab === t.key"
+        :tab="t.key"
+        :endpoint="t.endpoint"
+        :stats-endpoint="t.stats"
+      />
+    </template>
   </div>
 </template>
 
