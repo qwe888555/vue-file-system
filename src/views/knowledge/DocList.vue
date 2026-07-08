@@ -210,31 +210,44 @@ async function handlePreviewDoc(id: number, title: string) {
     previewContent.value = ''
     previewFileUrl.value = ''
     
-    const { data: blob } = await downloadDocApi(id)
+    const result = await previewDocApi(id)
     
     const fileExtension = title.split('.').pop()?.toLowerCase() || ''
     
-    if (fileExtension === 'docx') {
-      try {
-        const arrayBuffer = await blob.arrayBuffer()
-        const result = await mammoth.convertToHtml({ arrayBuffer })
-        previewContent.value = result.value || '无法查看文件详细内容'
-      } catch (mammothError) {
-        console.error('mammoth解析失败:', mammothError)
+    if (result.content && result.content.startsWith('http')) {
+      if (fileExtension === 'pdf') {
+        previewFileUrl.value = result.content
+      } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExtension)) {
+        previewFileUrl.value = result.content
+      } else if (fileExtension === 'docx') {
+        try {
+          const response = await fetch(result.content)
+          const blob = await response.blob()
+          const arrayBuffer = await blob.arrayBuffer()
+          const mammothResult = await mammoth.convertToHtml({ arrayBuffer })
+          previewContent.value = mammothResult.value || '无法查看文件详细内容'
+        } catch (mammothError) {
+          console.error('mammoth解析失败:', mammothError)
+          previewContent.value = '无法查看文件详细内容'
+        }
+      } else if (fileExtension === 'txt') {
+        try {
+          const response = await fetch(result.content)
+          const text = await response.text()
+          previewContent.value = `<pre style="white-space: pre-wrap; word-break: break-word; max-height: 600px; overflow-y: auto;">${text || '无法查看文件详细内容'}</pre>`
+        } catch (error) {
+          console.error('获取文本内容失败:', error)
+          previewContent.value = '无法查看文件详细内容'
+        }
+      } else {
         previewContent.value = '无法查看文件详细内容'
       }
-    } else if (fileExtension === 'doc') {
-      previewContent.value = '无法查看文件详细内容'
-    } else if (fileExtension === 'pdf') {
-      previewFileUrl.value = URL.createObjectURL(blob)
-    } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExtension)) {
-      previewFileUrl.value = URL.createObjectURL(blob)
-    } else if (fileExtension === 'txt') {
-      const text = await blob.text()
-      previewContent.value = `<pre style="white-space: pre-wrap; word-break: break-word; max-height: 600px; overflow-y: auto;">${text || '无法查看文件详细内容'}</pre>`
-    } else if (fileExtension === 'md') {
-      const text = await blob.text()
-      previewContent.value = `<pre style="white-space: pre-wrap; word-break: break-word; max-height: 600px; overflow-y: auto;">${text || '无法查看文件详细内容'}</pre>`
+    } else if (result.content) {
+      if (result.preview_type === 'html' || result.file_type === 'pdf') {
+        previewContent.value = result.content
+      } else {
+        previewContent.value = `<pre style="white-space: pre-wrap; word-break: break-word; max-height: 600px; overflow-y: auto;">${result.content}</pre>`
+      }
     } else {
       previewContent.value = '无法查看文件详细内容'
     }
@@ -371,23 +384,15 @@ async function handleUploadSubmit() {
       for (let j = i + 1; j < selectedFiles.value.length; j++) {
         const item1 = selectedFiles.value[i]
         const item2 = selectedFiles.value[j]
-        if (
-          item1.title === item2.title &&
-          item1.keywords === item2.keywords &&
-          item1.description === item2.description
-        ) {
-          ElMessage.warning(`存在两个完全相同的文件（文件名：${item1.title}），请修改后再上传`)
+        if (item1.title === item2.title) {
+          ElMessage.warning(`存在两个文件名相同的文件（文件名：${item1.title}），请修改后再上传`)
           return
         }
       }
     }
 
     for (const item of selectedFiles.value) {
-      const existingFile = uploadedFiles.value.find(
-        f => f.title === item.title && 
-             f.summary === item.description &&
-             (f.keywords?.map(k => k.phrase).join(', ') || '') === item.keywords
-      )
+      const existingFile = uploadedFiles.value.find(f => f.title === item.title)
       if (existingFile) {
         ElMessage.warning(`文件 "${item.title}" 已存在，请勿重复上传`)
         return
@@ -416,9 +421,9 @@ async function handleUploadSubmit() {
           item.docId = result.id
           
           if (item.keywords) {
-            const itemKeywords = item.keywords.split(/[,，\s]+/).filter(kw => kw.trim())
+            const itemKeywords = [...new Set(item.keywords.split(/[,，、\s]+/).map(kw => kw.trim()).filter(kw => kw))]
             for (const kw of itemKeywords) {
-              await addKeywordApi(result.id, kw.trim())
+              await addKeywordApi(result.id, kw)
             }
           }
         }
