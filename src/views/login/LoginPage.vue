@@ -47,14 +47,10 @@ async function loadDingTalkQr() {
     if (!qrData) throw new Error('二维码生成失败')
     qrCodeDataUrl.value = qrData.startsWith('data:') ? qrData : 'data:image/svg+xml,' + encodeURIComponent(qrData)
 
-    // eslint-disable-next-line no-console
-    console.log('polling state:', state)
-    // 轮询登录状态
+    // 轮询登录状态（每秒一次，pending=等待扫码，completed=登录成功）
     pollTimer = setInterval(async () => {
       try {
         const statusData: any = await request.get('/auth/dingtalk/status/', { params: { state } })
-        // eslint-disable-next-line no-console
-        console.log('status response:', statusData)
         if (statusData.status === 'completed') {
           clearInterval(pollTimer); pollTimer = null
           loginSuccess.value = true
