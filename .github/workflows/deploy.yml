@@ -36,7 +36,7 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           password: ${{ secrets.SSH_PASSWORD }}
-          script: rm -rf ${{ secrets.PROJECT_PATH }}/assets/*
+          script: powershell "Remove-Item -Path '${{ secrets.PROJECT_PATH }}\assets\*' -Recurse -Force -ErrorAction SilentlyContinue"
 
       - name: Deploy to server via SCP
         uses: appleboy/scp-action@v0.1.7
