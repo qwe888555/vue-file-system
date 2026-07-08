@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, triggerRef } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search, Close } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search, Close, Plus, Check } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getDocDetailApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, downloadDocApi, batchDeleteDocsApi } from '@/api/knowledge'
+import mammoth from 'mammoth'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 
 const router = useRouter()
@@ -14,19 +15,35 @@ const showEditDialog = ref(false)
 const editingFile = ref<KnowledgeFile | null>(null)
 const loading = ref(false)
 
-const createMode = ref(true)
-const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string }[]>([])
+const createMode = ref(false)
+const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string; title: string; keywords: string; description: string; scope: 'public' | 'private' }[]>([])
+const selectedFileIndex = ref(0)
 const showCreateForm = ref(false)
 const showPreviewDialog = ref(false)
 const previewContent = ref('')
 const previewFileName = ref('')
+const previewFileUrl = ref('')
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+const showKeywordsDialog = ref(false)
+const keywordsDialogTitle = ref('')
+const allKeywords = ref<{ id: number; phrase: string }[]>([])
+
+const selectedDocIds = ref<number[]>([])
+
+const currentFileForm = computed(() => {
+  if (selectedFiles.value.length > 0 && selectedFiles.value[selectedFileIndex.value]) {
+    return selectedFiles.value[selectedFileIndex.value]
+  }
+  return null
+})
 
 const uploadForm = ref({
   title: '',
   keywords: '',
   description: '',
   content: '',
-  scope: 'public' as 'public' | 'private',
+  scope: 'public',
 })
 
 function resetUploadForm() {
@@ -42,31 +59,59 @@ function resetUploadForm() {
   }
 }
 
+async function extractTextFromFile(file: File): Promise<string> {
+  const ext = file.name.split('.').pop()?.toLowerCase()
+  
+  if (ext === 'docx') {
+    const arrayBuffer = await file.arrayBuffer()
+    const result = await mammoth.extractRawText({ arrayBuffer })
+    return result.value
+  } else if (['txt', 'md', 'json', 'xml', 'csv'].includes(ext || '')) {
+    return await file.text()
+  } else if (['doc', 'pdf'].includes(ext || '')) {
+    return `文件名: ${file.name}\n文件大小: ${file.size} bytes\n文件类型: ${ext}`
+  } else {
+    return `文件名: ${file.name}\n文件大小: ${file.size} bytes\n文件类型: ${ext}`
+  }
+}
+
 async function handleFileChange(file: File) {
-  selectedFiles.value.push({ file })
   const baseName = file.name.replace(/\.[^/.]+$/, '')
-  if (!uploadForm.value.title) {
-    uploadForm.value.title = baseName
+  const newFileItem = {
+    file,
+    title: baseName,
+    keywords: '',
+    description: '',
+    scope: 'public' as const,
   }
   
+  selectedFiles.value.push(newFileItem)
+  selectedFileIndex.value = selectedFiles.value.length - 1
+  
   try {
+    const content = await extractTextFromFile(file)
+    
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('content', content)
+    formData.append('filename', file.name)
     
     const result = await aiClassifyApi(formData)
     
-    if (result.title && !uploadForm.value.title) {
-      uploadForm.value.title = result.title
+    if (result.title) {
+      newFileItem.title = result.title
     }
     if (result.keywords && result.keywords.length > 0) {
-      uploadForm.value.keywords = result.keywords.join(', ')
+      newFileItem.keywords = result.keywords.join(', ')
     }
     if (result.description) {
-      uploadForm.value.description = result.description
+      newFileItem.description = result.description
     }
     if (result.scope) {
-      uploadForm.value.scope = result.scope === 'school' ? 'public' : 'private'
+      newFileItem.scope = result.scope === 'school' ? 'public' : 'private'
     }
+    
+    triggerRef(selectedFiles)
   } catch (error) {
     console.error('AI分类失败:', error)
   }
@@ -77,58 +122,50 @@ function handleRemove(item: { file: File; docId?: number; previewContent?: strin
   if (index > -1) {
     selectedFiles.value.splice(index, 1)
   }
+  
+  if (selectedFiles.value.length === 0) {
+    selectedFileIndex.value = 0
+  } else if (selectedFileIndex.value >= selectedFiles.value.length) {
+    selectedFileIndex.value = selectedFiles.value.length - 1
+  }
 }
 
 async function handlePreviewFile(item: { file: File; docId?: number; previewContent?: string }) {
   previewFileName.value = item.file.name
-  
-  if (item.docId && item.previewContent) {
-    previewContent.value = item.previewContent
-    showPreviewDialog.value = true
-    return
-  }
-  
-  if (item.docId) {
-    try {
-      const result = await previewDocApi(item.docId)
-      item.previewContent = result.content || '无法预览此文件内容'
-      previewContent.value = item.previewContent
-      showPreviewDialog.value = true
-      return
-    } catch (error) {
-      console.error('预览文件失败:', error)
-    }
-  }
+  previewContent.value = ''
+  previewFileUrl.value = ''
   
   const ext = item.file.name.split('.').pop()?.toLowerCase()
-  if (['pdf', 'doc', 'docx'].includes(ext || '')) {
-    ElMessage.info('正在上传文件以获取预览内容...')
+  
+  if (ext === 'docx') {
     try {
-      const fileName = item.file.name.replace(/\.[^/.]+$/, '')
-      const formData = new FormData()
-      formData.append('file', item.file)
-      formData.append('title', uploadForm.value.title || fileName)
-      if (uploadForm.value.description) {
-        formData.append('description', uploadForm.value.description)
-      }
-      formData.append('scope', uploadForm.value.scope === 'public' ? 'school' : 'college')
-      
-      const result = await uploadFileApi(formData)
-      
-      if (result.id) {
-        item.docId = result.id
-        
-        const previewResult = await previewDocApi(result.id)
-        item.previewContent = previewResult.content || '无法预览此文件内容'
-        previewContent.value = item.previewContent
-        showPreviewDialog.value = true
-      } else {
-        previewContent.value = '文件上传成功，但无法获取文档ID进行预览。'
-        showPreviewDialog.value = true
-      }
+      const arrayBuffer = await item.file.arrayBuffer()
+      const result = await mammoth.extractRawText({ arrayBuffer })
+      previewContent.value = `<pre style="white-space: pre-wrap; word-break: break-word; max-height: 600px; overflow-y: auto;">${result.value}</pre>`
+      showPreviewDialog.value = true
     } catch (error) {
-      console.error('上传文件失败:', error)
-      previewContent.value = '文件上传失败，无法预览。'
+      console.error('预览Word文档失败:', error)
+      previewContent.value = '<div style="text-align: center; padding: 40px;">浏览器无法直接预览此文件。请下载文件后使用Word等文档软件打开查看。</div>'
+      showPreviewDialog.value = true
+    }
+  } else if (ext === 'pdf') {
+    if (item.docId) {
+      try {
+        const result = await previewDocApi(item.docId)
+        if (result.preview_type === 'url') {
+          previewFileUrl.value = result.content
+          showPreviewDialog.value = true
+        } else {
+          previewContent.value = '<div style="text-align: center; padding: 40px;">浏览器无法直接预览此文件。请下载文件后使用PDF阅读器打开查看。</div>'
+          showPreviewDialog.value = true
+        }
+      } catch (error) {
+        console.error('预览文件失败:', error)
+        previewContent.value = '<div style="text-align: center; padding: 40px;">预览失败，请重试。</div>'
+        showPreviewDialog.value = true
+      }
+    } else {
+      previewContent.value = '<div style="text-align: center; padding: 40px;">PDF文件需要先上传才能预览。</div>'
       showPreviewDialog.value = true
     }
   } else if (['jpg', 'jpeg', 'png', 'gif'].includes(ext || '')) {
@@ -139,27 +176,75 @@ async function handlePreviewFile(item: { file: File; docId?: number; previewCont
       showPreviewDialog.value = true
     }
     reader.readAsDataURL(item.file)
-  } else {
+  } else if (['txt', 'md', 'json', 'xml', 'csv'].includes(ext || '')) {
     const reader = new FileReader()
     reader.onload = (e) => {
       const content = e.target?.result as string
-      previewContent.value = content
+      previewContent.value = `<pre style="white-space: pre-wrap; word-break: break-word; max-height: 600px; overflow-y: auto;">${content}</pre>`
       showPreviewDialog.value = true
     }
     reader.readAsText(item.file)
+  } else {
+    previewContent.value = '<div style="text-align: center; padding: 40px;">浏览器无法直接预览此文件格式。请下载文件后使用相应软件打开查看。</div>'
+    showPreviewDialog.value = true
   }
+}
+
+function triggerFileSelect() {
+  fileInputRef.value?.click()
+}
+
+function handleFileInputChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (input.files) {
+    Array.from(input.files).forEach(file => {
+      handleFileChange(file)
+    })
+  }
+  input.value = ''
 }
 
 async function handlePreviewDoc(id: number, title: string) {
   try {
     previewFileName.value = title
-    const result = await previewDocApi(id)
-    previewContent.value = result.content || '无法预览此文件内容'
+    
+    const { data: blob } = await downloadDocApi(id)
+    
+    const fileName = title
+    const fileExtension = fileName.split('.').pop()?.toLowerCase() || ''
+    
+    if (fileExtension === 'docx') {
+      try {
+        const arrayBuffer = await blob.arrayBuffer()
+        const result = await mammoth.extractRawText({ arrayBuffer })
+        previewContent.value = result.value || '无法查看文件详细内容'
+      } catch (mammothError) {
+        console.error('mammoth解析失败:', mammothError)
+        previewContent.value = '无法查看文件详细内容'
+      }
+    } else if (fileExtension === 'doc') {
+      previewContent.value = '无法查看文件详细内容'
+    } else if (fileExtension === 'txt') {
+      const text = await blob.text()
+      previewContent.value = text || '无法查看文件详细内容'
+    } else if (fileExtension === 'pdf') {
+      const url = URL.createObjectURL(blob)
+      previewContent.value = `<iframe src="${url}" style="width: 100%; height: 600px; border: none;" />`
+    } else {
+      previewContent.value = '无法查看文件详细内容'
+    }
+    
     showPreviewDialog.value = true
   } catch (error) {
-    console.error('预览文件失败:', error)
-    ElMessage.error('预览文件失败')
+    console.error('获取文件详情失败:', error)
+    ElMessage.error('获取文件详情失败')
   }
+}
+
+function showAllKeywords(keywords: { id: number; phrase: string }[], title: string) {
+  keywordsDialogTitle.value = title
+  allKeywords.value = keywords
+  showKeywordsDialog.value = true
 }
 
 async function handleConfirmInfo() {
@@ -169,13 +254,7 @@ async function handleConfirmInfo() {
   }
 
   try {
-    const blob = new Blob([uploadForm.value.content], { type: 'text/plain' })
-    const file = new File([blob], 'content.txt', { type: 'text/plain' })
-    
-    const formData = new FormData()
-    formData.append('file', file)
-    
-    const result = await aiClassifyApi(formData)
+    const result = await aiClassifyApi({ content: uploadForm.value.content })
     
     if (result.title) {
       uploadForm.value.title = result.title
@@ -265,14 +344,15 @@ async function handleUploadSubmit() {
         
         const formData = new FormData()
         formData.append('file', file)
-        formData.append('title', uploadForm.value.title || fileName)
-        if (uploadForm.value.description) {
-          formData.append('description', uploadForm.value.description)
+        formData.append('title', item.title || fileName)
+        if (item.description) {
+          formData.append('description', item.description)
         }
-        formData.append('scope', uploadForm.value.scope === 'public' ? 'school' : 'college')
-        if (keywords.length > 0) {
-          keywords.forEach(kw => {
-            formData.append('keywords', kw)
+        formData.append('scope', item.scope === 'public' ? 'school' : 'college')
+        if (item.keywords) {
+          const itemKeywords = item.keywords.split(/[,，\s]+/).filter(kw => kw.trim())
+          itemKeywords.forEach(kw => {
+            formData.append('keywords', kw.trim())
           })
         }
 
@@ -300,6 +380,7 @@ const totalFiles = ref(0)
 
 const uploadedFiles = ref<KnowledgeFile[]>([])
 const keywordsCache = new Map<number, Keyword[]>()
+const loadingKeywords = new Set<number>()
 
 async function fetchFiles() {
   loading.value = true
@@ -312,31 +393,13 @@ async function fetchFiles() {
     const data = res.results || res.data || res
     const newFiles = Array.isArray(data) ? data : []
     
-    const promises = newFiles.map(async (file) => {
+    newFiles.forEach((file) => {
       if (keywordsCache.has(file.id)) {
         file.keywords = keywordsCache.get(file.id)!
       } else {
-        try {
-          const keywords = await getKeywordsApi(file.id)
-          let keywordList: Keyword[] = []
-          if (Array.isArray(keywords)) {
-            keywordList = keywords.map((kw: any) => ({
-              id: kw.id,
-              phrase: kw.phrase || kw.keyword || kw.name || '',
-              match_type: kw.match_type || 'exact',
-              weight: kw.weight || 1,
-            })).filter((kw: Keyword) => kw.phrase)
-          }
-          keywordsCache.set(file.id, keywordList)
-          file.keywords = keywordList
-        } catch (error) {
-          console.error(`获取文件 ${file.title} 的关键词失败:`, error)
-          file.keywords = []
-        }
+        file.keywords = []
       }
     })
-    
-    await Promise.all(promises)
     
     if (newFiles.length === 0) {
       if (currentPage.value === 1) {
@@ -357,6 +420,8 @@ async function fetchFiles() {
         totalFiles.value = backendTotal || (currentPage.value * pageSize.value)
       }
     }
+    
+    await loadKeywordsForFiles(newFiles)
   } catch (error: any) {
     console.error('获取文件列表失败:', error)
     if (error.response?.status === 404 && currentPage.value > 1) {
@@ -368,6 +433,54 @@ async function fetchFiles() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadKeywordsForFiles(files: KnowledgeFile[]) {
+  const filesToLoad = files.filter(f => !keywordsCache.has(f.id) && !loadingKeywords.has(f.id))
+  
+  const semaphore = 3
+  let activeCount = 0
+  let index = 0
+  
+  async function loadNext() {
+    while (index < filesToLoad.length) {
+      if (activeCount >= semaphore) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+        continue
+      }
+      
+      const file = filesToLoad[index++]
+      activeCount++
+      loadingKeywords.add(file.id)
+      
+      try {
+        const keywords = await getKeywordsApi(file.id)
+        let keywordList: Keyword[] = []
+        if (Array.isArray(keywords)) {
+          keywordList = keywords.map((kw: any) => ({
+            id: kw.id,
+            phrase: kw.phrase || kw.keyword || kw.name || '',
+            match_type: kw.match_type || 'exact',
+            weight: kw.weight || 1,
+          })).filter((kw: Keyword) => kw.phrase)
+        }
+        keywordsCache.set(file.id, keywordList)
+        
+        const fileIndex = uploadedFiles.value.findIndex(f => f.id === file.id)
+        if (fileIndex > -1) {
+          uploadedFiles.value[fileIndex].keywords = keywordList
+          triggerRef(uploadedFiles)
+        }
+      } catch (error) {
+        console.error(`获取文件 ${file.title} 的关键词失败:`, error)
+      } finally {
+        loadingKeywords.delete(file.id)
+        activeCount--
+      }
+    }
+  }
+  
+  await loadNext()
 }
 
 onMounted(() => {
@@ -447,6 +560,70 @@ function handleEdit(file: KnowledgeFile) {
   showEditDialog.value = true
 }
 
+async function handleDownload(file: KnowledgeFile) {
+  try {
+    const { data: blob } = await downloadDocApi(file.id)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    
+    const extMap: Record<string, string> = {
+      doc: '.doc',
+      docx: '.docx',
+      pdf: '.pdf',
+      txt: '.txt',
+      md: '.md',
+      image: '.jpg',
+      audio: '.mp3',
+      video: '.mp4',
+      archive: '.zip',
+    }
+    const ext = extMap[file.fileType] || ''
+    const fileName = file.title && !file.title.includes('.') 
+      ? `${file.title}${ext}` 
+      : (file.title || `文件${file.id}${ext}`)
+    
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    ElMessage.success('下载成功')
+  } catch (error) {
+    console.error('下载文件失败:', error)
+    ElMessage.error('下载文件失败')
+  }
+}
+
+async function handleBatchDelete() {
+  if (selectedDocIds.value.length === 0) {
+    ElMessage.warning('请选择要删除的文件')
+    return
+  }
+  
+  ElMessageBox.confirm(`确定要删除选中的 ${selectedDocIds.value.length} 个文件吗？`, '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning',
+  })
+    .then(async () => {
+      try {
+        await batchDeleteDocsApi(selectedDocIds.value)
+        ElMessage.success('批量删除成功')
+        selectedDocIds.value = []
+        fetchFiles()
+      } catch (error) {
+        console.error('批量删除失败:', error)
+        ElMessage.error('批量删除失败')
+      }
+    })
+    .catch(() => {})
+}
+
+function handleSelectionChange(val: KnowledgeFile[]) {
+  selectedDocIds.value = val.map(item => item.id)
+}
+
 function handleEditSubmit(data: { title: string; keywords: Keyword[] }) {
   if (editingFile.value) {
     editingFile.value.title = data.title
@@ -506,8 +683,8 @@ function saveFiles(files: KnowledgeFile[]) {
         <div class="upload-header">
           <div class="mode-switch-wrapper">
             <el-radio-group v-model="createMode">
-              <el-radio :value="true">创建文件</el-radio>
               <el-radio :value="false">上传文件</el-radio>
+              <el-radio :value="true">创建文件</el-radio>
             </el-radio-group>
           </div>
         </div>
@@ -536,8 +713,14 @@ function saveFiles(files: KnowledgeFile[]) {
                 v-for="(item, index) in selectedFiles"
                 :key="index"
                 class="file-preview-item"
-                @click="handlePreviewFile(item)"
+                :class="{ 'selected': selectedFileIndex === index }"
+                @click="selectedFileIndex = index"
               >
+                <div class="file-selection-indicator" :class="{ 'selected': selectedFileIndex === index }">
+                  <el-icon v-if="selectedFileIndex === index" :size="14">
+                    <Check />
+                  </el-icon>
+                </div>
                 <el-icon :size="32" class="preview-file-icon">
                   <Document />
                 </el-icon>
@@ -562,14 +745,33 @@ function saveFiles(files: KnowledgeFile[]) {
                   </el-icon>
                 </div>
               </div>
+              <div
+                class="file-preview-item add-file-item"
+                @click="triggerFileSelect"
+              >
+                <el-icon :size="32" class="add-file-icon">
+                  <Plus />
+                </el-icon>
+                <div class="preview-file-info">
+                  <span class="preview-file-name">添加文件</span>
+                </div>
+              </div>
+              <input
+                ref="fileInputRef"
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx,.txt,.jpg,.png,.gif,.mp3,.wav,.mp4,.avi,.mkv,.zip,.rar"
+                style="display: none"
+                @change="handleFileInputChange"
+              />
             </div>
           </div>
 
-          <div class="upload-content-right">
+          <div class="upload-content-right" v-if="currentFileForm">
             <div class="form-item">
               <label class="form-label">文件名</label>
               <el-input
-                v-model="uploadForm.title"
+                v-model="currentFileForm.title"
                 placeholder="请输入文件名"
                 class="form-input"
               />
@@ -577,14 +779,14 @@ function saveFiles(files: KnowledgeFile[]) {
             <div class="form-item">
               <label class="form-label">关键词</label>
               <el-input
-                v-model="uploadForm.keywords"
+                v-model="currentFileForm.keywords"
                 placeholder="关键词，用逗号或空格分隔"
                 class="form-input"
               />
             </div>
             <div class="form-item">
               <label class="form-label">公开/私密</label>
-              <el-radio-group v-model="uploadForm.scope" class="scope-group">
+              <el-radio-group v-model="currentFileForm.scope" class="scope-group">
                 <el-radio label="public">公开</el-radio>
                 <el-radio label="private">私密</el-radio>
               </el-radio-group>
@@ -592,7 +794,7 @@ function saveFiles(files: KnowledgeFile[]) {
             <div class="form-item">
               <label class="form-label">文件描述</label>
               <el-input
-                v-model="uploadForm.description"
+                v-model="currentFileForm.description"
                 type="textarea"
                 :rows="3"
                 placeholder="文件描述..."
@@ -610,8 +812,8 @@ function saveFiles(files: KnowledgeFile[]) {
         <div class="create-header">
           <div class="mode-switch-wrapper">
             <el-radio-group v-model="createMode" @change="showCreateForm = false">
-              <el-radio :value="true">创建文件</el-radio>
               <el-radio :value="false">上传文件</el-radio>
+              <el-radio :value="true">创建文件</el-radio>
             </el-radio-group>
           </div>
         </div>
@@ -690,19 +892,31 @@ function saveFiles(files: KnowledgeFile[]) {
         <p>暂无文件，请上传</p>
       </div>
 
+      <div v-if="selectedDocIds.length > 0" class="batch-actions">
+        <el-button type="danger" size="small" @click="handleBatchDelete">
+          批量删除 ({{ selectedDocIds.length }})
+        </el-button>
+      </div>
+
       <el-table
-        v-else
         :data="paginatedFiles"
         border
         stripe
         :loading="loading"
         class="file-table"
-        @row-click="handleFileClick"
+        @selection-change="handleSelectionChange"
       >
+        <el-table-column type="selection" width="55" align="center" />
+        
         <el-table-column prop="title" label="文件名" min-width="200" show-overflow-tooltip>
           <template #default="scope">
             <div class="file-name-cell">
-              <el-icon :size="18" :color="fileTypeColors[scope.row.fileType] || '#409eff'" class="file-icon">
+              <el-icon 
+                :size="18" 
+                :color="fileTypeColors[scope.row.fileType] || '#409eff'" 
+                class="file-icon cursor-pointer"
+                @click="handlePreviewDoc(scope.row.id, scope.row.title)"
+              >
                 <component :is="fileTypeIcons[scope.row.fileType] || 'Document'" />
               </el-icon>
               <span class="file-title">{{ scope.row.title }}</span>
@@ -730,7 +944,10 @@ function saveFiles(files: KnowledgeFile[]) {
 
         <el-table-column prop="keywords" label="关键词" min-width="150">
           <template #default="scope">
-            <div class="keywords-cell">
+            <div 
+              class="keywords-cell cursor-pointer"
+              @click="showAllKeywords(scope.row.keywords || [], scope.row.title)"
+            >
               <el-tag
                 v-for="kw in (scope.row.keywords || []).slice(0, 3)"
                 :key="kw.id"
@@ -742,13 +959,8 @@ function saveFiles(files: KnowledgeFile[]) {
               <span v-if="(scope.row.keywords || []).length > 3" class="more-keywords">
                 +{{ (scope.row.keywords || []).length - 3 }}
               </span>
+              <span v-if="(scope.row.keywords || []).length > 0" class="click-hint">点击查看全部</span>
             </div>
-          </template>
-        </el-table-column>
-
-        <el-table-column prop="fileSize" label="大小" width="100" align="center">
-          <template #default="scope">
-            {{ formatFileSize(scope.row.fileSize) }}
           </template>
         </el-table-column>
 
@@ -758,8 +970,11 @@ function saveFiles(files: KnowledgeFile[]) {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="120" align="center" fixed="right">
+        <el-table-column label="操作" width="180" align="center" fixed="right">
           <template #default="scope">
+            <el-button size="small" @click.stop="handleDownload(scope.row)" type="primary" link>
+              下载
+            </el-button>
             <el-button size="small" @click.stop="handleEdit(scope.row)" type="primary" link>
               编辑
             </el-button>
@@ -799,10 +1014,35 @@ function saveFiles(files: KnowledgeFile[]) {
       top="5vh"
     >
       <div class="preview-content">
-        <div v-html="previewContent" class="preview-text"></div>
+        <iframe v-if="previewFileUrl" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
+        <div v-else v-html="previewContent" class="preview-text"></div>
       </div>
       <template #footer>
         <el-button @click="showPreviewDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="showKeywordsDialog"
+      :title="keywordsDialogTitle + ' - 全部关键词'"
+      width="400px"
+      top="30vh"
+    >
+      <div class="keywords-list">
+        <el-tag
+          v-for="kw in allKeywords"
+          :key="kw.id"
+          size="medium"
+          class="keyword-tag-large"
+        >
+          {{ kw.phrase }}
+        </el-tag>
+        <div v-if="allKeywords.length === 0" class="no-keywords">
+          暂无关键词
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showKeywordsDialog = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>
@@ -895,8 +1135,9 @@ function saveFiles(files: KnowledgeFile[]) {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+  padding: 0;
+  min-height: 650px;
+  background: transparent;
 }
 
 .upload-content {
@@ -1064,7 +1305,17 @@ function saveFiles(files: KnowledgeFile[]) {
 
 .upload-dragger {
   width: 100%;
+  height: 650px;
+  border-radius: 12px;
+}
+
+.upload-dragger .el-upload-dragger {
+  width: 100%;
   height: 100%;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .upload-file-count {
@@ -1182,6 +1433,17 @@ function saveFiles(files: KnowledgeFile[]) {
   width: 100%;
 }
 
+.batch-actions {
+  margin-bottom: 12px;
+  padding: 12px;
+  background: #fff5f5;
+  border: 1px solid #ffccc7;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .file-table :deep(.el-table__header) {
   background: var(--color-bg);
 }
@@ -1238,6 +1500,36 @@ function saveFiles(files: KnowledgeFile[]) {
 .more-keywords {
   font-size: 12px;
   color: var(--color-text-secondary);
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.click-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 4px;
+}
+
+.keywords-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 0;
+}
+
+.keyword-tag-large {
+  background: #f0f5ff;
+  color: #409eff;
+  border-color: #d6e4ff;
+  margin-bottom: 4px;
+}
+
+.no-keywords {
+  text-align: center;
+  color: #909399;
+  padding: 20px;
 }
 
 .pagination-wrapper {

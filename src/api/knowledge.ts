@@ -27,8 +27,10 @@ export function getDocListApi(params: {
 }
 
 /** 文档详情 */
-export function getDocDetailApi(id: number): Promise<KnowledgeFile> {
-  return request.get(`/knowledge/docs/${id}/`)
+export function getDocDetailApi(id: number): Promise<Blob> {
+  return request.get(`/knowledge/docs/${id}/`, {
+    responseType: 'blob'
+  })
 }
 
 /** 上传文档（含元数据） */
@@ -104,6 +106,11 @@ export function deleteDocApi(id: number): Promise<void> {
   return request.delete(`/knowledge/docs/${id}/delete/`)
 }
 
+/** 批量删除文档 */
+export function batchDeleteDocsApi(ids: number[]): Promise<void> {
+  return request.post('/knowledge/docs/batch/', { ids })
+}
+
 /** AI提取发布日期 */
 export function extractFreshnessApi(id: number): Promise<{ freshness: string }> {
   return request.post(`/knowledge/docs/${id}/extract-freshness/`)
@@ -118,7 +125,12 @@ export function downloadDocApi(id: number): Promise<{ data: Blob; headers: any }
 }
 
 /** 文件预览 */
-export function previewDocApi(id: number): Promise<{ content: string; content_type: string }> {
+export function previewDocApi(id: number): Promise<{
+  preview_type: string
+  content: string
+  file_type: string
+  file_name: string
+}> {
   return request.get(`/knowledge/docs/${id}/preview/`)
 }
 
@@ -184,17 +196,21 @@ export function getCategoryTreeApi(): Promise<any[]> {
 }
 
 /** AI智能分类 */
-export function aiClassifyApi(formData: FormData): Promise<{
+export function aiClassifyApi(data: FormData | { content: string }): Promise<{
   title: string
   keywords: string[]
   description: string
   scope: string
 }> {
-  return request.post('/knowledge/upload/ai-classify/', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    transformRequest: (data, headers) => {
-      delete headers['Content-Type']
-      return data
-    },
-  })
+  if (data instanceof FormData) {
+    return request.post('/knowledge/upload/ai-classify/', data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      transformRequest: (data, headers) => {
+        delete headers['Content-Type']
+        return data
+      },
+    })
+  } else {
+    return request.post('/knowledge/upload/ai-classify/', data)
+  }
 }
