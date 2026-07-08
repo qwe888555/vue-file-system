@@ -1,7 +1,7 @@
 <template>
   <!-- 编辑超级管理员时禁用所有操作 -->
-  <div v-if="isEdit && form.role === 'super_admin'" style="text-align:center;padding:24px 0;color:#909399;">
-    超级管理员账号不可编辑
+  <div v-if="isEdit && form.role === 'super_admin'" class="superadmin-hint">
+    超级管理员的账号不可编辑
   </div>
   <template v-if="!(isEdit && form.role === 'super_admin')">
   <el-form-item
@@ -131,6 +131,10 @@ const orgRules = computed(() => {
 </script>
 
 <style scoped>
+.superadmin-hint {
+  text-align: center; padding: 24px 0; color: #909399;
+}
+
 :deep(.el-form-item) {
   margin-bottom: 22px;
 }

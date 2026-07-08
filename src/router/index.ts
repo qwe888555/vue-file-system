@@ -28,19 +28,34 @@ const router = createRouter({
   routes,
 })
 
+// ── 移动端检测 ──
+function isMobileDevice(): boolean {
+  // 屏幕宽度 < 768px 视为移动端
+  if (typeof window !== 'undefined' && window.innerWidth < 768) return true
+  // userAgent 检测
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent.toLowerCase() : ''
+  return /mobile|android|iphone|ipad|phone/i.test(ua)
+}
+
 // ── 路由守卫：权限拦截 + 登录校验 ──
 router.beforeEach(async (to, _from, next) => {
   const userStore = useUserStore()
 
-  // 白名单：登录页、异常页（硬编码 /login 防止路由死循环）
-  if (to.path === '/login' || to.meta.hidden) {
+  // 移动端自动跳转到移动端页面
+  if (isMobileDevice() && !to.path.startsWith('/mobile')) {
+    next('/mobile/chat')
+    return
+  }
+
+  // 白名单：首页、异常页（首页 meta.hidden 由 common.ts 标记）
+  if (to.meta.hidden) {
     next()
     return
   }
 
-  // 未登录 → 跳登录页
+  // 未登录 → 跳首页（嵌入式登录）
   if (!userStore.token) {
-    next({ path: '/login' })
+    next({ path: '/' })
     return
   }
 
@@ -50,14 +65,14 @@ router.beforeEach(async (to, _from, next) => {
       await userStore.getUserInfo()
     } catch {
       userStore.logout()
-      next({ path: '/login' })
+      next({ path: '/' })
       return
     }
   }
 
   let currentRole = userStore.role
   if (!currentRole) {
-    next({ path: '/login' })
+    next({ path: '/' })
     return
   }
 

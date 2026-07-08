@@ -12,8 +12,7 @@
         placeholder="搜索问题..."
         clearable
         size="default"
-        class="faq-search-input"
-        style="max-width: 300px"
+        class="faq-search-input kw"
         @input="handleSearch"
         @clear="handleSearch"
       >
@@ -186,37 +185,50 @@ const filteredItems = computed(() => {
   padding: var(--spacing-lg, 16px);
 }
 
+/* ── 头部（匹配 FaqManage 页） ── */
+.faq-header { margin-bottom: 24px; }
+.faq-header-title {
+  font-size: 24px; font-weight: 700; color: #0f172a;
+  margin: 0 0 4px; letter-spacing: -0.02em;
+}
+.faq-header-desc { font-size: 14px; color: #94a3b8; margin: 0; }
 
-/* ── 头部 ── */
-.faq-header { margin-bottom: 18px; }
-.faq-header-title { font-size: 22px; font-weight: 700; color: #1a2332; margin: 0 0 4px; }
-.faq-header-desc { font-size: 14px; color: #8e95a6; margin: 0; }
-
-/* ── 搜索 ── */
+/* ── 搜索框（匹配 .fi 风格） ── */
 .faq-search { margin-bottom: 20px; }
 .faq-search-input :deep(.el-input__wrapper) {
-  border-radius: 12px; padding: 4px 16px;
-  box-shadow: 0 0 0 1px #e4e9f0 inset !important;
-  background: #f8fafc !important; transition: all 0.25s ease;
+  border-radius: 4px !important;
+  box-shadow: 0 0 0 1px #e2e8f0 !important;
+  background: #fff !important;
+  transition: box-shadow 0.2s ease;
+}
+.faq-search-input :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #cbd5e1 !important;
 }
 .faq-search-input :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 2px rgba(43, 95, 217, 0.18) inset !important;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
   background: #fff !important;
 }
-.faq-search-input :deep(.el-input__inner) { height: 42px; font-size: 14px; }
-.search-icon { color: #b0b8c8; font-size: 16px; }
-
-/* ── 分类 pills ── */
-.faq-categories { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
-.category-pill {
-  padding: 6px 18px; border-radius: 20px; font-size: 13px; font-weight: 500;
-  color: #5a6070; background: #f0f2f5; cursor: pointer;
-  transition: all 0.25s ease; user-select: none; line-height: 1.6;
+.faq-search-input :deep(.el-input__inner) {
+  height: 34px; font-size: 13px; color: #0f172a;
 }
-.category-pill:hover { background: #e4e9f0; color: #1a2332; }
+:deep(.kw) { width: 300px; max-width: 100%; }
+.search-icon { color: #94a3b8; font-size: 16px; }
+
+/* ── 分类 Pills（匹配 FaqManage .fm-tabs） ── */
+.faq-categories {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 20px;
+  background: #f1f5f9; border-radius: 12px; padding: 4px;
+}
+.category-pill {
+  padding: 7px 18px; border: none; border-radius: 9px;
+  font-size: 13px; font-weight: 500; color: #64748b;
+  background: transparent; cursor: pointer; user-select: none;
+  transition: all 0.2s ease; line-height: 1.6;
+}
+.category-pill:hover { color: #334155; }
 .category-pill.active {
-  background: #2b5fd9; color: #fff;
-  box-shadow: 0 2px 10px rgba(43, 95, 217, 0.25);
+  background: #fff; color: #2563eb; font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
 /* ── FAQ 卡片 ── */
@@ -229,7 +241,6 @@ const filteredItems = computed(() => {
 }
 .faq-card:hover {
   border-color: #d5dbe8; box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-  transform: translateY(-1px);
 }
 .faq-card.expanded { border-color: #d5dbe8; box-shadow: 0 4px 20px rgba(0,0,0,0.07); }
 
@@ -240,13 +251,13 @@ const filteredItems = computed(() => {
 
 .faq-q-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .faq-q-text { font-size: 14.5px; font-weight: 500; color: #1a2332; line-height: 1.4; }
-.faq-q-meta { font-size: 12px; color: #b0b8c8; line-height: 1.3; }
+.faq-q-meta { font-size: 12px; color: #94a3b8; line-height: 1.3; }
 
 .faq-arrow {
   width: 20px; height: 20px; min-width: 20px; color: #c8cdd6;
   transition: transform 0.3s ease; flex-shrink: 0;
 }
-.faq-arrow.rotated { transform: rotate(180deg); color: #8e95a6; }
+.faq-arrow.rotated { transform: rotate(180deg); color: #64748b; }
 
 /* ── 答案 ── */
 .faq-answer-wrap {
@@ -268,17 +279,16 @@ const filteredItems = computed(() => {
   padding: 3px 10px; border-radius: 12px; font-size: 12px;
   color: #6b7280; background: #f0f2f5; cursor: pointer; transition: all 0.2s; line-height: 1.5;
 }
-.faq-tag:hover { background: #e4e9f0; color: #2b5fd9; }
+.faq-tag:hover { background: #e4e9f0; color: #2563eb; }
 
 /* ── 空态 ── */
 .faq-empty { text-align: center; padding: 60px 0; }
 .faq-empty-icon { width: 48px; height: 48px; margin: 0 auto 12px; color: #c8cdd6; }
-.faq-empty-text { font-size: 14px; color: #8e95a6; margin: 0; }
+.faq-empty-text { font-size: 14px; color: #94a3b8; margin: 0; }
 
-/* ── 分页 ── */
-.faq-pagination { display: flex; justify-content: flex-start; margin-top: 20px; }
+/* ── 分页（居中，匹配 FaqManage） ── */
+.faq-pagination { display: flex; justify-content: center; margin-top: 20px; }
 
-/* ── 响应式 ── */
 @media (max-width: 768px) {
   .faq-list { grid-template-columns: 1fr; }
 }

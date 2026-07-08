@@ -9,12 +9,6 @@ const authRoutes: RouteRecordRaw[] = [
     meta: { title: 'NISU-CD 资源系统', hidden: true },
   },
   {
-    path: '/login',
-    name: 'Login',
-    component: () => import('@/views/login/LoginPage.vue'),
-    meta: { title: '登录', hidden: true },
-  },
-  {
     path: '/403',
     name: 'Forbidden',
     component: () => import('@/components/common/Error403.vue'),

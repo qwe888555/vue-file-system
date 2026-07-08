@@ -108,7 +108,7 @@ async function handleLogout() {
         <span class="su-status">已登录</span>
       </div>
     </div>
-    <div v-else class="sidebar-user" @click="router.push('/login')">
+    <div v-else class="sidebar-user" @click="router.push('/')">
       <div class="su-avatar">
         <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
           <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/>
