@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // ── 独立登录页（JWT + SSO） ──
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
 import { ssoLoginUrl, ssoCallbackApi, dingtalkQrApi } from '@/api/auth'
 import { setAccessToken, setRefreshToken } from '@/api/request'
+import request from '@/api/request'
 import QRCode from 'qrcode'
 
 const router = useRouter()
@@ -22,21 +23,63 @@ const loginMode = ref<'account' | 'qrcode'>('account')
 const qrCodeDataUrl = ref('')
 const qrLoading = ref(false)
 const qrError = ref('')
+const loginSuccess = ref(false)
 
-// 生成钉钉二维码
+// 钉钉扫码登录（v6.0 轮询方案）
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
 async function loadDingTalkQr() {
   qrLoading.value = true
   qrError.value = ''
   qrCodeDataUrl.value = ''
+  loginSuccess.value = false
   try {
     const redirectUri = 'https://visibly-sloppy-dairy.ngrok-free.dev/api/auth/dingtalk/redirect/'
     const res = await dingtalkQrApi(redirectUri)
     if (!res.auth_url) throw new Error('后端返回异常，请确认 Django 服务已启动')
+
+    // 后端 /qr/ 接口直接返回 state，用于轮询（钉钉回调带同一个 state）
+    const state = res.state || new URL(res.auth_url).searchParams.get('state')
+    if (!state) throw new Error('获取 state 失败')
     const qrData = await QRCode.toDataURL(res.auth_url, { width: 240, margin: 1, color: { dark: '#1e293b', light: '#f8fafc' } })
       .catch(() => QRCode.toString(res.auth_url, { type: 'svg', width: 240 }))
       .catch(() => null)
     if (!qrData) throw new Error('二维码生成失败')
     qrCodeDataUrl.value = qrData.startsWith('data:') ? qrData : 'data:image/svg+xml,' + encodeURIComponent(qrData)
+
+    // eslint-disable-next-line no-console
+    console.log('polling state:', state)
+    // 轮询登录状态
+    pollTimer = setInterval(async () => {
+      try {
+        const statusData: any = await request.get('/auth/dingtalk/status/', { params: { state } })
+        // eslint-disable-next-line no-console
+        console.log('status response:', statusData)
+        if (statusData.status === 'completed') {
+          clearInterval(pollTimer); pollTimer = null
+          loginSuccess.value = true
+          // 存 token 到当前浏览器
+          localStorage.setItem('access_token', statusData.access)
+          localStorage.setItem('refresh_token', statusData.refresh)
+          localStorage.setItem('user', JSON.stringify(statusData.user))
+          userStore.token = statusData.access
+          userStore.refreshToken = statusData.refresh
+          userStore.userInfo = statusData.user
+          ElMessage.success('登录成功')
+          setTimeout(() => {
+            const target = userStore.role?.includes('admin') ? '/knowledge/list' : '/chat'
+            if (props.embedded) window.location.href = target
+            else router.push(target)
+          }, 600)
+        }
+      } catch (e: any) {
+        // eslint-disable-next-line no-console
+        console.log('status error:', e?.message || e)
+      }
+    }, 1000)
+
+    // 2 分钟超时停止
+    setTimeout(() => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null } }, 120000)
   } catch (e: any) {
     qrError.value = e?.response?.data?.detail || e?.message || '获取二维码失败'
   } finally {
@@ -45,27 +88,26 @@ async function loadDingTalkQr() {
 }
 
 watch(loginMode, (val) => {
-  if (val === 'qrcode') {
-    loadDingTalkQr()
-    // 钉钉扫码成功后，后端 HTML 会将 token 存入 localStorage
-    // 轮询检测 token 到达，检测到后刷新用户状态
-    const pollTimer = setInterval(() => {
-      const tk = localStorage.getItem('access_token')
-      if (tk && tk !== userStore.token) {
-        clearInterval(pollTimer)
-        userStore.token = tk
-        userStore.refreshToken = localStorage.getItem('refresh_token') || ''
-        try { userStore.userInfo = JSON.parse(localStorage.getItem('user') || 'null') } catch {}
-        if (!userStore.role) { userStore.getUserInfo().catch(() => {}) }
-        ElMessage.success('登录成功')
-        if (props.embedded) window.location.reload()
-        else router.push(userStore.role?.includes('admin') ? '/knowledge/list' : '/chat')
-      }
-    }, 1000)
-    // 扫码页面卸载时清除轮询
-    const stopWatch = watch(loginMode, (v) => { if (v !== 'qrcode') { clearInterval(pollTimer); stopWatch() } })
+  if (val === 'qrcode') loadDingTalkQr()
+  else if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+})
+
+// 页面不可见时暂停轮询，减少无意义的请求
+let pollingPaused = false
+document.addEventListener('visibilitychange', () => {
+  if (pollTimer) {
+    if (document.hidden) {
+      clearInterval(pollTimer)
+      pollTimer = null
+      pollingPaused = true
+    } else if (pollingPaused && loginMode.value === 'qrcode') {
+      pollingPaused = false
+      loadDingTalkQr()
+    }
   }
 })
+
+onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 
 // SSO 状态
 const ssoDialogVisible = ref(false)
@@ -231,22 +273,30 @@ async function handleSSOSelect(code: string) {
           <p class="login-sub" style="color:#000">请使用钉钉扫码登录</p>
         </div>
         <div class="qrcode-wrap">
-          <img v-if="qrCodeDataUrl" :src="qrCodeDataUrl" alt="钉钉扫码登录" class="qrcode-img" />
-          <div v-else-if="qrLoading" class="qrcode-placeholder">
-            <svg class="w-8 h-8 text-[#94a3b8] animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            <p class="text-xs text-[#94a3b8] mt-2">获取二维码中...</p>
-          </div>
-          <div v-else-if="qrError" class="qrcode-placeholder">
-            <p class="text-xs text-[#ef4444]">{{ qrError }}</p>
-            <button class="mt-2 text-xs text-[#2563eb] hover:underline" @click="loadDingTalkQr">重新获取</button>
-          </div>
+          <template v-if="loginSuccess">
+            <div class="qrcode-placeholder" style="border-color:#22c55e">
+              <svg class="w-10 h-10 text-[#22c55e]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              <p class="text-sm text-[#22c55e] font-medium mt-2">登录成功，正在跳转...</p>
+            </div>
+          </template>
+          <template v-else>
+            <img v-if="qrCodeDataUrl" :src="qrCodeDataUrl" alt="钉钉扫码登录" class="qrcode-img" />
+            <div v-else-if="qrLoading" class="qrcode-placeholder">
+              <svg class="w-8 h-8 text-[#94a3b8] animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <p class="text-xs text-[#94a3b8] mt-2">获取二维码中...</p>
+            </div>
+            <div v-else-if="qrError" class="qrcode-placeholder">
+              <p class="text-xs text-[#ef4444]">{{ qrError }}</p>
+              <button class="mt-2 text-xs text-[#2563eb] hover:underline" @click="loadDingTalkQr">重新获取</button>
+            </div>
+          </template>
         </div>
         <div class="qrcode-actions">
-          <p class="qrcode-hint">打开钉钉扫一扫，确认登录</p>
-          <button v-if="qrCodeDataUrl && !qrLoading" class="qrcode-refresh" @click="loadDingTalkQr">
+          <p v-if="!loginSuccess" class="qrcode-hint">请使用钉钉扫码登录</p>
+          <button v-if="qrCodeDataUrl && !qrLoading && !loginSuccess" class="qrcode-refresh" @click="loadDingTalkQr">
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             重新生成
           </button>

@@ -19,40 +19,32 @@ interface DashboardResponse {
 }
 
 const stats = ref([
-  { key: 'total_uploads', label: '总上传', value: 0, suffix: '' },
-  { key: 'total_queries', label: '总查询', value: 0, suffix: '' },
-  { key: 'today_uploads', label: '今日上传', value: 0, suffix: '' },
-  { key: 'today_queries', label: '今日查询', value: 0, suffix: '' },
-  { key: 'total_size', label: '总存储', value: 0, suffix: 'GB' },
-  { key: 'total_operation', label: '今日操作', value: 0, suffix: '' },
+  { key: 'upload_total', label: '上传总数', value: 0, suffix: '' },
+  { key: 'query_total',  label: '查询总数', value: 0, suffix: '' },
+  { key: 'sensitive',    label: '敏感拦截', value: 0, suffix: '' },
+  { key: 'login_total',  label: '登录次数', value: 0, suffix: '' },
+  { key: 'operation',    label: '操作次数', value: 0, suffix: '' },
 ])
 
 let mc = 0
 
 const MOCK = [
-  [42, 150, 52428800, 5, 28, 12],
-  [45, 160, 53428800, 6, 30, 15],
-  [38, 140, 51428800, 3, 25, 10],
-  [50, 170, 54428800, 7, 32, 18],
+  [42, 150, 5, 28, 12],
+  [45, 160, 6, 30, 15],
+  [38, 140, 3, 25, 10],
+  [50, 170, 7, 32, 18],
 ]
 
-function fmtSize(b: number) {
-  if (!b) return { v: 0, s: 'GB' }
-  const m = b / 1048576
-  return m > 1024 ? { v: Math.round(m / 1024 * 10) / 10, s: 'TB' } : { v: Math.round(m), s: 'GB' }
-}
 function ok(b: { error?: string } | undefined) { return !!b && !('error' in b) }
 
-function applyStatsVals(upload: number, query: number, sizeBytes: number, _sensitive: number, _login: number, operation: number) {
-  const f = fmtSize(sizeBytes)
+function applyStatsVals(upload: number, query: number, sensitive: number, login: number, operation: number) {
   stats.value = stats.value.map(s => {
     switch (s.key) {
-      case 'total_uploads': return { ...s, value: upload }
-      case 'total_queries': return { ...s, value: query }
-      case 'today_uploads': return { ...s, value: upload }
-      case 'today_queries': return { ...s, value: query }
-      case 'total_size':    return { ...s, value: f.v, suffix: f.s }
-      case 'total_operation': return { ...s, value: operation }
+      case 'upload_total': return { ...s, value: upload }
+      case 'query_total':  return { ...s, value: query }
+      case 'sensitive':    return { ...s, value: sensitive }
+      case 'login_total':  return { ...s, value: login }
+      case 'operation':    return { ...s, value: operation }
       default: return s
     }
   })
@@ -67,7 +59,7 @@ async function fetchStats() {
     const sn = b && ok(b.sensitive) ? b.sensitive : null
     const lg = b && ok(b.login) ? b.login : null
     const op = b && ok(b.operation) ? b.operation : null
-    applyStatsVals(up?.total ?? 0, qy?.total ?? 0, up?.total_size ?? 0, sn?.total ?? 0, lg?.total ?? 0, op?.total ?? 0)
+    applyStatsVals(up?.total ?? 0, qy?.total ?? 0, sn?.total ?? 0, lg?.total ?? 0, op?.total ?? 0)
   } catch {
     mc = (mc + 1) % MOCK.length; const m = MOCK[mc]
     applyStatsVals(m[0], m[1], m[2], m[3], m[4], m[5])
@@ -105,44 +97,35 @@ onMounted(() => {
             <p class="hero-desc">为师生打造的一站式智能知识库系统</p>
           </div>
 
-          <!-- 叠加式数据排版（无容器，数字直接叠在背景上） -->
+          <!-- 叠加式数据排版（5 个数据，对应 API 5 个 block） -->
           <div class="data-grid">
-            <!-- 大号：总上传 -->
-            <div class="d-item d-item--lg" style="--d:0s;--x:-24px">
+            <!-- 上传总数 -->
+            <div class="d-item d-item--lg" style="--d:0s;--x:-20px">
               <div class="d-num d-num--lg d-num--blue">{{ stats[0].value.toLocaleString() }}</div>
               <div class="d-bar" />
               <div class="d-lbl">{{ stats[0].label }}</div>
             </div>
-            <!-- 总查询 -->
-            <div class="d-item" style="--d:0.08s;--x:-12px">
+            <!-- 查询总数 -->
+            <div class="d-item" style="--d:0.08s;--x:-10px">
               <div class="d-num d-num--blue">{{ stats[1].value.toLocaleString() }}</div>
               <div class="d-bar" />
               <div class="d-lbl">{{ stats[1].label }}</div>
             </div>
-            <!-- 今日上传 -->
-            <div class="d-item" style="--d:0.14s;--x:-12px">
+            <!-- 敏感拦截 -->
+            <div class="d-item" style="--d:0.16s;--x:-10px">
               <div class="d-num d-num--green">{{ stats[2].value.toLocaleString() }}</div>
               <div class="d-bar" />
               <div class="d-lbl">{{ stats[2].label }}</div>
             </div>
-            <!-- 今日查询 -->
-            <div class="d-item" style="--d:0.2s;--x:12px">
+            <!-- 登录次数 -->
+            <div class="d-item" style="--d:0.24s;--x:10px">
               <div class="d-num d-num--green">{{ stats[3].value.toLocaleString() }}</div>
               <div class="d-bar" />
               <div class="d-lbl">{{ stats[3].label }}</div>
             </div>
-            <!-- 今日操作 -->
-            <div class="d-item" style="--d:0.26s;--x:12px">
-              <div class="d-num d-num--amber">{{ stats[5].value.toLocaleString() }}</div>
-              <div class="d-bar" />
-              <div class="d-lbl">{{ stats[5].label }}</div>
-            </div>
-            <!-- 大号：总存储 -->
-            <div class="d-item d-item--lg" style="--d:0.32s;--x:24px">
-              <div class="d-num d-num--lg d-num--amber">
-                {{ stats[4].value.toLocaleString() }}
-                <span class="d-suf">{{ stats[4].suffix }}</span>
-              </div>
+            <!-- 操作次数 -->
+            <div class="d-item" style="--d:0.32s;--x:20px">
+              <div class="d-num d-num--amber">{{ stats[4].value.toLocaleString() }}</div>
               <div class="d-bar" />
               <div class="d-lbl">{{ stats[4].label }}</div>
             </div>
@@ -204,7 +187,7 @@ onMounted(() => {
 /* ── 数据网格（4列，无容器） ── */
 .data-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 2.5rem 1.25rem;
 }
 
