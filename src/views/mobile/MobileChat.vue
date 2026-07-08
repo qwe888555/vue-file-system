@@ -102,6 +102,18 @@ async function handleSTT() {
   }
 
   // 方案一：浏览器原生 Web Speech API
+  
+  
+  // HTTP 环境不支持语音功能
+  if (location.protocol !== "https:" && location.hostname !== "localhost") {
+    ElMessage.warning("语音功能需要 HTTPS 环境")
+    return
+  }
+  // iOS Safari 不支持 Web Speech API，提示用户
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+    ElMessage.info("iOS Safari 不支持语音转文字，请使用 Chrome 浏览器")
+    return
+  }
   const SpeechAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
   if (SpeechAPI) {
     try {
@@ -116,12 +128,14 @@ async function handleSTT() {
       }
       recognition.onerror = (event: any) => {
         isRecording.value = false; speechRecognition = null
-        if (event.error !== 'no-speech' && event.error !== 'aborted') ElMessage.error('语音识别错误: ' + event.error)
+        if (event.error === "not-allowed") ElMessage.error("请允许麦克风权限后重试")
+        else if (event.error !== "no-speech" && event.error !== "aborted") ElMessage.error("语音识别: " + event.error)
       }
       recognition.onend = () => { isRecording.value = false; speechRecognition = null }
       recognition.start()
       return
     } catch { speechRecognition = null }
+  }
   }
 
   // 方案二：后端 ASR
@@ -172,6 +186,10 @@ let voiceAudioEl: HTMLAudioElement | null = null
 const isVoicePlaying = ref(false)
 
 async function handleVoiceMsg() {
+  if (location.protocol !== "https:" && location.hostname !== "localhost") {
+    ElMessage.warning("语音功能需要 HTTPS 环境")
+    return
+  }
   if (isRecording.value) { stopRecording(); return }
   const blob = await startRecording()
   if (!blob) return
@@ -201,7 +219,11 @@ async function confirmVoicePreview() {
   try {
     const { voiceAskApi } = await import('@/api/chat')
     const response = await voiceAskApi(blob, convId)
-    if (!response.ok) { isStreaming.value = false; return }
+    if (!response.ok) {
+      if (response.status === 401) ElMessage.warning("语音消息需要登录后使用")
+      else ElMessage.warning("语音发送失败")
+      isStreaming.value = false; return
+    }
     const reader = response.body?.getReader()
     if (!reader) { isStreaming.value = false; return }
     const decoder = new TextDecoder(); let buffer = ''; let currentEvent = ''
