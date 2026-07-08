@@ -136,7 +136,7 @@ instance.interceptors.response.use(
         processQueue(refreshError, null)
         clearTokens()
         ElMessage.error('登录已过期，请重新登录')
-        window.location.href = '/login'
+        window.location.href = '/'
         return Promise.reject(refreshError)
       } finally {
         isRefreshing = false

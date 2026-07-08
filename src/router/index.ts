@@ -32,15 +32,15 @@ const router = createRouter({
 router.beforeEach(async (to, _from, next) => {
   const userStore = useUserStore()
 
-  // 白名单：登录页、异常页（硬编码 /login 防止路由死循环）
-  if (to.path === '/login' || to.meta.hidden) {
+  // 白名单：首页、异常页（首页 meta.hidden 由 common.ts 标记）
+  if (to.meta.hidden) {
     next()
     return
   }
 
-  // 未登录 → 跳登录页
+  // 未登录 → 跳首页（嵌入式登录）
   if (!userStore.token) {
-    next({ path: '/login' })
+    next({ path: '/' })
     return
   }
 
@@ -50,14 +50,14 @@ router.beforeEach(async (to, _from, next) => {
       await userStore.getUserInfo()
     } catch {
       userStore.logout()
-      next({ path: '/login' })
+      next({ path: '/' })
       return
     }
   }
 
   let currentRole = userStore.role
   if (!currentRole) {
-    next({ path: '/login' })
+    next({ path: '/' })
     return
   }
 
