@@ -63,6 +63,7 @@ const noAuthPaths = [
   '/auth/sso/callback/',
   '/auth/dingtalk/qr/',
   '/auth/dingtalk/callback/',
+  '/auth/dingtalk/status/',
   '/admin/logs/dashboard/',
 ]
 

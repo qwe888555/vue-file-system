@@ -84,12 +84,11 @@ export function getMessagesApi(conversationId: number): Promise<Message[]> {
 export function askQuestionApi(conversationId: number | null, question: string): Promise<Response> {
   const baseUrl = import.meta.env.VITE_API_URL || '/api'
   const token = localStorage.getItem('access_token') || ''
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
   return fetch(`${baseUrl}/chat/ask/`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
     body: JSON.stringify({ conversation_id: conversationId, question }),
   })
 }
@@ -114,12 +113,14 @@ export function voiceAskApi(audioBlob: Blob, conversationId?: number | null): Pr
   const baseUrl = import.meta.env.VITE_API_URL || '/api'
   const token = localStorage.getItem('access_token') || ''
   const formData = new FormData()
-  const ext = audioBlob.type.includes('mp4') ? 'mp4' : audioBlob.type.includes('ogg') ? 'ogg' : 'webm'
-  formData.append('audio_file', audioBlob, `recording.${ext}`)
+  // 后端支持 WAV/MP3/PCM，使用通用扩展名
+  formData.append('audio_file', audioBlob, 'recording.webm')
   if (conversationId) formData.append('conversation_id', String(conversationId))
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
   return fetch(`${baseUrl}/chat/voice-ask/`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
+    headers,
     body: formData,
   })
 }
