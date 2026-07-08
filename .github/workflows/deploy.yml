@@ -30,6 +30,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_KEY }}
+          password: ${{ secrets.SSH_PASSWORD }}
           source: 'dist/*'
           target: ${{ secrets.PROJECT_PATH }}
           strip_components: 1
