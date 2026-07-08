@@ -103,9 +103,14 @@ function startRename(conv: any) {
   setTimeout(() => renameInput.value?.focus(), 50)
 }
 /** 保存改名 */
-async function confirmRename(id: number) {
-  if (renameText.value.trim()) {
-    await chat.renameConversation(id, renameText.value.trim())
+function confirmRename(id: number) {
+  const title = renameText.value.trim()
+  if (title) {
+    // 先立即更新本地显示（同步，不等 API）
+    const conv = chat.conversations.value.find(c => c.id === id)
+    if (conv) conv.title = title
+    // 再异步同步后端（不 await，不阻塞 UI）
+    chat.renameConversation(id, title).catch(() => {})
   }
   renamingId.value = null
 }

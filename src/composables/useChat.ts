@@ -136,9 +136,9 @@ export function useChat() {
     saveCache()
     // 再异步同步后端（失败也不影响本地显示）
     try {
-      const updated = await renameConversationApi(id, title)
-      if (conv && updated) conv.title = updated.title
-      saveCache()
+      await renameConversationApi(id, title)
+      // 后端返回后只更新时间戳，不覆盖标题（本地已乐观更新）
+      if (conv) saveCache()
     } catch { /* 后端同步失败，本地已更新，不影响用户体验 */ }
   }
 
