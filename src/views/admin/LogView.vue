@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '@/api/request'
 import LogList from '@/components/logs/loglist.vue'
@@ -24,6 +24,7 @@ async function fetchDashboard() {
 function hasError(block: any) { return block && block.error }
 
 onMounted(() => { fetchDashboard() })
+watch(dashboardPeriod, () => { fetchDashboard() })
 
 const logTabs = [
   { key: 'upload', label: '上传日志', endpoint: '/admin/logs/upload/', stats: '/admin/logs/upload/stats/' },
@@ -83,25 +84,79 @@ const logTabs = [
 </template>
 
 <style scoped>
-.log-page { padding: 24px; }
-.log-title { font-size: 20px; font-weight: 600; color: #1a2332; margin: 0 0 20px; }
-.log-tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid #e4e9f0; }
-.log-tabs button {
-  padding: 10px 20px; border: none; background: none; font-size: 14px; color: #8e8e93; cursor: pointer;
-  border-bottom: 2px solid transparent; transition: all 0.15s;
-}
-.log-tabs button.active { color: #2b5fd9; border-bottom-color: #2b5fd9; font-weight: 600; }
-.log-tabs button:hover { color: #2b5fd9; }
+.log-page { padding: 32px; max-width: 1440px; margin: 0 auto; }
 
-/* Dashboard */
-.db-period { margin-bottom: 16px; }
-.db-blocks { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-.db-block { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-.db-block h4 { margin: 0 0 12px; font-size: 15px; color: #1a2332; }
-.db-stats { display: flex; flex-wrap: wrap; gap: 12px; }
-.db-stat { display: flex; flex-direction: column; gap: 2px; }
-.db-stat span { font-size: 11px; color: #8e95a6; }
-.db-stat strong { font-size: 18px; color: #1a2332; }
-.db-error { color: #e74c3c; font-size: 13px; padding: 8px 0; }
-.db-empty { color: #aeaeb2; padding: 40px 0; text-align: center; }
+.log-title {
+  font-size: 24px; font-weight: 700; color: #0f172a;
+  margin: 0 0 24px; letter-spacing: -0.02em;
+}
+
+/* ── Pill 式 Tab 切换 ── */
+.log-tabs {
+  display: flex; gap: 4px; margin-bottom: 24px;
+  background: #f1f5f9; border-radius: 12px; padding: 6px; border: none;
+}
+.log-tabs button {
+  padding: 8px 20px; border: none; border-radius: 9px;
+  font-size: 14px; font-weight: 500; color: #64748b;
+  background: transparent; cursor: pointer;
+  transition: all 0.2s ease;
+}
+.log-tabs button:hover { color: #334155; }
+.log-tabs button.active {
+  background: #fff; color: #2563eb; font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* ── Period 选择器 ── */
+.db-period { margin-bottom: 20px; }
+.db-period :deep(.el-radio-group) {
+  background: #f1f5f9; border-radius: 10px; padding: 3px; border: none;
+  display: inline-flex;
+}
+.db-period :deep(.el-radio-button__inner) {
+  border: none !important; background: transparent !important;
+  border-radius: 8px !important; padding: 6px 16px;
+  font-size: 13px; font-weight: 500; color: #64748b;
+  box-shadow: none !important; transition: all 0.2s ease;
+}
+.db-period :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  background: #fff !important; color: #2564ebc2 !important; font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
+}
+.db-period :deep(.el-radio-button:not(:first-child) .el-radio-button__inner) {
+  border-left: none !important;
+}
+
+/* ── Dashboard 卡片 ── */
+.db-blocks {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+.db-block {
+  background: #fff; border-radius: 14px; padding: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03);
+  transition: box-shadow 0.2s ease;
+}
+.db-block:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.04);
+}
+.db-block h4 {
+  margin: 0 0 16px; font-size: 13px; font-weight: 600;
+  color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;
+}
+
+/* ── 统计数据 ── */
+.db-stats { display: flex; flex-wrap: wrap; gap: 16px; }
+.db-stat { display: flex; flex-direction: column; gap: 4px; }
+.db-stat span {
+  font-size: 12px; font-weight: 00; color: #94a3b8;
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.db-stat strong {
+  font-size: 18px; font-weight: 700; color: #0f172a;
+  letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+}
+.db-error { color: #ef4444; font-size: 13px; padding: 8px 0; }
+.db-empty { color: #94a3b8; padding: 60px 0; text-align: center; font-size: 14px; }
 </style>

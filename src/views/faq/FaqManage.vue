@@ -8,8 +8,8 @@
 
     <!-- 搜索 + 筛选 -->
     <div class="fm-toolbar">
-      <el-input v-model="keyword" placeholder="搜索问题..." clearable size="default" style="width:240px" />
-      <el-select v-model="categoryFilter" placeholder="全部分类" clearable size="default" style="width:140px">
+      <el-input v-model="keyword" placeholder="搜索问题..." clearable size="default" class="fi kw" />
+      <el-select v-model="categoryFilter" placeholder="全部分类" clearable size="default" class="fi sl">
         <el-option label="全部分类" value="" />
         <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
       </el-select>
@@ -252,28 +252,55 @@ async function confirmEdit() {
 <style scoped>
 .page-container { padding: var(--spacing-lg, 16px); }
 
-/* ── 头部 ── */
-.fm-header { margin-bottom: 20px; }
-.fm-title { font-size: 20px; font-weight: 700; color: #1a2332; margin: 0; }
-.fm-desc { font-size: 13px; color: #8e95a6; margin: 4px 0 0; }
+/* ── 头部（匹配日志页 log-title） ── */
+.fm-header { margin-bottom: 24px; }
+.fm-title { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0; letter-spacing: -0.02em; }
+.fm-desc { font-size: 13px; color: #94a3b8; margin: 4px 0 0; }
 
 /* ── 工具栏 ── */
 .fm-toolbar { display: flex; gap: 10px; margin-bottom: 20px; }
 
-/* ── Tabs ── */
-.fm-tabs { display: flex; gap: 4px; margin-bottom: 20px; }
-.fm-tab {
-  padding: 7px 18px;
-  font-size: 13px;
-  font-weight: 500;
-  color: #5a6070;
-  cursor: pointer;
-  border-radius: 8px;
-  transition: all 0.2s;
-  user-select: none;
+/* ── Pill 式 Tabs（匹配日志页 .log-tabs） ── */
+.fm-tabs {
+  display: flex; gap: 4px; margin-bottom: 20px;
+  background: #f1f5f9; border-radius: 12px; padding: 4px;
 }
-.fm-tab:hover { background: #f0f4fe; color: #2b5fd9; }
-.fm-tab.active { background: #eef3fe; color: #2b5fd9; font-weight: 600; }
+.fm-tab {
+  padding: 7px 18px; border: none; border-radius: 9px;
+  font-size: 13px; font-weight: 500; color: #64748b;
+  background: transparent; cursor: pointer; user-select: none;
+  transition: all 0.2s ease;
+}
+.fm-tab:hover { color: #334155; }
+.fm-tab.active {
+  background: #fff; color: #2563eb; font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* ── 控件统一样式（匹配日志页 .fi） ── */
+:deep(.fi .el-input__wrapper),
+:deep(.fi .el-select__wrapper) {
+  border-radius: 4px !important; box-shadow: 0 0 0 1px #e2e8f0 !important;
+  transition: box-shadow 0.2s ease;
+}
+:deep(.fi .el-input__wrapper:hover),
+:deep(.fi .el-select__wrapper:hover) {
+  box-shadow: 0 0 0 1px #cbd5e1 !important;
+}
+:deep(.fi .el-input__wrapper.is-focus),
+:deep(.fi .el-select__wrapper.is-focus) {
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
+}
+:deep(.fi .el-input__inner) {
+  height: 34px; font-size: 13px; color: #0f172a;
+}
+:deep(.kw) { width: 240px; }
+:deep(.sl) { width: 140px; }
+
+/* ── 按钮统一样式（匹配日志页 .fi-btn） ── */
+:deep(.el-button) {
+  border-radius: 4px !important; font-weight: 500 !important;
+}
 
 /* ── 列表 ── */
 .fm-list { display: flex; flex-direction: column; gap: 10px; }
@@ -290,7 +317,6 @@ async function confirmEdit() {
 .fm-card:hover {
   border-color: #d5dbe8;
   box-shadow: 0 4px 20px rgba(0,0,0,0.06);
-  transform: translateY(-1px);
 }
 
 .fm-card-top {
@@ -302,9 +328,6 @@ async function confirmEdit() {
 .fm-card-q { font-size: 14.5px; font-weight: 500; color: #1a2332; line-height: 1.4; }
 .fm-card-meta { font-size: 12px; color: #b0b8c8; margin-top: 4px; display: flex; gap: 6px; }
 .fm-card-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
-
-.fm-card-actions .el-button { border-radius: 8px; transition: all 0.2s; }
-.fm-card-actions .el-button:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
 
 /* ── 展开详情 ── */
 .fm-card-detail {
@@ -333,5 +356,8 @@ async function confirmEdit() {
 .fm-tag:hover { background: #e4e9f0; color: #2b5fd9; }
 .fm-time { font-size: 12px; color: #c8cdd6; margin-top: 10px; }
 
-.fm-empty { text-align: center; padding: 60px 0; color: #8e95a6; font-size: 14px; }
+.fm-empty { text-align: center; padding: 60px 0; color: #94a3b8; font-size: 14px; }
+
+/* ── 分页（居中） ── */
+.faq-pagination { display: flex; justify-content: center; margin-top: 20px; }
 </style>

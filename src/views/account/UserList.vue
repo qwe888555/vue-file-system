@@ -29,7 +29,7 @@
             v-model="keyword"
             placeholder="搜索账号"
             clearable
-            style="width: 200px"
+            class="fi kw"
             @input="handleSearch"
             @clear="handleSearch"
           />
@@ -37,7 +37,7 @@
             v-model="collegeFilter"
             placeholder="全部学院/部门"
             clearable
-            style="width: 160px"
+            class="fi sl"
             @change="handleSearch"
           >
             <el-option label="全部学院/部门" value="__all__" />
@@ -48,7 +48,7 @@
               :value="opt.id"
             />
           </el-select>
-          <el-button @click="handleReset">重置</el-button>
+          <el-button class="fi-btn" @click="handleReset">重置</el-button>
         </div>
       </template>
 
@@ -452,31 +452,66 @@ async function confirmBatchReset() {
 
 .role-pill {
   padding: 6px 18px;
-  border-radius: 8px;
+  border-radius: 9px;
   font-size: 13px;
   font-weight: 500;
   color: #4b5563;
-  background: #f5f7fa;
+  background: #f1f5f9;
   cursor: pointer;
-  transition: all 0.25s ease;
+  transition: all 0.2s ease;
   user-select: none;
   line-height: 1.6;
-  border: 1px solid transparent;
+  border: none;
 }
 
 .role-pill:hover {
   background: #eef3fe;
-  color: #2b5fd9;
+  color: #2563eb;
 }
 
 .role-pill.active {
   background: #fff;
-  color: #2b5fd9;
+  color: #2563eb;
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(43, 95, 217, 0.12);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* ── 控件统一样式（匹配日志页） ── */
+:deep(.fi .el-input__wrapper) {
+  border-radius: 4px !important;
+  box-shadow: 0 0 0 1px #e2e8f0 !important;
+  transition: box-shadow 0.2s ease;
+}
+:deep(.fi .el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #cbd5e1 !important;
+}
+:deep(.fi .el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
+}
+:deep(.fi .el-input__inner) {
+  height: 34px; font-size: 13px; color: #0f172a;
+}
+:deep(.fi .el-select__wrapper) {
+  border-radius: 4px !important;
+  box-shadow: 0 0 0 1px #e2e8f0 !important;
+  transition: box-shadow 0.2s ease;
+}
+:deep(.fi .el-select__wrapper:hover) {
+  box-shadow: 0 0 0 1px #cbd5e1 !important;
+}
+:deep(.fi .el-select__wrapper.is-focus) {
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
+}
+:deep(.kw) { width: 200px; }
+:deep(.sl) { width: 160px; }
+
+/* ── 按钮统一样式（匹配日志页） ── */
+:deep(.fi-btn) {
+  border-radius: 4px !important; font-weight: 500 !important;
+  padding: 7px 16px !important; height: 32px !important;
 }
 
 :deep(.table-pagination) {
-  justify-content: flex-start;
+  justify-content: center;
 }
 </style>

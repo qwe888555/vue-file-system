@@ -331,14 +331,16 @@ defineExpose({ refresh, handleAdd, handleEdit, getSelectionRows, triggerSearch, 
   margin: 0;
 }
 
+/* ── 搜索区域（匹配日志页 stats-bar 风格） ── */
 .table-search {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-md, 12px);
   margin-bottom: var(--spacing-lg, 16px);
-  padding: var(--spacing-md, 12px);
-  background: var(--color-bg, #f5f7fa);
-  border-radius: var(--radius-base, 6px);
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
 }
 
 .table-batch {
@@ -356,13 +358,27 @@ defineExpose({ refresh, handleAdd, handleEdit, getSelectionRows, triggerSearch, 
   color: var(--color-primary, #409eff);
 }
 
+/* ── 表格（匹配日志页） ── */
 .table-body {
   width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+:deep(.table-body th.el-table__cell) {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #475569;
+  font-size: 13px;
+}
+:deep(.table-body .el-table__body tr:hover > td) {
+  background: #f0f4fe;
 }
 
+/* ── 分页（居中，匹配日志页） ── */
 .table-pagination {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   margin-top: var(--spacing-lg, 16px);
 }
 
