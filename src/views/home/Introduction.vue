@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import LoginPage from '@/views/login/LoginPage.vue'
 import request from '@/api/request'
 import logodark from '@/assets/images/logo2.jpg'
@@ -27,7 +27,6 @@ const stats = ref([
   { key: 'total_operation', label: '今日操作', value: 0, suffix: '' },
 ])
 
-let timer: ReturnType<typeof setInterval> | null = null
 let mc = 0
 
 const MOCK = [
@@ -77,9 +76,7 @@ async function fetchStats() {
 
 onMounted(() => {
   fetchStats()
-  timer = setInterval(fetchStats, 15000)
 })
-onUnmounted(() => { if (timer) clearInterval(timer) })
 
 </script>
 

@@ -32,13 +32,11 @@ async function loadDingTalkQr() {
     const redirectUri = 'https://visibly-sloppy-dairy.ngrok-free.dev/api/auth/dingtalk/redirect/'
     const res = await dingtalkQrApi(redirectUri)
     if (!res.auth_url) throw new Error('后端返回异常，请确认 Django 服务已启动')
-    const qrData = await QRCode.toString(res.auth_url, { type: 'svg', width: 240 })
-      .catch(() => QRCode.toDataURL(res.auth_url, { width: 240, margin: 1 }))
+    const qrData = await QRCode.toDataURL(res.auth_url, { width: 240, margin: 1, color: { dark: '#1e293b', light: '#f8fafc' } })
+      .catch(() => QRCode.toString(res.auth_url, { type: 'svg', width: 240 }))
       .catch(() => null)
     if (!qrData) throw new Error('二维码生成失败')
-    qrCodeDataUrl.value = qrData.startsWith('data:')
-      ? qrData
-      : 'data:image/svg+xml,' + encodeURIComponent(qrData)
+    qrCodeDataUrl.value = qrData.startsWith('data:') ? qrData : 'data:image/svg+xml,' + encodeURIComponent(qrData)
   } catch (e: any) {
     qrError.value = e?.response?.data?.detail || e?.message || '获取二维码失败'
   } finally {
@@ -46,7 +44,28 @@ async function loadDingTalkQr() {
   }
 }
 
-watch(loginMode, (val) => { if (val === 'qrcode') loadDingTalkQr() })
+watch(loginMode, (val) => {
+  if (val === 'qrcode') {
+    loadDingTalkQr()
+    // 钉钉扫码成功后，后端 HTML 会将 token 存入 localStorage
+    // 轮询检测 token 到达，检测到后刷新用户状态
+    const pollTimer = setInterval(() => {
+      const tk = localStorage.getItem('access_token')
+      if (tk && tk !== userStore.token) {
+        clearInterval(pollTimer)
+        userStore.token = tk
+        userStore.refreshToken = localStorage.getItem('refresh_token') || ''
+        try { userStore.userInfo = JSON.parse(localStorage.getItem('user') || 'null') } catch {}
+        if (!userStore.role) { userStore.getUserInfo().catch(() => {}) }
+        ElMessage.success('登录成功')
+        if (props.embedded) window.location.reload()
+        else router.push(userStore.role?.includes('admin') ? '/knowledge/list' : '/chat')
+      }
+    }, 1000)
+    // 扫码页面卸载时清除轮询
+    const stopWatch = watch(loginMode, (v) => { if (v !== 'qrcode') { clearInterval(pollTimer); stopWatch() } })
+  }
+})
 
 // SSO 状态
 const ssoDialogVisible = ref(false)

@@ -114,7 +114,8 @@ export function voiceAskApi(audioBlob: Blob, conversationId?: number | null): Pr
   const baseUrl = import.meta.env.VITE_API_URL || '/api'
   const token = localStorage.getItem('access_token') || ''
   const formData = new FormData()
-  formData.append('audio_file', audioBlob, 'recording.wav')
+  const ext = audioBlob.type.includes('mp4') ? 'mp4' : audioBlob.type.includes('ogg') ? 'ogg' : 'webm'
+  formData.append('audio_file', audioBlob, `recording.${ext}`)
   if (conversationId) formData.append('conversation_id', String(conversationId))
   return fetch(`${baseUrl}/chat/voice-ask/`, {
     method: 'POST',

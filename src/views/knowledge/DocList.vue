@@ -2,19 +2,297 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search, Close } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getKeywordsApi } from '@/api/knowledge'
-import UploadFileForm from '@/components/knowledge/UploadFileForm.vue'
+import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi } from '@/api/knowledge'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 
 const router = useRouter()
 
 const searchQuery = ref('')
-const showUploadDialog = ref(false)
 const showEditDialog = ref(false)
 const editingFile = ref<KnowledgeFile | null>(null)
 const loading = ref(false)
+
+const createMode = ref(true)
+const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string }[]>([])
+const showCreateForm = ref(false)
+const showPreviewDialog = ref(false)
+const previewContent = ref('')
+const previewFileName = ref('')
+
+const uploadForm = ref({
+  title: '',
+  keywords: '',
+  description: '',
+  content: '',
+  scope: 'public' as 'public' | 'private',
+})
+
+function resetUploadForm() {
+  createMode.value = true
+  selectedFiles.value = []
+  showCreateForm.value = false
+  uploadForm.value = {
+    title: '',
+    keywords: '',
+    description: '',
+    content: '',
+    scope: 'public',
+  }
+}
+
+async function handleFileChange(file: File) {
+  selectedFiles.value.push({ file })
+  const baseName = file.name.replace(/\.[^/.]+$/, '')
+  if (!uploadForm.value.title) {
+    uploadForm.value.title = baseName
+  }
+  
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    const result = await aiClassifyApi(formData)
+    
+    if (result.title && !uploadForm.value.title) {
+      uploadForm.value.title = result.title
+    }
+    if (result.keywords && result.keywords.length > 0) {
+      uploadForm.value.keywords = result.keywords.join(', ')
+    }
+    if (result.description) {
+      uploadForm.value.description = result.description
+    }
+    if (result.scope) {
+      uploadForm.value.scope = result.scope === 'school' ? 'public' : 'private'
+    }
+  } catch (error) {
+    console.error('AI分类失败:', error)
+  }
+}
+
+function handleRemove(item: { file: File; docId?: number; previewContent?: string }) {
+  const index = selectedFiles.value.indexOf(item)
+  if (index > -1) {
+    selectedFiles.value.splice(index, 1)
+  }
+}
+
+async function handlePreviewFile(item: { file: File; docId?: number; previewContent?: string }) {
+  previewFileName.value = item.file.name
+  
+  if (item.docId && item.previewContent) {
+    previewContent.value = item.previewContent
+    showPreviewDialog.value = true
+    return
+  }
+  
+  if (item.docId) {
+    try {
+      const result = await previewDocApi(item.docId)
+      item.previewContent = result.content || '无法预览此文件内容'
+      previewContent.value = item.previewContent
+      showPreviewDialog.value = true
+      return
+    } catch (error) {
+      console.error('预览文件失败:', error)
+    }
+  }
+  
+  const ext = item.file.name.split('.').pop()?.toLowerCase()
+  if (['pdf', 'doc', 'docx'].includes(ext || '')) {
+    ElMessage.info('正在上传文件以获取预览内容...')
+    try {
+      const fileName = item.file.name.replace(/\.[^/.]+$/, '')
+      const formData = new FormData()
+      formData.append('file', item.file)
+      formData.append('title', uploadForm.value.title || fileName)
+      if (uploadForm.value.description) {
+        formData.append('description', uploadForm.value.description)
+      }
+      formData.append('scope', uploadForm.value.scope === 'public' ? 'school' : 'college')
+      
+      const result = await uploadFileApi(formData)
+      
+      if (result.id) {
+        item.docId = result.id
+        
+        const previewResult = await previewDocApi(result.id)
+        item.previewContent = previewResult.content || '无法预览此文件内容'
+        previewContent.value = item.previewContent
+        showPreviewDialog.value = true
+      } else {
+        previewContent.value = '文件上传成功，但无法获取文档ID进行预览。'
+        showPreviewDialog.value = true
+      }
+    } catch (error) {
+      console.error('上传文件失败:', error)
+      previewContent.value = '文件上传失败，无法预览。'
+      showPreviewDialog.value = true
+    }
+  } else if (['jpg', 'jpeg', 'png', 'gif'].includes(ext || '')) {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const content = e.target?.result as string
+      previewContent.value = `<img src="${content}" style="max-width: 100%; max-height: 600px; object-fit: contain;" />`
+      showPreviewDialog.value = true
+    }
+    reader.readAsDataURL(item.file)
+  } else {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const content = e.target?.result as string
+      previewContent.value = content
+      showPreviewDialog.value = true
+    }
+    reader.readAsText(item.file)
+  }
+}
+
+async function handlePreviewDoc(id: number, title: string) {
+  try {
+    previewFileName.value = title
+    const result = await previewDocApi(id)
+    previewContent.value = result.content || '无法预览此文件内容'
+    showPreviewDialog.value = true
+  } catch (error) {
+    console.error('预览文件失败:', error)
+    ElMessage.error('预览文件失败')
+  }
+}
+
+async function handleConfirmInfo() {
+  if (!uploadForm.value.content.trim()) {
+    ElMessage.warning('请输入文件内容')
+    return
+  }
+
+  try {
+    const blob = new Blob([uploadForm.value.content], { type: 'text/plain' })
+    const file = new File([blob], 'content.txt', { type: 'text/plain' })
+    
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    const result = await aiClassifyApi(formData)
+    
+    if (result.title) {
+      uploadForm.value.title = result.title
+    } else {
+      uploadForm.value.title = '未命名文档'
+    }
+    if (result.keywords && result.keywords.length > 0) {
+      uploadForm.value.keywords = result.keywords.join(', ')
+    }
+    if (result.description) {
+      uploadForm.value.description = result.description
+    }
+    if (result.scope) {
+      uploadForm.value.scope = result.scope === 'school' ? 'public' : 'private'
+    }
+    
+    showCreateForm.value = true
+  } catch (error) {
+    console.error('AI分类失败:', error)
+    showCreateForm.value = true
+    if (!uploadForm.value.title) {
+      uploadForm.value.title = '未命名文档'
+    }
+  }
+}
+
+async function handleUploadSubmit() {
+  if (!uploadForm.value.keywords) {
+    ElMessage.warning('请输入关键词')
+    return
+  }
+  if (!uploadForm.value.scope) {
+    ElMessage.warning('请选择可见范围')
+    return
+  }
+
+  const keywords = uploadForm.value.keywords
+    .split(/[,，、\s]+/)
+    .map((kw) => kw.trim())
+    .filter((kw) => kw)
+
+  if (keywords.length === 0) {
+    ElMessage.warning('请输入关键词')
+    return
+  }
+
+  if (createMode.value) {
+    if (!uploadForm.value.title) {
+      ElMessage.warning('请输入文件名')
+      return
+    }
+    if (!uploadForm.value.content.trim()) {
+      ElMessage.warning('请输入文件内容')
+      return
+    }
+
+    try {
+      const result = await uploadTextApi({
+        title: uploadForm.value.title,
+        content: uploadForm.value.content,
+        description: uploadForm.value.description || undefined,
+        keywords: keywords.length > 0 ? keywords : undefined,
+        scope: uploadForm.value.scope === 'public' ? 'school' : 'college',
+      })
+      console.log('创建文件结果:', result)
+      ElMessage.success('创建成功')
+      resetUploadForm()
+      fetchFiles()
+    } catch (error) {
+      console.error('创建文件失败:', error)
+      ElMessage.error('创建文件失败，请重试')
+    }
+  } else {
+    if (selectedFiles.value.length === 0) {
+      ElMessage.warning('请选择要上传的文件')
+      return
+    }
+
+    try {
+      let successCount = 0
+      const totalCount = selectedFiles.value.length
+      
+      for (let i = 0; i < totalCount; i++) {
+        const item = selectedFiles.value[i]
+        const file = item.file
+        const fileName = file.name.replace(/\.[^/.]+$/, '')
+        
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('title', uploadForm.value.title || fileName)
+        if (uploadForm.value.description) {
+          formData.append('description', uploadForm.value.description)
+        }
+        formData.append('scope', uploadForm.value.scope === 'public' ? 'school' : 'college')
+        if (keywords.length > 0) {
+          keywords.forEach(kw => {
+            formData.append('keywords', kw)
+          })
+        }
+
+        const result = await uploadFileApi(formData)
+        if (result.id) {
+          item.docId = result.id
+        }
+        successCount++
+      }
+
+      console.log('文件上传结果:', `${successCount}/${totalCount}`)
+      ElMessage.success(`${successCount}/${totalCount} 个文件上传成功`)
+      resetUploadForm()
+      fetchFiles()
+    } catch (error) {
+      console.error('文件上传失败:', error)
+      ElMessage.error('文件上传失败，请重试')
+    }
+  }
+}
 
 const currentPage = ref(1)
 const pageSize = ref(8)
@@ -60,8 +338,25 @@ async function fetchFiles() {
     
     await Promise.all(promises)
     
-    uploadedFiles.value = newFiles
-    totalFiles.value = res.total || res.count || uploadedFiles.value.length
+    if (newFiles.length === 0) {
+      if (currentPage.value === 1) {
+        uploadedFiles.value = []
+        totalFiles.value = 0
+      } else {
+        totalFiles.value = (currentPage.value - 1) * pageSize.value
+        currentPage.value = currentPage.value - 1
+        await fetchFiles()
+        return
+      }
+    } else {
+      uploadedFiles.value = newFiles
+      if (newFiles.length < pageSize.value) {
+        totalFiles.value = (currentPage.value - 1) * pageSize.value + newFiles.length
+      } else {
+        const backendTotal = res.total || res.count || 0
+        totalFiles.value = backendTotal || (currentPage.value * pageSize.value)
+      }
+    }
   } catch (error: any) {
     console.error('获取文件列表失败:', error)
     if (error.response?.status === 404 && currentPage.value > 1) {
@@ -78,10 +373,6 @@ async function fetchFiles() {
 onMounted(() => {
   fetchFiles()
 })
-
-function handleOpenUpload() {
-  showUploadDialog.value = true
-}
 
 const filteredFiles = computed(() => {
   if (!searchQuery.value) return uploadedFiles.value
@@ -103,6 +394,10 @@ const paginatedFiles = computed(() => {
 })
 
 function handleCurrentChange(page: number) {
+  if (page < 1) {
+    currentPage.value = 1
+    return
+  }
   currentPage.value = page
   fetchFiles()
 }
@@ -144,7 +439,7 @@ function formatDate(dateStr: string): string {
 }
 
 function handleFileClick(file: KnowledgeFile) {
-  router.push(`/knowledge/detail/${file.id}`)
+  handlePreviewDoc(file.id, file.title)
 }
 
 function handleEdit(file: KnowledgeFile) {
@@ -181,10 +476,7 @@ async function handleDelete(file: KnowledgeFile) {
     .catch(() => {})
 }
 
-function handleFormSubmit() {
-  showUploadDialog.value = false
-  fetchFiles()
-}
+
 
 function saveFiles(files: KnowledgeFile[]) {
   localStorage.setItem('uploadedFiles', JSON.stringify(files))
@@ -209,14 +501,178 @@ function saveFiles(files: KnowledgeFile[]) {
       />
     </div>
 
-    <div class="upload-section" @click="handleOpenUpload">
-      <div class="upload-inner">
-        <div class="upload-icon-wrapper">
-          <el-icon :size="48" color="#409eff"><Upload /></el-icon>
+    <div class="upload-section">
+      <div v-if="!createMode" class="upload-area">
+        <div class="upload-header">
+          <div class="mode-switch-wrapper">
+            <el-radio-group v-model="createMode">
+              <el-radio :value="true">创建文件</el-radio>
+              <el-radio :value="false">上传文件</el-radio>
+            </el-radio-group>
+          </div>
         </div>
-        <h3 class="upload-title">上传文件</h3>
-        <p class="upload-desc">点击或拖拽文件到此处上传</p>
-        <p class="upload-tips">支持 PDF、Word、图片、音频、视频等格式</p>
+
+        <div v-if="selectedFiles.length === 0" class="upload-center-empty">
+          <el-upload
+            :auto-upload="false"
+            :file-list="[]"
+            :on-change="(file) => { if (file.raw) handleFileChange(file.raw) }"
+            drag
+            multiple
+            accept=".pdf,.doc,.docx,.txt,.jpg,.png,.gif,.mp3,.wav,.mp4,.avi,.mkv,.zip,.rar"
+            class="upload-dragger"
+          >
+            <el-icon :size="48" color="#c0c4cc"><Upload /></el-icon>
+            <div class="el-upload__text">
+              将文件拖到此处，或<em>点击上传</em>
+            </div>
+          </el-upload>
+        </div>
+
+        <div v-else class="upload-content">
+          <div class="upload-content-left">
+            <div class="file-preview-list">
+              <div
+                v-for="(item, index) in selectedFiles"
+                :key="index"
+                class="file-preview-item"
+                @click="handlePreviewFile(item)"
+              >
+                <el-icon :size="32" class="preview-file-icon">
+                  <Document />
+                </el-icon>
+                <div class="preview-file-info">
+                  <span class="preview-file-name">{{ item.file.name }}</span>
+                  <span class="preview-file-size">{{ (item.file.size / 1024).toFixed(1) }} KB</span>
+                </div>
+                <div class="preview-file-actions">
+                  <el-icon
+                    :size="16"
+                    class="preview-icon"
+                    @click.stop="handlePreviewFile(item)"
+                  >
+                    <Document />
+                  </el-icon>
+                  <el-icon
+                    :size="16"
+                    class="preview-remove-icon"
+                    @click.stop="handleRemove(item)"
+                  >
+                    <Close />
+                  </el-icon>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="upload-content-right">
+            <div class="form-item">
+              <label class="form-label">文件名</label>
+              <el-input
+                v-model="uploadForm.title"
+                placeholder="请输入文件名"
+                class="form-input"
+              />
+            </div>
+            <div class="form-item">
+              <label class="form-label">关键词</label>
+              <el-input
+                v-model="uploadForm.keywords"
+                placeholder="关键词，用逗号或空格分隔"
+                class="form-input"
+              />
+            </div>
+            <div class="form-item">
+              <label class="form-label">公开/私密</label>
+              <el-radio-group v-model="uploadForm.scope" class="scope-group">
+                <el-radio label="public">公开</el-radio>
+                <el-radio label="private">私密</el-radio>
+              </el-radio-group>
+            </div>
+            <div class="form-item">
+              <label class="form-label">文件描述</label>
+              <el-input
+                v-model="uploadForm.description"
+                type="textarea"
+                :rows="3"
+                placeholder="文件描述..."
+                class="form-textarea"
+              />
+            </div>
+            <div class="form-submit">
+              <el-button type="primary" @click="handleUploadSubmit">确认上传</el-button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="create-area">
+        <div class="create-header">
+          <div class="mode-switch-wrapper">
+            <el-radio-group v-model="createMode" @change="showCreateForm = false">
+              <el-radio :value="true">创建文件</el-radio>
+              <el-radio :value="false">上传文件</el-radio>
+            </el-radio-group>
+          </div>
+        </div>
+
+        <div class="create-center">
+          <el-input
+            v-model="uploadForm.content"
+            type="textarea"
+            :rows="showCreateForm ? 6 : 15"
+            placeholder="请输入文件内容（Markdown格式，便于AI读取）..."
+            class="content-editor"
+            :disabled="showCreateForm"
+          />
+          <div class="content-tip">
+            <span>建议使用Markdown格式编写，大模型更容易理解和解析</span>
+          </div>
+          
+          <div v-if="showCreateForm" class="create-form-section">
+            <div class="form-item">
+              <label class="form-label">文件名</label>
+              <el-input
+                v-model="uploadForm.title"
+                placeholder="请输入文件名"
+                class="form-input"
+              />
+            </div>
+            <div class="form-item">
+              <label class="form-label">关键词</label>
+              <el-input
+                v-model="uploadForm.keywords"
+                placeholder="关键词，用逗号或空格分隔"
+                class="form-input"
+              />
+            </div>
+            <div class="form-item">
+              <label class="form-label">公开/私密</label>
+              <el-radio-group v-model="uploadForm.scope" class="scope-group">
+                <el-radio label="public">公开</el-radio>
+                <el-radio label="private">私密</el-radio>
+              </el-radio-group>
+            </div>
+            <div class="form-item">
+              <label class="form-label">文件描述</label>
+              <el-input
+                v-model="uploadForm.description"
+                type="textarea"
+                :rows="2"
+                placeholder="文件描述..."
+                class="form-textarea"
+              />
+            </div>
+          </div>
+          
+          <div class="form-submit">
+            <el-button v-if="!showCreateForm" type="primary" @click="handleConfirmInfo">确认信息</el-button>
+            <template v-else>
+              <el-button @click="showCreateForm = false">返回修改内容</el-button>
+              <el-button type="primary" @click="handleUploadSubmit">确认创建</el-button>
+            </template>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -329,18 +785,26 @@ function saveFiles(files: KnowledgeFile[]) {
       </div>
     </div>
 
-    <UploadFileForm
-      :visible="showUploadDialog"
-      @close="showUploadDialog = false"
-      @submit="handleFormSubmit"
-    />
-
     <EditFileForm
       :visible="showEditDialog"
       :file="editingFile"
       @close="showEditDialog = false"
       @submit="handleEditSubmit"
     />
+
+    <el-dialog
+      v-model="showPreviewDialog"
+      :title="previewFileName"
+      width="800px"
+      top="5vh"
+    >
+      <div class="preview-content">
+        <div v-html="previewContent" class="preview-text"></div>
+      </div>
+      <template #footer>
+        <el-button @click="showPreviewDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -383,67 +847,287 @@ function saveFiles(files: KnowledgeFile[]) {
 }
 
 .upload-section {
-  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
-  border: 2px dashed #c0c4cc;
+  background: #fff;
+  border: 3px dashed #409eff;
   border-radius: var(--radius-lg);
-  padding: 48px 24px;
+  padding: 0;
   margin-bottom: var(--spacing-xl);
-  cursor: pointer;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  min-height: 650px;
   transition: all 0.3s ease;
-  text-align: center;
 }
 
 .upload-section:hover {
-  border-color: #409eff;
-  background: linear-gradient(135deg, #ecf5ff 0%, #e0ebff 100%);
-  box-shadow: 0 4px 20px rgba(64, 158, 255, 0.15);
-  transform: translateY(-2px);
+  border-color: #66b1ff;
+  box-shadow: var(--shadow-xl);
 }
 
-.upload-section:active {
-  transform: translateY(0);
+.mode-switch-wrapper {
+  display: flex;
+  align-items: center;
 }
 
-.upload-inner {
+.upload-area,
+.create-area {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 12px;
+  min-height: 650px;
 }
 
-.upload-icon-wrapper {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: rgba(64, 158, 255, 0.1);
+.upload-header,
+.create-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+
+.title-input {
+  flex: 1;
+  margin-right: 16px;
+}
+
+.upload-center-empty {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s ease;
+  padding: 40px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
 }
 
-.upload-section:hover .upload-icon-wrapper {
-  transform: scale(1.1);
-  background: rgba(64, 158, 255, 0.2);
+.upload-content {
+  flex: 1;
+  display: flex;
+  height: calc(100% - 50px);
 }
 
-.upload-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-text);
-  margin: 0;
+.upload-content-left {
+  width: 40%;
+  padding: 20px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+  border-right: 1px solid #e4e7ed;
+  overflow-y: auto;
 }
 
-.upload-desc {
+.upload-content-right {
+  flex: 1;
+  padding: 20px;
+  background: #fff;
+  overflow-y: auto;
+}
+
+.file-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.file-preview-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s;
+}
+
+.file-preview-item:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.preview-file-icon {
+  color: #409eff;
+  margin-right: 12px;
+}
+
+.preview-file-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preview-file-name {
   font-size: 14px;
-  color: var(--color-text-secondary);
-  margin: 0;
+  color: #303133;
+  font-weight: 500;
 }
 
-.upload-tips {
+.preview-file-size {
   font-size: 12px;
-  color: var(--color-info);
-  margin: 0;
+  color: #909399;
+}
+
+.preview-remove-icon {
+  color: #f56c6c;
+  cursor: pointer;
+}
+
+.preview-remove-icon:hover {
+  color: #f78989;
+}
+
+.form-item {
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 8px;
+}
+
+.form-input {
+  width: 100%;
+}
+
+.form-textarea {
+  width: 100%;
+  resize: none;
+}
+
+.form-submit {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.create-form-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e4e8ec;
+}
+
+.create-center {
+  flex: 1;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+}
+
+.content-editor {
+  flex: 1;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 14px;
+  resize: none;
+}
+
+.content-tip {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.upload-footer,
+.create-footer {
+  padding: 12px 16px;
+  border-top: 1px solid #f0f0f0;
+  background: #fafafa;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.footer-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.footer-right {
+  margin-left: 16px;
+}
+
+.keywords-input {
+  width: 100%;
+}
+
+.description-input {
+  width: 100%;
+  resize: none;
+}
+
+.scope-group {
+  display: flex;
+  gap: 16px;
+}
+
+.upload-dragger {
+  width: 100%;
+  height: 100%;
+}
+
+.upload-file-count {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #409eff;
+}
+
+.uploaded-files-list {
+  margin-top: 16px;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  padding: 8px;
+}
+
+.uploaded-file-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: #fafafa;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  transition: all 0.2s;
+}
+
+.uploaded-file-item:hover {
+  background: #f0f2f5;
+}
+
+.uploaded-file-item:last-child {
+  margin-bottom: 0;
+}
+
+.file-icon {
+  color: #409eff;
+  margin-right: 8px;
+}
+
+.file-name {
+  flex: 1;
+  font-size: 13px;
+  color: #606266;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-size {
+  font-size: 12px;
+  color: #909399;
+  margin-right: 12px;
+}
+
+.remove-icon {
+  color: #f56c6c;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.remove-icon:hover {
+  color: #f78989;
 }
 
 .file-table-section {
@@ -612,5 +1296,32 @@ function saveFiles(files: KnowledgeFile[]) {
   100% {
     transform: scale(1.1);
   }
+}
+
+.preview-file-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.preview-icon {
+  color: #409eff;
+  cursor: pointer;
+}
+
+.preview-icon:hover {
+  color: #66b1ff;
+}
+
+.preview-content {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.preview-text {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #303133;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>

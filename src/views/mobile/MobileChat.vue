@@ -15,7 +15,7 @@ const chat = useChat()
 const inputText = ref('')
 const isStreaming = ref(false)
 const isRecording = ref(false)
-let speechRecognition: any = null
+let mediaRecorder: MediaRecorder | null = null
 const streamingContent = ref('')
 const streamingReferences = ref<KnowledgeFile[]>([])
 let currentSSE: ReturnType<typeof useSSE> | null = null
@@ -70,24 +70,130 @@ function handleLogout() {
   router.push('/mobile/chat')
 }
 
-/* ── 语音转文字输入 ── */
-async function toggleRecording() {
-  if (isRecording.value) { speechRecognition?.stop(); isRecording.value = false; return }
-  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-  if (!SpeechRecognition) { alert('你的浏览器不支持语音识别'); return }
-  const recognition = new SpeechRecognition()
-  recognition.lang = 'zh-CN'
-  recognition.continuous = false
-  recognition.interimResults = true
-  recognition.onresult = (e: any) => {
-    const result = e.results[e.results.length - 1]
-    inputText.value = result[0].transcript
-  }
-  recognition.onend = () => { isRecording.value = false }
-  recognition.onerror = () => { isRecording.value = false }
-  speechRecognition = recognition
-  recognition.start()
-  isRecording.value = true
+/* ── 语音录制 ── */
+function startRecording(): Promise<Blob | null> {
+  return new Promise(async (resolve) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4']
+        .find(t => MediaRecorder.isTypeSupported(t)) || ''
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : {})
+      const chunks: Blob[] = []; mediaRecorder = mr
+      mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
+      mr.onstop = () => {
+        stream.getTracks().forEach(t => t.stop())
+        const blob = new Blob(chunks, { type: mimeType || 'audio/webm' })
+        resolve(blob.size > 100 ? blob : null)
+      }
+      mr.onerror = () => resolve(null)
+      mr.start(); isRecording.value = true
+    } catch { resolve(null) }
+  })
+}
+function stopRecording() { if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop(); isRecording.value = false }
+
+/* ── 语音转文字 ── */
+async function handleSTT() {
+  if (isRecording.value) { stopRecording(); return }
+  const blob = await startRecording()
+  if (!blob) return
+  if (!chat.currentConversationId.value) { const conv = await chat.createConversation(); if (!conv) return }
+  const convId = chat.currentConversationId.value!
+  inputText.value = '语音识别中…'
+  let gotText = false
+  try {
+    const { voiceAskApi } = await import('@/api/chat')
+    const response = await voiceAskApi(blob, convId)
+    if (!response.ok) { inputText.value = ''; return }
+    const reader = response.body?.getReader()
+    if (!reader) { inputText.value = ''; return }
+    const decoder = new TextDecoder(); let buffer = ''; let currentEvent = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n'); buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('event: ')) currentEvent = line.slice(7).trim()
+        else if (line.startsWith('data: ')) {
+          try { const data = JSON.parse(line.slice(6).trim())
+            switch (currentEvent) {
+              case 'asr_text': gotText = true; inputText.value = data.text || ''; break
+              case 'token': case 'msg':
+                if (!gotText && inputText.value === '语音识别中…') {
+                  inputText.value = ''; chat.appendUserMessage('[语音消息]')
+                  streamingContent.value = data.content || ''; isStreaming.value = true
+                } break
+              case 'done': if (!gotText) isStreaming.value = false; break
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch { inputText.value = '' }
+  if (!gotText && inputText.value === '语音识别中…') inputText.value = ''
+}
+
+/* ── 语音消息 ── */
+const voicePreviewUrl = ref('')
+const showVoicePreview = ref(false)
+let pendingVoiceBlob: Blob | null = null
+let voiceAudioEl: HTMLAudioElement | null = null
+const isVoicePlaying = ref(false)
+
+async function handleVoiceMsg() {
+  if (isRecording.value) { stopRecording(); return }
+  const blob = await startRecording()
+  if (!blob) return
+  pendingVoiceBlob = blob; voicePreviewUrl.value = URL.createObjectURL(blob)
+  voiceAudioEl = new Audio(voicePreviewUrl.value)
+  voiceAudioEl.onended = () => { isVoicePlaying.value = false }
+  showVoicePreview.value = true
+}
+function playVoicePreview() {
+  if (!voiceAudioEl) return
+  if (isVoicePlaying.value) { voiceAudioEl.pause(); voiceAudioEl.currentTime = 0; isVoicePlaying.value = false; return }
+  voiceAudioEl.play(); isVoicePlaying.value = true
+}
+function cancelVoicePreview() {
+  voiceAudioEl?.pause(); voiceAudioEl = null
+  if (voicePreviewUrl.value) URL.revokeObjectURL(voicePreviewUrl.value)
+  voicePreviewUrl.value = ''; pendingVoiceBlob = null; showVoicePreview.value = false; isVoicePlaying.value = false
+}
+async function confirmVoicePreview() {
+  voiceAudioEl?.pause(); voiceAudioEl = null; showVoicePreview.value = false; isVoicePlaying.value = false
+  if (!pendingVoiceBlob) return
+  const blob = pendingVoiceBlob; pendingVoiceBlob = null
+  if (voicePreviewUrl.value) URL.revokeObjectURL(voicePreviewUrl.value); voicePreviewUrl.value = ''
+  if (!chat.currentConversationId.value) { const conv = await chat.createConversation(); if (!conv) return }
+  const convId = chat.currentConversationId.value!
+  chat.appendUserMessage('[语音消息]'); isStreaming.value = true; streamingContent.value = ''
+  try {
+    const { voiceAskApi } = await import('@/api/chat')
+    const response = await voiceAskApi(blob, convId)
+    if (!response.ok) { isStreaming.value = false; return }
+    const reader = response.body?.getReader()
+    if (!reader) { isStreaming.value = false; return }
+    const decoder = new TextDecoder(); let buffer = ''; let currentEvent = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n'); buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('event: ')) currentEvent = line.slice(7).trim()
+        else if (line.startsWith('data: ')) {
+          try { const data = JSON.parse(line.slice(6).trim())
+            switch (currentEvent) {
+              case 'token': case 'msg': streamingContent.value += data.content || ''; break
+              case 'done': chat.appendAssistantMessage(streamingContent.value, undefined, data.message_id); isStreaming.value = false; streamingContent.value = ''; break
+              case 'error': isStreaming.value = false; break
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch { isStreaming.value = false }
 }
 
 onMounted(() => {
@@ -173,7 +279,8 @@ onMounted(() => {
           :disabled="isStreaming"
           @keyup.enter="sendMessage"
         />
-        <button class="m-mic-btn" :class="{ recording: isRecording }" @click="toggleRecording">
+        <button class="m-mic-btn" :class="{ recording: isRecording }" @click="handleSTT" title="语音转文字">🎤</button>
+        <button class="m-mic-btn" :class="{ recording: isRecording }" @click="handleVoiceMsg" title="语音消息">
           <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
             <path d="M10 2a3 3 0 00-3 3v4a3 3 0 106 0V5a3 3 0 00-3-3zM5 9a5 5 0 0010 0h-1.5a3.5 3.5 0 01-7 0H5z"/>
             <path d="M9.25 13.5v2.75h1.5V13.5h-1.5z"/>
@@ -248,6 +355,27 @@ onMounted(() => {
         <div class="m-panel-overlay" @click="showHistory = false" />
       </div>
     </Transition>
+
+    <!-- 语音预览弹窗 -->
+    <div v-if="showVoicePreview" class="vp-overlay" @click.self="cancelVoicePreview">
+      <div class="vp-card">
+        <div class="vp-header"><span>语音预览</span><button class="vp-close" @click="cancelVoicePreview">×</button></div>
+        <div class="vp-body">
+          <div class="vp-wave" :class="{ playing: isVoicePlaying }">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <button class="vp-play-btn" @click="playVoicePreview">
+            <svg v-if="!isVoicePlaying" viewBox="0 0 20 20" width="24" height="24" fill="currentColor"><path d="M5 3l12 7-12 7V3z"/></svg>
+            <svg v-else viewBox="0 0 20 20" width="24" height="24" fill="currentColor"><path d="M6 3h3v14H6V3zm5 0h3v14h-3V3z"/></svg>
+          </button>
+          <p class="vp-hint">点击播放试听</p>
+        </div>
+        <div class="vp-footer">
+          <button class="vp-btn vp-cancel" @click="cancelVoicePreview">重录</button>
+          <button class="vp-btn vp-confirm" @click="confirmVoicePreview">发送</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -288,14 +416,51 @@ onMounted(() => {
 .m-input { flex: 1; border: none; background: none; outline: none; font-size: 15px; padding: 8px 0; color: #1f1f1f; }
 .m-input::placeholder { color: #aaa; }
 .m-mic-btn {
-  width: 34px; height: 34px; border-radius: 50%;
+  width: 32px; height: 32px; border-radius: 50%;
   border: none; background: transparent; color: #8e9ebd;
   display: flex; align-items: center; justify-content: center; cursor: pointer;
-  transition: all 0.2s; padding: 0;
+  transition: all 0.2s; flex-shrink: 0; padding: 0; font-size: 15px; line-height: 1;
 }
 .m-mic-btn:hover { background: rgba(64,158,255,0.08); color: #409eff; }
 .m-mic-btn.recording { color: #f56c6c; animation: mPulse 1s ease-in-out infinite; }
 @keyframes mPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* 语音预览弹窗 */
+.vp-overlay {
+  position: fixed; inset: 0; z-index: 2000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.35);
+}
+.vp-card {
+  width: 280px; background: #fff; border-radius: 20px;
+  overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+}
+.vp-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid #f0f0f0;
+  font-weight: 600; font-size: 15px;
+}
+.vp-close { width: 28px; height: 28px; border: none; background: none; font-size: 20px; color: #999; cursor: pointer; }
+.vp-body { display: flex; flex-direction: column; align-items: center; padding: 28px 20px; gap: 14px; }
+.vp-wave { display: flex; align-items: center; gap: 3px; height: 28px; }
+.vp-wave span {
+  width: 4px; height: 100%; border-radius: 2px; background: #409eff;
+  animation: waveAnim 0.6s ease-in-out infinite alternate;
+}
+.vp-wave.playing span:nth-child(1) { animation-delay: 0s; }
+.vp-wave.playing span:nth-child(2) { animation-delay: 0.1s; }
+.vp-wave.playing span:nth-child(3) { animation-delay: 0.2s; }
+.vp-wave.playing span:nth-child(4) { animation-delay: 0.3s; }
+.vp-wave.playing span:nth-child(5) { animation-delay: 0.4s; }
+@keyframes waveAnim { 0% { height: 6px; } 100% { height: 28px; } }
+.vp-play-btn { width: 50px; height: 50px; border-radius: 50%; border: none; background: #409eff; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.vp-hint { font-size: 13px; color: #8e8e93; margin: 0; }
+.vp-footer { display: flex; gap: 12px; padding: 0 20px 20px; }
+.vp-btn { flex: 1; height: 40px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; }
+.vp-cancel { background: #f5f5f5; color: #666; }
+.vp-cancel:hover { background: #e8e8e8; }
+.vp-confirm { background: #409eff; color: #fff; }
+.vp-confirm:hover { background: #3a8ee6; }
 .m-send-btn {
   width: 36px; height: 36px; border-radius: 50%;
   border: none; background: #409eff; color: #fff;
