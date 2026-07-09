@@ -30,14 +30,27 @@ const stats = ref([
   { key: 'operation',     label: '访问次数', value: 0, suffix: '' },
 ])
 
+// ── 数字滚动动画 ──
+const displayVals = ref<number[]>([])
+let animFrame = 0
+
+function animateNumbers(targets: number[]) {
+  cancelAnimationFrame(animFrame)
+  const from = displayVals.value.length ? displayVals.value : targets.map(() => 0)
+  const start = performance.now()
+  const dur = 1000
+  function tick(now: number) {
+    const p = Math.min((now - start) / dur, 1)
+    const e = 1 - Math.pow(1 - p, 3)
+    displayVals.value = from.map((f, i) => Math.round(f + (targets[i] - f) * e))
+    if (p < 1) animFrame = requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
+}
+
 let mc = 0
 
-const MOCK = [
-  [1234, 524288000, 42, 150, 5, 28, 12],
-  [1240, 534288000, 45, 160, 6, 30, 15],
-  [1228, 514288000, 38, 140, 3, 25, 10],
-  [1250, 544288000, 50, 170, 7, 32, 18],
-]
+const MOCK = [[29, 2726298, 0, 31, 5, 110, 4]]
 
 function fmtSize(b: number) {
   if (!b) return { v: 0, s: 'GB' }
@@ -52,18 +65,9 @@ function ok(b: { error?: string } | undefined) { return !!b && !('error' in b) }
 
 function applyStatsVals(users: number, sizeBytes: number, upload: number, query: number, sensitive: number, login: number, operation: number) {
   const f = fmtSize(sizeBytes)
-  stats.value = stats.value.map(s => {
-    switch (s.key) {
-      case 'users_total':   return { ...s, value: users }
-      case 'total_storage': return { ...s, value: f.v, suffix: f.s }
-      case 'upload_total':  return { ...s, value: upload }
-      case 'query_total':   return { ...s, value: query }
-      case 'sensitive':     return { ...s, value: sensitive }
-      case 'login_total':   return { ...s, value: login }
-      case 'operation':     return { ...s, value: operation }
-      default: return s
-    }
-  })
+  const vals = [users, f.v, upload, query, sensitive, login, operation]
+  stats.value = stats.value.map((s, i) => ({ ...s, value: vals[i], suffix: i === 1 ? f.s : s.suffix }))
+  animateNumbers([users, f.v, upload, query, sensitive, login, operation])
 }
 
 async function fetchStats() {
@@ -117,33 +121,33 @@ onMounted(() => {
           <!-- 方案一：Hero + 3x2 网格 -->
           <div class="s1-layout">
             <div class="s1-hero" style="--d:0s">
-              <span class="s1-hero-num">{{ stats[1].value.toLocaleString() }}</span>
+              <span class="s1-hero-num">{{ (displayVals[1] ?? 0).toLocaleString() }}</span>
               <span class="s1-hero-suf">{{ stats[1].suffix }}</span>
               <span class="s1-hero-lbl">{{ stats[1].label }}</span>
             </div>
             <div class="s1-grid">
               <div class="s1-cell" style="--d:0.12s">
-                <span class="s1-num">{{ stats[0].value.toLocaleString() }}</span>
+                <span class="s1-num">{{ (displayVals[0] ?? 0).toLocaleString() }}</span>
                 <span class="s1-lbl">{{ stats[0].label }}</span>
               </div>
               <div class="s1-cell" style="--d:0.2s">
-                <span class="s1-num">{{ stats[2].value.toLocaleString() }}</span>
+                <span class="s1-num">{{ (displayVals[2] ?? 0).toLocaleString() }}</span>
                 <span class="s1-lbl">{{ stats[2].label }}</span>
               </div>
               <div class="s1-cell" style="--d:0.28s">
-                <span class="s1-num">{{ stats[3].value.toLocaleString() }}</span>
+                <span class="s1-num">{{ (displayVals[3] ?? 0).toLocaleString() }}</span>
                 <span class="s1-lbl">{{ stats[3].label }}</span>
               </div>
               <div class="s1-cell" style="--d:0.36s">
-                <span class="s1-num">{{ stats[4].value.toLocaleString() }}</span>
+                <span class="s1-num">{{ (displayVals[4] ?? 0).toLocaleString() }}</span>
                 <span class="s1-lbl">{{ stats[4].label }}</span>
               </div>
               <div class="s1-cell" style="--d:0.44s">
-                <span class="s1-num">{{ stats[5].value.toLocaleString() }}</span>
+                <span class="s1-num">{{ (displayVals[5] ?? 0).toLocaleString() }}</span>
                 <span class="s1-lbl">{{ stats[5].label }}</span>
               </div>
               <div class="s1-cell" style="--d:0.52s">
-                <span class="s1-num">{{ stats[6].value.toLocaleString() }}</span>
+                <span class="s1-num">{{ (displayVals[6] ?? 0).toLocaleString() }}</span>
                 <span class="s1-lbl">{{ stats[6].label }}</span>
               </div>
             </div>
@@ -262,8 +266,11 @@ onMounted(() => {
 }
 @keyframes s1-sway {
   0%, 100% { transform: scale(1) rotate(0deg); }
-  25% { transform: scale(1) rotate(0.8deg); }
-  75% { transform: scale(1) rotate(-0.8deg); }
+  15% { transform: scale(1) rotate(0.4deg); }
+  30% { transform: scale(1) rotate(-0.3deg); }
+  50% { transform: scale(1) rotate(0.2deg); }
+  70% { transform: scale(1) rotate(-0.2deg); }
+  85% { transform: scale(1) rotate(0.1deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
