@@ -8,8 +8,8 @@
 
     <!-- 搜索 + 筛选 -->
     <div class="fm-toolbar">
-      <el-input v-model="keyword" placeholder="搜索问题..." clearable size="default" class="fi kw" />
-      <el-select v-model="categoryFilter" placeholder="全部分类" clearable size="default" class="fi sl">
+      <el-input v-model="keyword" placeholder="搜索问题..." clearable size="default" class="fi kw" @keyup.enter="page = 1; loadData()" @clear="page = 1; loadData()" />
+      <el-select v-model="categoryFilter" placeholder="全部分类" clearable size="default" class="fi sl" @change="page = 1; loadData()">
         <el-option label="全部分类" value="" />
         <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
       </el-select>
@@ -17,14 +17,14 @@
 
     <!-- 状态 Tabs -->
     <div class="fm-tabs">
-      <span v-for="tab in tabs" :key="tab.value" class="fm-tab" :class="{ active: activeTab === tab.value }" @click="activeTab = tab.value; page = 1">
+      <span v-for="tab in tabs" :key="tab.value" class="fm-tab" :class="{ active: activeTab === tab.value }" @click="activeTab = tab.value; page = 1; loadData()">
         {{ tab.label }}
       </span>
     </div>
 
     <!-- 列表 -->
     <div class="fm-list" v-loading="loading">
-      <div v-for="item in pagedList" :key="item.id" class="fm-card" :class="['fm-status--' + item.status, { expanded: expandedId === item.id }]">
+      <div v-for="item in displayedList" :key="item.id" class="fm-card" :class="['fm-status--' + item.status, { expanded: expandedId === item.id }]">
         <div class="fm-card-top">
           <div class="fm-card-info" @click="toggleItem(item.id)">
             <div class="fm-card-head">
@@ -34,9 +34,9 @@
               </el-tag>
             </div>
             <div class="fm-card-meta">
-              <span>{{ item.category_name }}</span>
+              <span>{{ item.category?.name }}</span>
               <span v-if="item.frequency !== undefined">· 频率 {{ item.frequency }}</span>
-              <span v-if="item.college_name">· {{ item.college_name }}</span>
+              <span v-if="item.college">· {{ item.college.name }}</span>
             </div>
           </div>
           <div class="fm-card-actions">
@@ -57,7 +57,7 @@
         </div>
       </div>
 
-      <div v-if="!loading && pagedList.length === 0" class="fm-empty">
+      <div v-if="!loading && displayedList.length === 0" class="fm-empty">
         <p>暂无数据</p>
       </div>
 
@@ -66,7 +66,7 @@
         <el-pagination
           v-model:current-page="page"
           v-model:page-size="pageSize"
-          :total="filteredList.length"
+          :total="total"
           layout="total, sizes, prev, pager, next, jumper"
           :page-sizes="[10, 15, 20]"
           @current-change="handlePageChange"
@@ -75,7 +75,7 @@
       </div>
     </div>
 
-    <!-- 编辑弹窗 -->
+	    <!-- 编辑弹窗 -->
     <el-dialog v-model="editVisible" title="编辑 FAQ" width="560px" destroy-on-close>
       <el-form :model="editForm" label-width="80px">
         <el-form-item label="问题" required>
@@ -106,14 +106,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getFaqManageItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, updateFaqDraftApi } from '@/api/faq'
-import type { FaqCategory, FaqManageItem } from '@/api/faq'
+import { getFaqAllItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, updateFaqDraftApi } from '@/api/faq'
+import type { FaqCategory, FaqNewItem } from '@/api/faq'
 
 const keyword = ref('')
 const categoryFilter = ref<number | ''>('')
 const activeTab = ref('')
 const categories = ref<FaqCategory[]>([])
-const list = ref<FaqManageItem[]>([])
+const list = ref<FaqNewItem[]>([])
 const loading = ref(false)
 const expandedId = ref<number | null>(null)
 const page = ref(1)
@@ -143,10 +143,12 @@ onMounted(async () => {
 
 async function loadData() {
   loading.value = true
-  page.value = 1
   try {
-    const res = await getFaqManageItemsApi()
-    list.value = res.results || []
+    const data = await getFaqAllItemsApi({
+      status: activeTab.value || undefined,
+      q: keyword.value || undefined,
+    })
+    list.value = data || []
   } catch {
     list.value = []
   } finally {
@@ -154,28 +156,15 @@ async function loadData() {
   }
 }
 
-/** 前端搜索 + 分类 + 状态过滤 */
-const filteredList = computed(() => {
-  let result = list.value
-  if (activeTab.value) {
-    result = result.filter((item) => item.status === activeTab.value)
-  }
-  if (keyword.value) {
-    const kw = keyword.value.toLowerCase()
-    result = result.filter(
-      (item) => item.question.toLowerCase().includes(kw) || item.answer.toLowerCase().includes(kw),
-    )
-  }
+/** 分类过滤 + 前端分页 */
+const displayedList = computed(() => {
+  let filtered = list.value
   if (categoryFilter.value) {
-    result = result.filter((item) => item.category === categoryFilter.value)
+    filtered = filtered.filter((item) => item.category.id === categoryFilter.value)
   }
-  return result
-})
-
-/** 当前页数据 */
-const pagedList = computed(() => {
+  total.value = filtered.length
   const start = (page.value - 1) * pageSize.value
-  return filteredList.value.slice(start, start + pageSize.value)
+  return filtered.slice(start, start + pageSize.value)
 })
 
 function handlePageChange(p: number) {
@@ -191,7 +180,7 @@ function toggleItem(id: number) {
   expandedId.value = expandedId.value === id ? null : id
 }
 
-async function handlePublish(row: FaqManageItem) {
+async function handlePublish(row: FaqNewItem) {
   try {
     await ElMessageBox.confirm(`确定发布「${row.question}」吗？`, '发布确认')
     await actionFaqDraftApi(row.id, 'publish')
@@ -200,7 +189,7 @@ async function handlePublish(row: FaqManageItem) {
   } catch { /* */ }
 }
 
-async function handleReject(row: FaqManageItem) {
+async function handleReject(row: FaqNewItem) {
   try {
     await ElMessageBox.confirm(`确定驳回「${row.question}」吗？`, '驳回确认')
     await actionFaqDraftApi(row.id, 'reject')
@@ -209,7 +198,7 @@ async function handleReject(row: FaqManageItem) {
   } catch { /* */ }
 }
 
-async function handleDelete(row: FaqManageItem) {
+async function handleDelete(row: FaqNewItem) {
   try {
     await ElMessageBox.confirm(`确定删除「${row.question}」吗？此操作不可撤销。`, '删除确认', { type: 'warning' })
     await deleteFaqItemApi(row.id)
@@ -218,12 +207,12 @@ async function handleDelete(row: FaqManageItem) {
   } catch { /* */ }
 }
 
-function openEdit(row: FaqManageItem) {
+function openEdit(row: FaqNewItem) {
   editingId.value = row.id
   editForm.value = {
     question: row.question,
     answer: row.answer,
-    category: row.category,
+    category: row.category?.id ?? null,
     tags: [...(row.tags || [])],
   }
   existingTags.value = row.tags || []
@@ -247,6 +236,7 @@ async function confirmEdit() {
     editLoading.value = false
   }
 }
+
 </script>
 
 <style scoped>

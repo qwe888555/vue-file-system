@@ -38,7 +38,13 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
     try {
       const response = await askQuestionApi(conversationId, question)
       if (!response.ok) {
-        error.value = `请求失败 (${response.status})`
+        // 尝试解析后端的错误详情（敏感词拦截等）
+        try {
+          const errJson = await response.json()
+          if (errJson.detail) content.value = errJson.detail
+        } catch {
+          error.value = `请求失败 (${response.status})`
+        }
         streaming.value = false
         return
       }
