@@ -307,6 +307,7 @@ async function confirmVoicePreview() {
     const response = await voiceAskApi(blob, convId)
     if (!response.ok) {
       if (response.status === 401) ElMessage.warning("语音消息需要登录后使用")
+      else if (response.status === 500) ElMessage.error("语音识别服务异常，请稍后重试")
       else ElMessage.warning("语音发送失败")
       isStreaming.value = false; return
     }
