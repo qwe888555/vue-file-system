@@ -1104,7 +1104,7 @@ function saveFiles(files: KnowledgeFile[]) {
               >
                 <component :is="fileTypeIcons[scope.row.fileType] || 'Document'" />
               </el-icon>
-              <span class="file-title">{{ scope.row.title }}</span>
+              <span class="file-title cursor-pointer" @click="handlePreviewDoc(scope.row.id, scope.row.title)">{{ scope.row.title }}</span>
             </div>
           </template>
         </el-table-column>
@@ -1646,6 +1646,10 @@ function saveFiles(files: KnowledgeFile[]) {
   font-size: 14px;
   color: var(--color-text);
   font-weight: 500;
+  transition: color 0.2s;
+}
+.file-title:hover {
+  color: var(--color-primary, #409eff);
 }
 
 .keywords-cell {
