@@ -105,3 +105,37 @@ export function actionFaqDraftApi(
 ): Promise<{ detail: string; status: string; reviewed_at: string }> {
   return request.post(`/faq/drafts/${id}/action/`, { action })
 }
+
+// ══════════════════════════════════════
+//  FAQ 自动生成 — /api/faq/generate/ & /api/faq/generation-logs/
+// ══════════════════════════════════════
+
+export interface FaqGenerationLog {
+  id: number
+  status: 'running' | 'success' | 'failed'
+  total_questions: number
+  clusters_found: number
+  drafts_generated: number
+  error_message: string | null
+  started_at: string
+  completed_at: string | null
+  duration_seconds: number | null
+}
+
+/** 触发 FAQ 自动生成 */
+export function triggerFaqGenerationApi(): Promise<{ detail: string }> {
+  return request.post('/faq/generate/')
+}
+
+/** 获取生成日志列表 */
+export function getFaqGenerationLogsApi(params?: {
+  page?: number
+  page_size?: number
+}): Promise<{ count: number; results: FaqGenerationLog[] }> {
+  return request.get('/faq/generation-logs/', { params })
+}
+
+/** 获取单条生成日志详情 */
+export function getFaqGenerationLogDetailApi(id: number): Promise<FaqGenerationLog> {
+  return request.get(`/faq/generation-logs/${id}/`)
+}
