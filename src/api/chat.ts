@@ -113,8 +113,10 @@ export function voiceAskApi(audioBlob: Blob, conversationId?: number | null): Pr
   const baseUrl = import.meta.env.VITE_API_URL || '/api'
   const token = localStorage.getItem('access_token') || ''
   const formData = new FormData()
-  // 后端支持 WAV/MP3/PCM，使用通用扩展名
-  formData.append('audio_file', audioBlob, 'recording.webm')
+  // 根据实际编码类型设置正确的扩展名，方便后端魔数检测兜底
+  const mime = audioBlob.type || ''
+  const ext = mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'mp4' : 'webm'
+  formData.append('audio_file', audioBlob, `recording.${ext}`)
   if (conversationId) formData.append('conversation_id', String(conversationId))
   const headers: Record<string, string> = {}
   if (token) headers['Authorization'] = `Bearer ${token}`
