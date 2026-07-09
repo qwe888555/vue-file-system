@@ -11,9 +11,10 @@ import type { Account, College } from '@/types'
 export function getAccountsApi(params: {
   page?: number
   pageSize?: number
-  role?: string
+  role?: string | string[]
   college?: number
-  keyword?: string
+  department_id?: number
+  search?: string
 }): Promise<{ count: number; results: Account[] }> {
   return request.get('/admin/users/', {
     params: {
@@ -21,6 +22,8 @@ export function getAccountsApi(params: {
       page_size: params.pageSize,
       role: params.role || undefined,
       college_id: params.college || undefined,
+      department_id: params.department_id || undefined,
+      search: params.search || undefined,
     },
   })
 }

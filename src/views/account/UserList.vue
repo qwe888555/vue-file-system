@@ -35,12 +35,11 @@
           />
           <el-select
             v-model="collegeFilter"
-            placeholder="全部学院/部门"
+            placeholder="全部所属单位"
             clearable
             class="fi sl"
-            @change="handleSearch"
           >
-            <el-option label="全部学院/部门" value="__all__" />
+            <el-option label="全部所属单位" value="__all__" />
             <el-option
               v-for="opt in orgOptions"
               :key="opt.id"
@@ -52,7 +51,7 @@
         </div>
       </template>
 
-      <!-- 所属学院/部门列（优先学院名，没有则显示部门名） -->
+      <!-- 所属单位列（优先学院名，没有则显示部门名） -->
       <template #college_name="{ row }">
         <span>{{ row.college_name || row.department_name || '-' }}</span>
       </template>
@@ -63,7 +62,7 @@
           :type="ROLE_CONFIG[row.role]?.tagType ?? 'info'"
           size="small"
         >
-          {{ ROLE_CONFIG[row.role]?.label || row.role }}
+          {{ getRoleLabel(row.role) }}
         </el-tag>
       </template>
 
@@ -134,7 +133,7 @@ import UserEdit from '@/components/account/UserEdit.vue'
 import { useUserStore } from '@/store/user'
 import { ROLE_CONFIG } from '@/config/roles'
 import { passwordRulesRequired } from '@/config/passwordRules'
-import type { College, UserRole } from '@/types'
+import type { College } from '@/types'
 import {
   getAccountsApi,
   createAccountApi,
@@ -156,13 +155,18 @@ const orgOptions = ref<OrgOption[]>([])
 
 onMounted(async () => {
   try {
-    const [colRes, deptRes] = await Promise.all([getCollegesApi(), getDepartmentsApi()])
+    const colRes = await getCollegesApi()
     colleges.value = colRes.results || []
-    departments.value = deptRes.results || []
-    const allOptions = [
-      ...colleges.value.map((c) => ({ id: `col_${c.id}`, name: c.name })),
-      ...flattenDepts(departments.value),
-    ]
+
+    let allOptions: OrgOption[] = colleges.value.map((c) => ({ id: `col_${c.id}`, name: c.name }))
+
+    // 超级管理员才加载部门数据
+    if (isSuperAdmin.value) {
+      const deptRes = await getDepartmentsApi()
+      departments.value = deptRes.results || []
+      allOptions = [...allOptions, ...flattenDepts(departments.value)]
+    }
+
     // 非超级管理员且有 college_id → 下拉只返回该学院的选项
     if (!isSuperAdmin.value && userCollegeId.value) {
       orgOptions.value = allOptions.filter((o) => o.id === `col_${userCollegeId.value}`)
@@ -203,6 +207,12 @@ const isSuperAdmin = computed(() => userStore.role === 'super_admin')
 const userCollegeId = computed(() => userStore.userInfo?.college_id)
 const tableRef = ref<InstanceType<typeof BaseTable>>()
 
+/** 角色显示标签：college_admin/dept_admin 统一显示为"管理员" */
+function getRoleLabel(role: string): string {
+  if (role === 'college_admin' || role === 'dept_admin') return '管理员'
+  return ROLE_CONFIG[role as keyof typeof ROLE_CONFIG]?.label || role
+}
+
 // ── 搜索栏状态 ──
 const keyword = ref('')
 const roleFilter = ref('__all__')
@@ -212,17 +222,21 @@ const collegeFilter = ref<string>('__all__')
 const columns = [
   { prop: 'username', label: '账号', width: '200', align: 'center' as const },
   { prop: 'role', label: '角色', width: '200', align: 'center' as const },
-  { prop: 'college_name', label: '所属学院/部门', minWidth: '200', align: 'center' as const },
+  { prop: 'college_name', label: '所属单位', minWidth: '200', align: 'center' as const },
 ]
 
-// ── 角色筛选选项 ──
-const roleOptions = computed(() =>
-  (Object.keys(ROLE_CONFIG) as UserRole[])
-    .filter((role) => role !== 'admin' && role !== 'super_admin')
-    .map((role) => ({ value: role, label: ROLE_CONFIG[role].label })),
-)
+// ── 角色筛选选项（仅 super_admin 可见，学院管理员只保留"全部"） ──
+const roleOptions = computed(() => {
+  if (isSuperAdmin.value) {
+    return [
+      { value: 'user', label: '普通用户' },
+      { value: '__admin__', label: '管理员' },
+    ]
+  }
+  return []
+})
 
-// ── 默认筛选条件（学院管理员自动限定本院） ──
+// ── 默认筛选条件（管理员自动限定本院） ──
 const defaultFilters = computed(() => {
   const f: Record<string, any> = {}
   if (!isSuperAdmin.value && userCollegeId.value) {
@@ -246,32 +260,32 @@ async function getLocalAccounts(params: {
     console.warn('[UserList] 非超级管理员但 college_id 为空，无法限制学院范围', userStore.userInfo)
   }
 
+  // __admin__ → 不传 role 给后端，拿到全量后前端过滤
+  const apiRole = params.role === '__admin__' ? undefined : (params.role || undefined)
+
   const res = await getAccountsApi({
-    role: params.role,
-    college: collegeId ?? undefined,
+    pageSize: 0,         // 0 = 全部数据，分页前端做
+    role: apiRole,
+    college: collegeId ?? undefined,                    // 学院筛选
+    department_id: params.department_id ?? undefined,    // 部门筛选
+    search: params.keyword || undefined,                 // 关键字搜索
   })
+
   const list = res.results
+  // 管理员筛选（college_admin + dept_admin）——前端做
+  const filtered = params.role === '__admin__'
+    ? list.filter((a) => a.role === 'college_admin' || a.role === 'dept_admin')
+    : list
 
-  let filtered = list
-  if (params.keyword) {
-    const kw = params.keyword.toLowerCase()
-    filtered = filtered.filter(
-      (a) =>
-        a.username.toLowerCase().includes(kw) ||
-        a.first_name.toLowerCase().includes(kw) ||
-        a.last_name.toLowerCase().includes(kw) ||
-        a.email.toLowerCase().includes(kw),
-    )
-  }
-  // 前端部门过滤（后端暂不支持 ?department_id=）
-  if (params.department_id) {
-    filtered = filtered.filter((a) => a.department_id === params.department_id)
-  }
-
-  const total = filtered.length
   const start = (params.page - 1) * params.pageSize
   const sliced = filtered.slice(start, start + params.pageSize)
-  return { list: sliced, total, page: params.page, pageSize: params.pageSize }
+
+  return {
+    list: sliced,
+    total: filtered.length,
+    page: params.page,
+    pageSize: params.pageSize,
+  }
 }
 
 /** 从 prefixed ID（col_1 / dept_5）+ role 提取 org 入参 */

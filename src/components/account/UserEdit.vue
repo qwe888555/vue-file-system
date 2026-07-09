@@ -37,11 +37,11 @@
 
   <el-form-item
     v-if="!hideCollege"
-    label="所属学院/部门"
+    label="所属单位"
     prop="college_id"
     :rules="orgRules"
   >
-    <el-select v-model="form.college_id" placeholder="请选择所属学院/部门" clearable filterable>
+    <el-select v-model="form.college_id" placeholder="请选择所属单位" clearable filterable>
       <el-option
         v-for="opt in filteredOrgOptions"
         :key="opt.id"
@@ -102,10 +102,10 @@ const filteredOrgOptions = computed(() => {
   return props.orgOptions
 })
 
-/** 所属学院/部门校验规则 */
+/** 所属单位校验规则 */
 const orgRules = computed(() => {
   const role = props.form.role
-  const rules: any[] = [{ required: true, message: '请选择所属学院/部门', trigger: 'change' }]
+  const rules: any[] = [{ required: true, message: '请选择所属单位', trigger: 'change' }]
   if (role === 'college_admin') {
     rules.push({
       validator: (_: any, val: string, callback: Function) => {
