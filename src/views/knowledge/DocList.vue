@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, triggerRef } from 'vue'
+import { ref, computed, onMounted, triggerRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search, Close, Plus, Check } from '@element-plus/icons-vue'
@@ -11,6 +11,8 @@ import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 const router = useRouter()
 
 const searchQuery = ref('')
+// 本地描述缓存：上传文件后后端列表可能不返回 description 字段，这里暂存以便编辑时使用
+const localDescriptionCache = ref<Map<number, string>>(new Map())
 const showEditDialog = ref(false)
 const editingFile = ref<KnowledgeFile | null>(null)
 const loading = ref(false)
@@ -23,6 +25,7 @@ const showPreviewDialog = ref(false)
 const previewContent = ref('')
 const previewFileName = ref('')
 const previewFileUrl = ref('')
+const isOfficePreview = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const showKeywordsDialog = ref(false)
@@ -209,6 +212,7 @@ async function handlePreviewDoc(id: number, title: string) {
     previewFileName.value = title
     previewContent.value = ''
     previewFileUrl.value = ''
+    isOfficePreview.value = false
     
     const result = await previewDocApi(id)
     
@@ -219,17 +223,12 @@ async function handlePreviewDoc(id: number, title: string) {
         previewFileUrl.value = result.content
       } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExtension)) {
         previewFileUrl.value = result.content
-      } else if (fileExtension === 'docx') {
-        try {
-          const response = await fetch(result.content)
-          const blob = await response.blob()
-          const arrayBuffer = await blob.arrayBuffer()
-          const mammothResult = await mammoth.convertToHtml({ arrayBuffer })
-          previewContent.value = mammothResult.value || '无法查看文件详细内容'
-        } catch (mammothError) {
-          console.error('mammoth解析失败:', mammothError)
-          previewContent.value = '无法查看文件详细内容'
-        }
+      } else if (result.preview_type === 'url' && result.file_type === 'document') {
+        previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(result.content)}`
+        isOfficePreview.value = true
+      } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'wps', 'et', 'dps'].includes(fileExtension)) {
+        previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(result.content)}`
+        isOfficePreview.value = true
       } else if (fileExtension === 'txt') {
         try {
           const response = await fetch(result.content)
@@ -265,6 +264,7 @@ function handlePreviewClose() {
     previewFileUrl.value = ''
   }
   previewContent.value = ''
+  isOfficePreview.value = false
 }
 
 function showAllKeywords(keywords: { id: number; phrase: string }[], title: string) {
@@ -367,6 +367,10 @@ async function handleUploadSubmit() {
         scope: uploadForm.value.scope === 'public' ? 'school' : 'college',
       })
       console.log('创建文件结果:', result)
+      // 缓存描述，防止 fetchFiles 刷新后丢失
+      if (result.id && uploadForm.value.description) {
+        localDescriptionCache.value.set(result.id, uploadForm.value.description)
+      }
       ElMessage.success('创建成功')
       resetUploadForm()
       fetchFiles()
@@ -419,6 +423,10 @@ async function handleUploadSubmit() {
         const result = await uploadFileApi(formData)
         if (result.id) {
           item.docId = result.id
+          // 缓存描述，防止 fetchFiles 刷新后丢失
+          if (item.description) {
+            localDescriptionCache.value.set(result.id, item.description)
+          }
         }
         successCount++
       }
@@ -439,15 +447,17 @@ const pageSize = ref(8)
 const totalFiles = ref(0)
 
 const uploadedFiles = ref<KnowledgeFile[]>([])
+const allFiles = ref<KnowledgeFile[]>([])
 const keywordsCache = new Map<number, Keyword[]>()
 const loadingKeywords = new Set<number>()
 
-async function fetchFiles() {
+async function fetchFiles(keyword?: string) {
   loading.value = true
   try {
     const res = await getDocListApi({
-      page: currentPage.value,
-      page_size: pageSize.value,
+      page: 1,
+      page_size: 1000,
+      keyword: keyword || undefined,
     })
     console.log('文档列表响应:', JSON.stringify(res, null, 2))
     const data = res.results || res.data || res
@@ -473,37 +483,46 @@ async function fetchFiles() {
       if (file.updated_at && !file.updatedAt) {
         file.updatedAt = file.updated_at
       }
-      if (file.description && !file.summary) {
-        file.summary = file.description
+      // 后端可能返回 description 或 summary，统一映射确保数据不丢失
+      const rawDesc = (file as any).description
+      if (rawDesc && !file.summary) {
+        file.summary = rawDesc
+      }
+      // 同时保留原始 description 字段，供编辑弹窗使用
+      if (rawDesc) {
+        ;(file as any).description = rawDesc
+      }
+      // 从本地缓存恢复描述（后端列表接口可能不返回 description 字段）
+      const cachedDesc = localDescriptionCache.value.get(file.id)
+      if (cachedDesc) {
+        if (!file.summary) file.summary = cachedDesc
+        ;(file as any).description = cachedDesc
+      }
+    })
+
+    // 在覆盖 allFiles 前，保存现有文件的描述到缓存（防止 fetchFiles 刷新后丢失）
+    allFiles.value.forEach((f) => {
+      const desc = f.summary || (f as any).description
+      if (desc && !localDescriptionCache.value.has(f.id)) {
+        localDescriptionCache.value.set(f.id, desc)
       }
     })
     
-    if (newFiles.length === 0) {
-      if (currentPage.value === 1) {
-        uploadedFiles.value = []
-        totalFiles.value = 0
-      } else {
-        totalFiles.value = (currentPage.value - 1) * pageSize.value
-        currentPage.value = currentPage.value - 1
-        await fetchFiles()
-        return
-      }
-    } else {
-      uploadedFiles.value = newFiles
-      if (newFiles.length < pageSize.value) {
-        totalFiles.value = (currentPage.value - 1) * pageSize.value + newFiles.length
-      } else {
-        const backendTotal = res.total || res.count || 0
-        totalFiles.value = backendTotal || (currentPage.value * pageSize.value)
-      }
+    allFiles.value = newFiles
+    totalFiles.value = newFiles.length
+    
+    const maxPage = Math.max(1, Math.ceil(totalFiles.value / pageSize.value))
+    if (currentPage.value > maxPage) {
+      currentPage.value = maxPage
     }
+    
+    const start = (currentPage.value - 1) * pageSize.value
+    const end = start + pageSize.value
+    uploadedFiles.value = allFiles.value.slice(start, end)
     
   } catch (error: any) {
     console.error('获取文件列表失败:', error)
-    if (error.response?.status === 404 && currentPage.value > 1) {
-      currentPage.value = 1
-      await fetchFiles()
-    } else if (error.response?.status === 401) {
+    if (error.response?.status === 401) {
       console.warn('Token过期，需要重新登录')
     }
   } finally {
@@ -563,17 +582,72 @@ onMounted(() => {
   fetchFiles()
 })
 
+watch(searchQuery, () => {
+  currentPage.value = 1
+})
+
+/**
+ * 标准化搜索文本：统一中英文标点符号，方便搜索匹配
+ */
+function normalizeSearchText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/：/g, ':')   // 中文冒号 → 英文冒号
+    .replace(/，/g, ',')   // 中文逗号 → 英文逗号
+    .replace(/。/g, '.')   // 中文句号 → 英文句号
+    .replace(/（/g, '(')   // 中文左括号
+    .replace(/）/g, ')')   // 中文右括号
+    .replace(/；/g, ';')   // 中文分号
+    .replace(/"/g, '"')   // 中文左引号
+    .replace(/"/g, '"')   // 中文右引号
+    .replace(/'/g, "'")   // 中文左单引号
+    .replace(/'/g, "'")   // 中文右单引号
+    .trim()
+}
+
 const filteredFiles = computed(() => {
-  if (!searchQuery.value) return uploadedFiles.value
-  const query = searchQuery.value.toLowerCase()
-  return uploadedFiles.value.filter(
-    (file) =>
-      file.title.toLowerCase().includes(query) ||
-      (file.summary && file.summary.toLowerCase().includes(query)) ||
-      (file.author && file.author.toLowerCase().includes(query)) ||
-      (file.collegeName && file.collegeName.toLowerCase().includes(query)) ||
-      (file.keywords && file.keywords.some((kw) => kw.phrase.toLowerCase().includes(query)))
-  )
+  if (!searchQuery.value) return allFiles.value
+  const query = normalizeSearchText(searchQuery.value)
+  if (!query) return allFiles.value
+
+  return allFiles.value.filter((file) => {
+    // 构建包含所有字段的搜索文本，确保输入任何字符都能匹配到相关文件
+    const searchableParts = [
+      file.id,
+      file.title,
+      file.summary,
+      file.author,
+      file.collegeName,
+      file.collegeId,
+      file.category,
+      file.categoryName,
+      file.fileType,
+      file.fileSize,
+      file.status,
+      file.content,
+      file.fileData,
+      file.createdAt,
+      file.updatedAt,
+      // 格式化后的日期（中文格式，方便按年月日搜索）
+      file.createdAt ? formatDate(file.createdAt) : '',
+      file.updatedAt ? formatDate(file.updatedAt) : '',
+      // 格式化后的文件大小（如 "1.5 MB"）
+      file.fileSize != null ? formatFileSize(file.fileSize) : '',
+      // 关键词（短语 + ID）
+      ...(file.keywords || []).flatMap((kw) => [kw.phrase, String(kw.id)]),
+    ]
+    const searchText = normalizeSearchText(
+      searchableParts
+        .filter((p) => p != null && p !== '')
+        .map((p) => String(p))
+        .join(' ')
+    )
+    return searchText.includes(query)
+  })
+})
+
+const displayTotalFiles = computed(() => {
+  return filteredFiles.value.length
 })
 
 const paginatedFiles = computed(() => {
@@ -583,12 +657,21 @@ const paginatedFiles = computed(() => {
 })
 
 function handleCurrentChange(page: number) {
+  const maxPage = Math.max(1, Math.ceil(displayTotalFiles.value / pageSize.value))
   if (page < 1) {
     currentPage.value = 1
     return
   }
+  if (page > maxPage) {
+    currentPage.value = maxPage
+    return
+  }
   currentPage.value = page
-  fetchFiles()
+}
+
+function handleSizeChange(size: number) {
+  pageSize.value = size
+  currentPage.value = 1
 }
 
 const fileTypeIcons: Record<string, any> = {
@@ -719,7 +802,13 @@ function handleEditSubmit(data: { title: string; description: string; keywords: 
   if (editingFile.value) {
     editingFile.value.title = data.title
     editingFile.value.summary = data.description
+    // 同步保留原始 description 字段，方便再次编辑时读取
+    ;(editingFile.value as any).description = data.description
     editingFile.value.keywords = data.keywords
+    // 更新本地缓存，防止 fetchFiles 刷新后丢失
+    if (data.description) {
+      localDescriptionCache.value.set(editingFile.value.id, data.description)
+    }
     saveFiles(uploadedFiles.value)
     ElMessage.success('编辑成功')
     fetchFiles()
@@ -762,15 +851,6 @@ function saveFiles(files: KnowledgeFile[]) {
       </div>
     </div>
 
-    <div class="search-section">
-      <el-input
-        v-model="searchQuery"
-        placeholder="搜索文件名、学院/部门、作者、关键词、文件描述..."
-        prefix-icon="Search"
-        class="search-input"
-      />
-    </div>
-
     <div class="upload-section">
       <div v-if="!createMode" class="upload-area">
         <div class="upload-header">
@@ -792,9 +872,12 @@ function saveFiles(files: KnowledgeFile[]) {
             accept=".pdf,.doc,.docx,.txt,.jpg,.png,.gif,.mp3,.wav,.mp4,.avi,.mkv,.zip,.rar"
             class="upload-dragger"
           >
-            <el-icon :size="48" color="#c0c4cc"><Upload /></el-icon>
+            <el-icon :size="300" color="#c0c4cc"><Upload /></el-icon>
             <div class="el-upload__text">
               将文件拖到此处，或<em>点击上传</em>
+            </div>
+            <div class="upload-file-formats">
+              支持 PDF、Word、TXT、图片、音视频等格式
             </div>
           </el-upload>
         </div>
@@ -975,9 +1058,18 @@ function saveFiles(files: KnowledgeFile[]) {
       <div class="section-header">
         <h3 class="section-title">
           <el-icon><FolderOpened /></el-icon>
-          全部文件
-          <span class="file-count">{{ totalFiles }}</span>
+          全部资料
+          <span class="file-count">{{ displayTotalFiles }}</span>
         </h3>
+      </div>
+      
+      <div class="search-section">
+        <el-input
+          v-model="searchQuery"
+          placeholder="搜索资料名、上传单位、上传者、上传时间、资料描述..."
+          prefix-icon="Search"
+          class="search-input"
+        />
       </div>
 
       <div v-if="filteredFiles.length === 0" class="empty-state">
@@ -1001,7 +1093,7 @@ function saveFiles(files: KnowledgeFile[]) {
       >
         <el-table-column type="selection" width="55" align="center" />
         
-        <el-table-column prop="title" label="文件名" min-width="200" show-overflow-tooltip>
+        <el-table-column prop="title" label="资料名" min-width="200" show-overflow-tooltip>
           <template #default="scope">
             <div class="file-name-cell">
               <el-icon 
@@ -1017,15 +1109,7 @@ function saveFiles(files: KnowledgeFile[]) {
           </template>
         </el-table-column>
 
-        <el-table-column prop="categoryName" label="分类" min-width="120" align="center">
-          <template #default="scope">
-            <el-tag size="small" type="info" effect="plain">
-              {{ scope.row.categoryName || '未分类' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-
-        <el-table-column prop="collegeName" label="学院" min-width="120" align="center">
+        <el-table-column prop="collegeName" label="上传单位" min-width="120" align="center">
           <template #default="scope">
             <el-tag size="small" type="primary" effect="plain">
               {{ scope.row.collegeName || '未归属' }}
@@ -1060,13 +1144,13 @@ function saveFiles(files: KnowledgeFile[]) {
         <el-pagination
           :current-page="currentPage"
           :page-size="pageSize"
-          :total="totalFiles"
+          :total="displayTotalFiles"
           :page-sizes="[8, 10, 12, 16, 18]"
           :pager-count="6"
           layout="total, sizes, prev, pager, next, jumper"
           :hide-on-single-page="false"
           @current-change="handleCurrentChange"
-          @size-change="(size) => { pageSize.value = size; currentPage.value = 1; fetchFiles(); }"
+          @size-change="handleSizeChange"
         />
       </div>
     </div>
@@ -1086,7 +1170,8 @@ function saveFiles(files: KnowledgeFile[]) {
       @close="handlePreviewClose"
     >
       <div class="preview-content">
-        <iframe v-if="previewFileUrl && previewFileName.endsWith('.pdf')" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
+        <iframe v-if="isOfficePreview" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
+        <iframe v-else-if="previewFileUrl && previewFileName.endsWith('.pdf')" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
         <img v-else-if="previewFileUrl" :src="previewFileUrl" style="max-width: 100%; max-height: 600px; object-fit: contain;" />
         <div v-else v-html="previewContent" class="preview-text"></div>
       </div>
@@ -1161,19 +1246,14 @@ function saveFiles(files: KnowledgeFile[]) {
 
 .upload-section {
   background: #fff;
-  border: 3px dashed #409eff;
+  border: none;
   border-radius: var(--radius-lg);
   padding: 0;
   margin-bottom: var(--spacing-xl);
-  box-shadow: var(--shadow-lg);
+  box-shadow: none;
   overflow: hidden;
-  min-height: 650px;
+  min-height: auto;
   transition: all 0.3s ease;
-}
-
-.upload-section:hover {
-  border-color: #66b1ff;
-  box-shadow: var(--shadow-xl);
 }
 
 .mode-switch-wrapper {
@@ -1185,7 +1265,7 @@ function saveFiles(files: KnowledgeFile[]) {
 .create-area {
   display: flex;
   flex-direction: column;
-  min-height: 650px;
+  min-height: 300px;
 }
 
 .upload-header,
@@ -1209,7 +1289,8 @@ function saveFiles(files: KnowledgeFile[]) {
   align-items: center;
   justify-content: center;
   padding: 0;
-  min-height: 650px;
+  height: 100%;
+  min-height: 400px;
   background: transparent;
 }
 
@@ -1225,6 +1306,7 @@ function saveFiles(files: KnowledgeFile[]) {
   background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
   border-right: 1px solid #e4e7ed;
   overflow-y: auto;
+  max-height: 350px;
 }
 
 .upload-content-right {
@@ -1378,17 +1460,26 @@ function saveFiles(files: KnowledgeFile[]) {
 
 .upload-dragger {
   width: 100%;
-  height: 650px;
+  height: 100%;
+  min-height: 350px;
   border-radius: 12px;
 }
 
 .upload-dragger .el-upload-dragger {
   width: 100%;
   height: 100%;
+  min-height: 350px;
   border-radius: 12px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+.upload-file-formats {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 12px;
 }
 
 .upload-file-count {
@@ -1689,4 +1780,5 @@ function saveFiles(files: KnowledgeFile[]) {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
 </style>
