@@ -316,6 +316,10 @@ onMounted(() => {
   border: 1px solid rgba(255,255,255,0.15);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
+  /* 兜底：不支持 backdrop-filter 时用更实底色 */
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    background: rgba(255,255,255,0.25);
+  }
   padding: 18px 16px;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.2),
