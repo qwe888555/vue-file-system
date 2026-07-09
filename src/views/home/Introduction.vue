@@ -94,7 +94,7 @@ onMounted(() => {
             <h1 class="hero-title">
               NISU-CD资源系统<br class="sm:hidden" />
             </h1>
-            <p class="hero-desc">为师生打造的一站式智能知识库系统</p>
+            <p class="hero-desc">成都东软学院一站式智能知识库系统</p>
           </div>
 
           <!-- 叠加式数据排版（5 个数据，对应 API 5 个 block） -->

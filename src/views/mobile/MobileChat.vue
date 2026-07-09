@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // ── 手机端智能问答（豆包风格）──
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { useChat } from '@/composables/useChat'
@@ -21,6 +21,68 @@ const streamingReferences = ref<KnowledgeFile[]>([])
 let currentSSE: ReturnType<typeof useSSE> | null = null
 
 const showHistory = ref(false)
+
+// 长按上下文菜单
+const contextConv = ref<any>(null)
+const showContextMenu = ref(false)
+const menuTop = ref(0)
+let longPressTimer: any = null
+let isLongPress = false
+let menuJustOpened = false
+
+function onTouchStart(conv: any, event: TouchEvent) {
+  isLongPress = false
+  menuJustOpened = false
+  const target = event.currentTarget as HTMLElement
+  const rect = target.getBoundingClientRect()
+  longPressTimer = setTimeout(() => {
+    isLongPress = true
+    menuJustOpened = true
+    contextConv.value = conv
+    menuTop.value = rect.bottom + 4
+    showContextMenu.value = true
+  }, 350)
+}
+function onTouchEnd() {
+  clearTimeout(longPressTimer)
+}
+function onTouchMove() {
+  clearTimeout(longPressTimer)
+}
+function handleItemClick(conv: any) {
+  if (isLongPress) { isLongPress = false; return }
+  handleSelectHistory(conv.id)
+}
+function pinConversation() {
+  if (!contextConv.value) return
+  const conv = contextConv.value
+  // 本地置顶：把该对话移到数组最前面
+  const idx = chat.conversations.value.findIndex(c => c.id === conv.id)
+  if (idx > 0) {
+    const item = chat.conversations.value.splice(idx, 1)[0]
+    chat.conversations.value.unshift(item)
+  }
+  showContextMenu.value = false
+  contextConv.value = null
+}
+async function deleteConversation() {
+  if (!contextConv.value) return
+  const id = contextConv.value.id
+  await chat.deleteConversation(id)
+  showContextMenu.value = false
+  contextConv.value = null
+}
+function onDocClick(e: MouseEvent) {
+  if (menuJustOpened) { menuJustOpened = false; return }
+  const menu = document.querySelector('.ctx-menu')
+  if (menu && !menu.contains(e.target as Node)) {
+    closeContextMenu()
+  }
+}
+function closeContextMenu() {
+  showContextMenu.value = false
+  contextConv.value = null
+}
 
 const isLoggedIn = computed(() => !!userStore.token)
 
@@ -102,6 +164,18 @@ async function handleSTT() {
   }
 
   // 方案一：浏览器原生 Web Speech API
+  
+  
+  // HTTP 环境不支持语音功能
+  if (location.protocol !== "https:" && location.hostname !== "localhost") {
+    ElMessage.warning("语音功能需要 HTTPS 环境")
+    return
+  }
+  // iOS Safari 不支持 Web Speech API，提示用户
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+    ElMessage.info("iOS Safari 不支持语音转文字，请使用 Chrome 浏览器")
+    return
+  }
   const SpeechAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
   if (SpeechAPI) {
     try {
@@ -116,7 +190,8 @@ async function handleSTT() {
       }
       recognition.onerror = (event: any) => {
         isRecording.value = false; speechRecognition = null
-        if (event.error !== 'no-speech' && event.error !== 'aborted') ElMessage.error('语音识别错误: ' + event.error)
+        if (event.error === "not-allowed") ElMessage.error("请允许麦克风权限后重试")
+        else if (event.error !== "no-speech" && event.error !== "aborted") ElMessage.error("语音识别: " + event.error)
       }
       recognition.onend = () => { isRecording.value = false; speechRecognition = null }
       recognition.start()
@@ -172,6 +247,10 @@ let voiceAudioEl: HTMLAudioElement | null = null
 const isVoicePlaying = ref(false)
 
 async function handleVoiceMsg() {
+  if (location.protocol !== "https:" && location.hostname !== "localhost") {
+    ElMessage.warning("语音功能需要 HTTPS 环境")
+    return
+  }
   if (isRecording.value) { stopRecording(); return }
   const blob = await startRecording()
   if (!blob) return
@@ -201,7 +280,11 @@ async function confirmVoicePreview() {
   try {
     const { voiceAskApi } = await import('@/api/chat')
     const response = await voiceAskApi(blob, convId)
-    if (!response.ok) { isStreaming.value = false; return }
+    if (!response.ok) {
+      if (response.status === 401) ElMessage.warning("语音消息需要登录后使用")
+      else ElMessage.warning("语音发送失败")
+      isStreaming.value = false; return
+    }
     const reader = response.body?.getReader()
     if (!reader) { isStreaming.value = false; return }
     const decoder = new TextDecoder(); let buffer = ''; let currentEvent = ''
@@ -227,13 +310,19 @@ async function confirmVoicePreview() {
 }
 
 onMounted(() => {
+  document.addEventListener('click', onDocClick)
   if (isLoggedIn.value) {
     localStorage.removeItem('chat_conversations_cache')
     chat.init()
     chat.fetchConversations()
   } else {
-    chat.init()
+    // 未登录时清除缓存，避免看到上一账号的历史记录
+    localStorage.removeItem('chat_conversations_cache')
+    chat.conversations.value = []
   }
+})
+onUnmounted(() => {
+  document.removeEventListener('click', onDocClick)
 })
 </script>
 
@@ -352,10 +441,18 @@ onMounted(() => {
               :key="conv.id"
               class="m-panel-item"
               :class="{ active: conv.id === chat.currentConversationId.value }"
-              @click="handleSelectHistory(conv.id)"
+              @click="handleItemClick(conv)"
+              @touchstart="onTouchStart(conv, $event)"
+              @touchend="onTouchEnd"
+              @touchmove="onTouchMove"
             >
-              <span class="m-panel-item-title">{{ conv.title || '新对话' }}</span>
-              <span class="m-panel-item-time">{{ conv.updatedAt?.slice(5, 10) }}</span>
+              <div class="m-panel-item-icon">
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor"><path d="M2 4.5A1.5 1.5 0 013.5 3h13A1.5 1.5 0 0118 4.5v9a1.5 1.5 0 01-1.5 1.5h-5.586a1.5 1.5 0 00-1.06.44L6 18.5V15H3.5A1.5 1.5 0 012 13.5v-9z"/></svg>
+              </div>
+              <div class="m-panel-item-content">
+                <span class="m-panel-item-title">{{ conv.title || '新对话' }}</span>
+                <span class="m-panel-item-time">{{ conv.updatedAt?.slice(5, 10) }}</span>
+              </div>
             </div>
           </div>
 
@@ -374,15 +471,33 @@ onMounted(() => {
               </svg>
             </div>
             <div v-else class="m-panel-user" @click="goLogin">
-              <div class="m-panel-avatar m-panel-avatar-gray">
-                <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
-              </div>
-              <span class="m-panel-username">未登录</span>
-              <span class="m-panel-login-tip">登录</span>
+              <div class="m-panel-avatar m-panel-avatar-guest">客</div>
+              <span class="m-panel-username">游客模式</span>
+              <span class="m-panel-login-tip">去登录</span>
             </div>
           </div>
         </div>
         <div class="m-panel-overlay" @click="showHistory = false" />
+      </div>
+    </Transition>
+
+    <!-- 长按上下文菜单 -->
+    <Transition name="ctx-pop">
+      <div v-if="showContextMenu" class="ctx-menu" :style="{ top: menuTop + 'px' }" @click.stop>
+        <div class="ctx-item" @click="pinConversation">
+          <span class="ctx-item-text">置顶</span>
+          <svg class="ctx-item-icon" viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
+            <path d="M15.3 4.3a1 1 0 01.4 1.4l-3 5.3 3.3 3.3a1 1 0 01-1.4 1.4l-12-12a1 1 0 011.4-1.4l3.3 3.3 5.3-3a1 1 0 011.4.4z"/>
+            <path d="M10 8.5l4-4-3-3-4 4z"/>
+          </svg>
+        </div>
+        <div class="ctx-divider" />
+        <div class="ctx-item ctx-item-danger" @click="deleteConversation">
+          <span class="ctx-item-text">从对话列表删除</span>
+          <svg class="ctx-item-icon" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M4 6h12M8 6V4a1 1 0 011-1h2a1 1 0 011 1v2M5 6l1 11a1 1 0 001 1h6a1 1 0 001-1l1-11M8 9v6M12 9v6"/>
+          </svg>
+        </div>
       </div>
     </Transition>
 
@@ -534,16 +649,29 @@ onMounted(() => {
 
 .m-panel-list { flex: 1; overflow-y: auto; padding: 0 8px; }
 .m-panel-item {
-  display: flex; align-items: center; padding: 10px 12px;
-  border-radius: 8px; cursor: pointer;
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 12px; margin-bottom: 2px;
+  border-radius: 10px; cursor: pointer;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .m-panel-item:active { background: #f5f5f5; }
 .m-panel-item.active { background: #f0f4ff; }
+.m-panel-item-icon {
+  width: 36px; height: 36px; border-radius: 10px;
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  color: #409eff; background: rgba(64,158,255,0.1);
+}
+.m-panel-item-content {
+  flex: 1; display: flex; flex-direction: column; gap: 3px;
+  min-width: 0;
+}
 .m-panel-item-title {
-  flex: 1; font-size: 13px; color: #333;
+  font-size: 14px; font-weight: 500; color: #1f1f1f;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.m-panel-item-time { font-size: 11px; color: #aaa; flex-shrink: 0; margin-left: 8px; }
+.m-panel-item-time { font-size: 12px; color: #aeaeb2; }
 
 /* 未登录提示 */
 .m-panel-login-hint { padding: 20px; text-align: center; }
@@ -562,7 +690,7 @@ onMounted(() => {
   display: flex; align-items: center; justify-content: center;
   font-size: 14px; font-weight: 600; flex-shrink: 0;
 }
-.m-panel-avatar-gray { background: #f0f0f0; color: #999; }
+.m-panel-avatar-guest { background: #e8ecf1; color: #409eff; font-size: 15px; font-weight: 600; }
 .m-panel-username { flex: 1; font-size: 13px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m-panel-logout { color: #aaa; }
 .m-panel-login-tip { font-size: 12px; color: #409eff; }
@@ -578,6 +706,32 @@ onMounted(() => {
 .panel-slide-enter-from .m-panel-overlay { opacity: 0; }
 .panel-slide-leave-to .m-panel { transform: translateX(-100%); }
 .panel-slide-leave-to .m-panel-overlay { opacity: 0; }
+
+/* 长按上下文菜单 */
+.ctx-menu {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  z-index: 801; width: 280px;
+  background: #fff; border-radius: 16px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.06);
+  overflow: hidden;
+}
+.ctx-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; cursor: pointer;
+  transition: background 0.15s;
+}
+.ctx-item:active { background: #f5f5f5; }
+.ctx-item-text { font-size: 15px; color: #1f1f1f; font-weight: 500; }
+.ctx-item-icon { flex-shrink: 0; color: #555; }
+.ctx-item-danger .ctx-item-text { color: #f56c6c; }
+.ctx-item-danger .ctx-item-icon { color: #f56c6c; }
+.ctx-divider { height: 1px; background: #f0f0f0; margin: 0 16px; }
+
+.ctx-pop-enter-active { transition: all 0.2s ease-out; }
+.ctx-pop-leave-active { transition: all 0.15s ease-in; }
+.ctx-pop-enter-from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+.ctx-pop-leave-to { opacity: 0; transform: translateX(-50%) translateY(8px); }
+
 </style>
 <style>
 /* 蜂巢欢迎图标 */

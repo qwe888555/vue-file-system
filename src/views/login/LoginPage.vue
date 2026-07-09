@@ -175,6 +175,7 @@ async function handleSSOLogin() {
       const data = await response.json()
       if (data.mock_codes && Array.isArray(data.mock_codes)) {
         ssoAccounts.value = data.mock_codes
+        ssoLoading.value = false
         ssoDialogVisible.value = true
         return
       }
