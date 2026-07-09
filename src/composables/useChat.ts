@@ -217,6 +217,14 @@ export function useChat() {
     }
   }
 
+  /** 设置模拟数据（后端不可用时展示示例对话） */
+  function setMockData(conv: Conversation, messages: Message[]) {
+    // 不覆盖已有数据
+    if (conversations.value.length > 0) return
+    conversations.value = [conv]
+    messagesMap.value[conv.id] = messages
+  }
+
   return {
     // 状态
     conversations,
@@ -237,5 +245,6 @@ export function useChat() {
     appendAssistantMessage,
     submitFeedback,
     refreshConversation,
+    setMockData,
   }
 }
