@@ -20,6 +20,30 @@ const streamingContent = ref('')
 const streamingReferences = ref<KnowledgeFile[]>([])
 let currentSSE: ReturnType<typeof useSSE> | null = null
 
+// 热点问题
+const hotQuestions = ref<Array<{ question: string; count: number }>>([])
+
+async function loadHotQuestions() {
+  try {
+    const { getHotQuestionsApi } = await import('@/api/chat')
+    const data = await getHotQuestionsApi({ top_k: 6 })
+    hotQuestions.value = data
+  } catch {
+    hotQuestions.value = []
+  }
+}
+
+const displayQuestions = computed(() =>
+  hotQuestions.value.map(q => ({
+    text: q.question.split('：')[0].split(':')[0], // 冒号后不显示
+  }))
+)
+
+function quickQuestion(text: string) {
+  inputText.value = text
+  sendMessage()
+}
+
 const showHistory = ref(false)
 
 // 长按上下文菜单
@@ -309,8 +333,13 @@ async function confirmVoicePreview() {
   } catch { isStreaming.value = false }
 }
 
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener('click', onDocClick)
+  // 有 token 但无用户信息时尝试拉取，失败说明 token 过期
+  if (userStore.token && !userStore.userInfo) {
+    try { await userStore.getUserInfo() } catch { userStore.logout() }
+  }
+  loadHotQuestions()
   if (isLoggedIn.value) {
     localStorage.removeItem('chat_conversations_cache')
     chat.init()
@@ -383,6 +412,14 @@ onUnmounted(() => {
             </div>
           </div>
           <h2 class="m-welcome-title">有什么可以帮助你的？</h2>
+          <div v-if="displayQuestions.length" class="m-hot-questions">
+            <button
+              v-for="q in displayQuestions"
+              :key="q.text"
+              class="m-q-btn"
+              @click="quickQuestion(q.text)"
+            >{{ q.text }}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -464,7 +501,7 @@ onUnmounted(() => {
           <!-- 底部用户 -->
           <div class="m-panel-footer">
             <div v-if="isLoggedIn" class="m-panel-user" @click="handleLogout">
-              <div class="m-panel-avatar">{{ (userStore.userInfo?.role_display || userStore.userInfo?.username || '?').charAt(0).toUpperCase() }}</div>
+              <div class="m-panel-avatar">{{ (userStore.userInfo?.role_display || userStore.userInfo?.username || '访').charAt(0).toUpperCase() }}</div>
               <span class="m-panel-username">{{ userStore.userInfo?.username || '' }}</span>
               <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" class="m-panel-logout">
                 <path d="M3 3h6v2H5v10h4v2H3V3zm12.5 5H11V6h4.5L19 10l-3.5 4H11v-2h4.5L16 10l-1.5-2z"/>
@@ -547,9 +584,23 @@ onUnmounted(() => {
 .m-msgs-inner { padding: 0 8px; display: flex; flex-direction: column; gap: 12px; }
 
 /* 欢迎页 */
-.m-welcome { display: flex; flex-direction: column; align-items: center; padding: 80px 20px; text-align: center; }
+.m-welcome { display: flex; flex-direction: column; align-items: center; padding: 60px 20px 30px; text-align: center; }
 .m-welcome-icon { margin-bottom: 16px; }
-.m-welcome-title { font-size: 18px; font-weight: 400; color: #333; margin: 0; }
+.m-welcome-title { font-size: 18px; font-weight: 400; color: #333; margin: 0 0 20px; }
+
+/* 热点问题 */
+.m-hot-questions {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  justify-content: center; max-width: 400px;
+}
+.m-q-btn {
+  padding: 8px 14px; background: #f5f5f7;
+  border: none; border-radius: 16px;
+  font-size: 13px; color: #444;
+  cursor: pointer; white-space: nowrap;
+  transition: all 0.2s;
+}
+.m-q-btn:active { background: #e8e8ed; color: #409eff; }
 
 /* 输入栏 */
 .m-input-area { flex-shrink: 0; padding: 8px 12px 12px; }
