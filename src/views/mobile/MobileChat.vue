@@ -668,7 +668,7 @@ onUnmounted(() => {
 /* 历史侧边面板（左侧滑入，6/7 宽） */
 .m-panel-wrap { position: fixed; inset: 0; z-index: 500; display: flex; }
 .m-panel {
-  width: calc(100vw * 6 / 7); background: #fff;
+  width: calc(100vw * 5 / 7); background: #fff;
   display: flex; flex-direction: column; overflow: hidden;
 }
 .m-panel-overlay { flex: 1; background: rgba(0,0,0,0.25); }
