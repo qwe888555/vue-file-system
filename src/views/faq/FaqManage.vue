@@ -34,9 +34,9 @@
               </el-tag>
             </div>
             <div class="fm-card-meta">
-              <span>{{ item.category_name }}</span>
+              <span>{{ item.category?.name }}</span>
               <span v-if="item.frequency !== undefined">· 频率 {{ item.frequency }}</span>
-              <span v-if="item.college_name">· {{ item.college_name }}</span>
+              <span v-if="item.college">· {{ item.college.name }}</span>
             </div>
           </div>
           <div class="fm-card-actions">
@@ -106,14 +106,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getFaqManageItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, updateFaqDraftApi } from '@/api/faq'
-import type { FaqCategory, FaqManageItem } from '@/api/faq'
+import { getFaqAllItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, updateFaqDraftApi } from '@/api/faq'
+import type { FaqCategory, FaqNewItem } from '@/api/faq'
 
 const keyword = ref('')
 const categoryFilter = ref<number | ''>('')
 const activeTab = ref('')
 const categories = ref<FaqCategory[]>([])
-const list = ref<FaqManageItem[]>([])
+const list = ref<FaqNewItem[]>([])
 const loading = ref(false)
 const expandedId = ref<number | null>(null)
 const page = ref(1)
@@ -144,44 +144,43 @@ onMounted(async () => {
 async function loadData() {
   loading.value = true
   try {
-    const res = await getFaqManageItemsApi({
-      page: page.value,
-      page_size: pageSize.value,
+    const data = await getFaqAllItemsApi({
       status: activeTab.value || undefined,
-      search: keyword.value || undefined,
+      q: keyword.value || undefined,
     })
-    list.value = res.results || []
-    total.value = res.count || 0
+    list.value = data || []
   } catch {
     list.value = []
-    total.value = 0
   } finally {
     loading.value = false
   }
 }
 
-/** 分类过滤（后端不支持 category 参数，保留前端） */
+/** 分类过滤 + 前端分页 */
 const displayedList = computed(() => {
-  if (!categoryFilter.value) return list.value
-  return list.value.filter((item) => item.category === categoryFilter.value)
+  let filtered = list.value
+  if (categoryFilter.value) {
+    filtered = filtered.filter((item) => item.category.id === categoryFilter.value)
+  }
+  total.value = filtered.length
+  const start = (page.value - 1) * pageSize.value
+  return filtered.slice(start, start + pageSize.value)
 })
 
 function handlePageChange(p: number) {
   page.value = p
-  loadData()
 }
 
 function handleSizeChange(s: number) {
   pageSize.value = s
   page.value = 1
-  loadData()
 }
 
 function toggleItem(id: number) {
   expandedId.value = expandedId.value === id ? null : id
 }
 
-async function handlePublish(row: FaqManageItem) {
+async function handlePublish(row: FaqNewItem) {
   try {
     await ElMessageBox.confirm(`确定发布「${row.question}」吗？`, '发布确认')
     await actionFaqDraftApi(row.id, 'publish')
@@ -190,7 +189,7 @@ async function handlePublish(row: FaqManageItem) {
   } catch { /* */ }
 }
 
-async function handleReject(row: FaqManageItem) {
+async function handleReject(row: FaqNewItem) {
   try {
     await ElMessageBox.confirm(`确定驳回「${row.question}」吗？`, '驳回确认')
     await actionFaqDraftApi(row.id, 'reject')
@@ -199,7 +198,7 @@ async function handleReject(row: FaqManageItem) {
   } catch { /* */ }
 }
 
-async function handleDelete(row: FaqManageItem) {
+async function handleDelete(row: FaqNewItem) {
   try {
     await ElMessageBox.confirm(`确定删除「${row.question}」吗？此操作不可撤销。`, '删除确认', { type: 'warning' })
     await deleteFaqItemApi(row.id)
@@ -208,12 +207,12 @@ async function handleDelete(row: FaqManageItem) {
   } catch { /* */ }
 }
 
-function openEdit(row: FaqManageItem) {
+function openEdit(row: FaqNewItem) {
   editingId.value = row.id
   editForm.value = {
     question: row.question,
     answer: row.answer,
-    category: row.category,
+    category: row.category?.id ?? null,
     tags: [...(row.tags || [])],
   }
   existingTags.value = row.tags || []
