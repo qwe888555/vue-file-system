@@ -36,7 +36,7 @@ function handleSelect(path: string) {
   <aside class="sidebar">
     <!-- Logo -->
     <div class="sidebar-logo">
-      <span class="sidebar-logo-text">NISU-CD</span>
+      <span class="sidebar-logo-text">NeuHub</span>
       <span class="sidebar-logo-sub">资源系统</span>
     </div>
 

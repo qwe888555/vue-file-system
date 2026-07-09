@@ -107,6 +107,33 @@ export function actionFaqDraftApi(
 }
 
 // ══════════════════════════════════════
+//  新 FAQ 列表接口 — /api/faq/items/（后端一次性返回全部，前端分页）
+// ══════════════════════════════════════
+
+export interface FaqNewItem {
+  id: number
+  question: string
+  answer: string
+  category: { id: number; name: string; icon: string }
+  college: { id: number; name: string; code: string } | null
+  tags: string[]
+  status: 'draft' | 'published' | 'rejected'
+  frequency: number
+  created_at: string
+  updated_at: string
+}
+
+/** 获取全部 FAQ 列表（后端一次性返回，前端自行分页） */
+export function getFaqAllItemsApi(params?: {
+  status?: string
+  category?: number
+  college_id?: number
+  q?: string
+}): Promise<FaqNewItem[]> {
+  return request.get('/faq/items/', { params })
+}
+
+// ══════════════════════════════════════
 //  FAQ 自动生成 — /api/faq/generate/ & /api/faq/generation-logs/
 // ══════════════════════════════════════
 

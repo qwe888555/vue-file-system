@@ -6,7 +6,7 @@ const authRoutes: RouteRecordRaw[] = [
     path: '/',
     name: 'Home',
     component: () => import('@/views/home/Introduction.vue'),
-    meta: { title: 'NISU-CD 资源系统', hidden: true },
+    meta: { title: 'NeuHub 资源系统', hidden: true },
   },
   {
     path: '/403',
