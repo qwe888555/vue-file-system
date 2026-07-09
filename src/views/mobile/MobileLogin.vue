@@ -13,6 +13,7 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
+const showSuccess = ref(false)
 
 async function handleLogin() {
   if (!username.value || !password.value) {
@@ -23,13 +24,16 @@ async function handleLogin() {
   errorMsg.value = ''
   try {
     await userStore.login({ username: username.value, password: password.value })
-    // 登录接口可能未返回完整用户信息，补取
     if (!userStore.role) {
       try { await userStore.getUserInfo() } catch {}
     }
     localStorage.removeItem('chat_conversations_cache')
-    ElMessage.success('登录成功')
-    router.push('/mobile/chat')
+    // 登录成功 → 显示成功动画 → 延迟跳转
+    showSuccess.value = true
+    setTimeout(() => {
+      showSuccess.value = false
+      router.push('/mobile/chat')
+    }, 1200)
   } catch (e: any) {
     errorMsg.value = e?.response?.data?.detail || e?.message || '登录失败'
   } finally {
@@ -74,6 +78,18 @@ function goBack() {
         </div>
       </div>
     </div>
+
+    <!-- 登录成功动画 -->
+    <Transition name="success">
+      <div v-if="showSuccess" class="m-login-success">
+        <div class="m-success-circle">
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </div>
+        <p class="m-success-text">登录成功</p>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -156,4 +172,40 @@ function goBack() {
   background: none; border: none; font-size: 14px; color: #8e8e93;
   cursor: pointer; padding: 14px 0 0; margin-top: 2px;
 }
+
+/* 登录成功动画 */
+.m-login-success {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(255,255,255,0.85);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 16px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.m-success-circle {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: #22c55e; display: flex;
+  align-items: center; justify-content: center;
+  animation: successPop 0.4s cubic-bezier(0.21, 0.98, 0.22, 1);
+  box-shadow: 0 4px 20px rgba(34,197,94,0.3);
+}
+.m-success-text {
+  font-size: 17px; font-weight: 600; color: #1f1f1f;
+  animation: successFade 0.4s ease-out 0.2s both;
+}
+@keyframes successPop {
+  0% { transform: scale(0); opacity: 0; }
+  70% { transform: scale(1.12); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes successFade {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.success-enter-active { transition: opacity 0.3s ease; }
+.success-leave-active { transition: opacity 0.2s ease; }
+.success-enter-from,
+.success-leave-to { opacity: 0; }
+
 </style>
