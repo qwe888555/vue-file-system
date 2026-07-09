@@ -230,7 +230,7 @@ async function handleSSOSelect(code: string) {
       <!-- 账号密码登录 -->
       <template v-if="loginMode === 'account'">
         <div class="login-brand">
-          <h2 class="login-title">NISU-CD</h2>
+          <h2 class="login-title">NeuHub</h2>
           <p class="login-sub">资源系统 · 账号登录</p>
         </div>
 
@@ -266,8 +266,8 @@ async function handleSSOSelect(code: string) {
       <!-- 钉钉扫码登录 -->
       <template v-if="loginMode === 'qrcode'">
         <div class="login-brand">
-          <h2 class="login-title" style="color:#000">钉钉扫码登录</h2>
-          <p class="login-sub" style="color:#000">请使用钉钉扫码登录</p>
+          <h2 class="login-title">钉钉扫码登录</h2>
+          <p class="login-sub">请使用钉钉扫码登录</p>
         </div>
         <div class="qrcode-wrap">
           <template v-if="loginSuccess">
@@ -292,7 +292,7 @@ async function handleSSOSelect(code: string) {
           </template>
         </div>
         <div class="qrcode-actions">
-          <p v-if="!loginSuccess" class="qrcode-hint">请使用钉钉扫码登录</p>
+
           <button v-if="qrCodeDataUrl && !qrLoading && !loginSuccess" class="qrcode-refresh" @click="loadDingTalkQr">
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             重新生成
@@ -332,20 +332,20 @@ async function handleSSOSelect(code: string) {
 .login-close:hover { background: #e2e8f0; color: #0f172a; }
 
 /* ── 嵌入式亮色适配 ── */
-.login-page--embedded .login-title { color: #000; }
-.login-page--embedded .login-sub { color: #000; }
-.login-page--embedded .field-lbl { color: #000; font-weight: 700; }
+.login-page--embedded .login-title { color: #fff; }
+.login-page--embedded .login-sub { color: rgba(255,255,255,0.7); }
+.login-page--embedded .field-lbl { color: rgba(255,255,255,0.9); font-weight: 700; }
 .login-page--embedded .login-tabs { background: rgba(0,0,0,0.06); }
-.login-page--embedded .tab-btn { color: rgba(255,255,255,0.35); }
-.login-page--embedded .tab-btn.active { background: #ffffffb0; color: #1e293b; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-.login-page--embedded .tab-btn:hover:not(.active) { color: rgba(255,255,255,0.8); }
+.login-page--embedded .tab-btn { color: rgba(255,255,255,0.5); }
+.login-page--embedded .tab-btn.active { background: rgba(255,255,255,0.2); color: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.login-page--embedded .tab-btn:hover:not(.active) { color: rgba(255,255,255,0.9); }
 .login-page--embedded .sso-divider .sso-line { background: #e2e8f0; }
-.login-page--embedded .sso-txt { color: #94a3b8; }
+.login-page--embedded .sso-txt { color: rgba(255,255,255,0.5); }
 .login-page--embedded .sso-btn {
-  border-color: rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.5);
+  border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.7);
 }
-.login-page--embedded .sso-btn:hover:not(:disabled) { border-color: #409eff; color: #409eff; background: rgba(64,158,255,0.06); }
-.login-page--embedded .err-msg { background: rgba(239,68,68,0.08); color: #f87171; }
+.login-page--embedded .sso-btn:hover:not(:disabled) { border-color: #60a5fa; color: #60a5fa; background: rgba(96,165,250,0.1); }
+.login-page--embedded .err-msg { background: rgba(239,68,68,0.12); color: #fca5a5; }
 
 /* Element Plus 输入框 — 半透明玻璃质感 */
 .login-page--embedded :deep(.el-input__wrapper) {

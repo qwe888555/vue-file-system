@@ -50,7 +50,7 @@ function animateNumbers(targets: number[]) {
 
 let mc = 0
 
-const MOCK = [[29, 2726298, 0, 31, 5, 110, 4]]
+const MOCK = [[29, 3145728, 0, 33, 5, 119, 4]]
 
 function fmtSize(b: number) {
   if (!b) return { v: 0, s: 'GB' }
@@ -100,55 +100,57 @@ onMounted(() => {
     <div class="absolute inset-0 bg-black/35" />
 
     <!-- ═══ Logo ═══ -->
-    <header class="relative z-10 pt-6 px-6">
-      <div class="max-w-7xl mx-auto">
-        <img :src="logodark" alt="成都东软学院" class="h-16 w-auto rounded-md" />
-      </div>
+    <header class="relative z-10 pt-3 px-6 flex items-center gap-3">
+      <img :src="logodark" alt="成都东软学院" class="h-12 w-auto rounded-md" />
     </header>
 
     <!-- ═══ 主体 ═══ -->
-    <main class="relative z-10 flex-1 flex items-center px-6 pt-2 pb-4">
-      <div class="page-grid">
-        <!-- 左：品牌文案 + 数据 -->
-        <div class="left-col">
-          <div class="hero-text">
-            <h1 class="hero-title">
-              NISU-CD资源系统<br class="sm:hidden" />
-            </h1>
-            <p class="hero-desc">成都东软学院一站式智能知识库系统</p>
-          </div>
+    <main class="relative z-10 flex-1 px-6 pt-4 pb-4">
+      <div class="page-grid max-w-7xl mx-auto">
+        <!-- 标题区 — 居中于六边形和登录上方 -->
+        <div class="hero-text col-span-full">
+          <h1 class="hero-title">
+            NeuHub资源系统<br class="sm:hidden" />
+          </h1>
+          <p class="hero-desc">成都东软学院一站式智能知识库系统</p>
+        </div>
 
-          <!-- 方案一：Hero + 3x2 网格 -->
-          <div class="s1-layout">
-            <div class="s1-hero" style="--d:0s">
-              <span class="s1-hero-num">{{ (displayVals[1] ?? 0).toLocaleString() }}</span>
-              <span class="s1-hero-suf">{{ stats[1].suffix }}</span>
-              <span class="s1-hero-lbl">{{ stats[1].label }}</span>
-            </div>
-            <div class="s1-grid">
-              <div class="s1-cell" style="--d:0.12s">
-                <span class="s1-num">{{ (displayVals[0] ?? 0).toLocaleString() }}</span>
-                <span class="s1-lbl">{{ stats[0].label }}</span>
+        <!-- 左：六边形数据 -->
+        <div class="left-col">
+          <!-- 六边形排版 -->
+          <div class="hex-wrap">
+            <div class="hex-ring">
+              <!-- 上层 -->
+              <div class="hex-node" style="grid-area:a">
+                <span class="h-num">{{ (displayVals[0] ?? 0).toLocaleString() }}</span>
+                <span class="h-lbl">{{ stats[0].label }}</span>
               </div>
-              <div class="s1-cell" style="--d:0.2s">
-                <span class="s1-num">{{ (displayVals[2] ?? 0).toLocaleString() }}</span>
-                <span class="s1-lbl">{{ stats[2].label }}</span>
+              <div class="hex-node" style="grid-area:b">
+                <span class="h-num">{{ (displayVals[2] ?? 0).toLocaleString() }}</span>
+                <span class="h-lbl">{{ stats[2].label }}</span>
               </div>
-              <div class="s1-cell" style="--d:0.28s">
-                <span class="s1-num">{{ (displayVals[3] ?? 0).toLocaleString() }}</span>
-                <span class="s1-lbl">{{ stats[3].label }}</span>
+              <!-- 中层 -->
+              <div class="hex-node" style="grid-area:c">
+                <span class="h-num">{{ (displayVals[3] ?? 0).toLocaleString() }}</span>
+                <span class="h-lbl">{{ stats[3].label }}</span>
               </div>
-              <div class="s1-cell" style="--d:0.36s">
-                <span class="s1-num">{{ (displayVals[4] ?? 0).toLocaleString() }}</span>
-                <span class="s1-lbl">{{ stats[4].label }}</span>
+              <div class="hex-center">
+                <span class="hc-num">{{ (displayVals[1] ?? 0).toLocaleString() }}</span>
+                <span class="hc-suf">{{ stats[1].suffix }}</span>
+                <span class="hc-lbl">{{ stats[1].label }}</span>
               </div>
-              <div class="s1-cell" style="--d:0.44s">
-                <span class="s1-num">{{ (displayVals[5] ?? 0).toLocaleString() }}</span>
-                <span class="s1-lbl">{{ stats[5].label }}</span>
+              <div class="hex-node" style="grid-area:d">
+                <span class="h-num">{{ (displayVals[4] ?? 0).toLocaleString() }}</span>
+                <span class="h-lbl">{{ stats[4].label }}</span>
               </div>
-              <div class="s1-cell" style="--d:0.52s">
-                <span class="s1-num">{{ (displayVals[6] ?? 0).toLocaleString() }}</span>
-                <span class="s1-lbl">{{ stats[6].label }}</span>
+              <!-- 下层 -->
+              <div class="hex-node" style="grid-area:e">
+                <span class="h-num">{{ (displayVals[5] ?? 0).toLocaleString() }}</span>
+                <span class="h-lbl">{{ stats[5].label }}</span>
+              </div>
+              <div class="hex-node" style="grid-area:f">
+                <span class="h-num">{{ (displayVals[6] ?? 0).toLocaleString() }}</span>
+                <span class="h-lbl">{{ stats[6].label }}</span>
               </div>
             </div>
           </div>
@@ -174,86 +176,101 @@ onMounted(() => {
 
 /* ── 页面栅格 ── */
 .page-grid {
-  max-width: 80rem; width: 100%; margin: 0 auto;
+  width: 100%;
   display: grid; grid-template-columns: 1fr;
-  gap: 1.5rem; align-items: center;
+  gap: 1.5rem; align-items: start;
 }
 @media (min-width: 1024px) {
-  .page-grid { grid-template-columns: repeat(5, 1fr); gap: 2.5rem; }
+  .page-grid { grid-template-columns: repeat(5, 1fr); gap: 4rem; align-items: start; }
 }
-.left-col { grid-column: span 3; }
-.right-col { grid-column: span 2; }
+.left-col { grid-column: span 3; align-self: start; }
+.right-col { grid-column: span 2; margin-top: -3rem; min-height: 500px; align-self: start; }
 
 /* ── Hero 文字 ── */
-.hero-text { margin-bottom: 4rem; }
+.hero-text {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
 .hero-title {
-  font-size: 2.8rem; font-weight: 700;
+  font-size: 3rem; font-weight: 700;
   letter-spacing: -0.025em; line-height: 1.15;
 }
-@media (min-width: 640px) { .hero-title { font-size: 3rem; } }
-@media (min-width: 1024px) { .hero-title { font-size: 3.5rem; } }
+@media (min-width: 640px) { .hero-title { font-size: 3.2rem; } }
+@media (min-width: 1024px) { .hero-title { font-size: 3.8rem; } }
 .hero-desc {
-  margin-top: 0.75rem; font-size: 0.95rem;
-  color: rgba(255,255,255,0.7); line-height: 1.6; max-width: 28rem;
+  margin: 0.6rem auto 0;
+  font-size: 1.05rem;
+  color: rgba(255,255,255,0.6);
+  line-height: 1.6; max-width: 28rem;
+}
+.col-span-full { grid-column: 1 / -1; }
+
+/* ═══ 六边形排版 ═══ */
+.hex-wrap { padding: 4px 0; margin-top: 2rem; margin-left: -3rem; }
+.hex-ring {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: auto auto auto;
+  grid-template-areas:
+    ". a . b ."
+    "c . CENTER . d"
+    ". e . f .";
+  gap: 2.5rem 1rem;
+  align-items: center;
+  justify-items: center;
+  max-width: 100%;
+}
+.hex-node {
+  text-align: center;
+  animation: s1-in 0.5s ease-out both;
+  transition: transform 0.3s;
+  padding: 14px 6px;
+  width: 100%;
+}
+.hex-node:hover { transform: translateY(-2px); }
+.hex-node:hover .h-lbl { color: rgba(255,255,255,0.7); }
+.h-num {
+  display: block;
+  font-size: 2.1rem; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1; color: #fff;
+  animation: h-float 4s ease-in-out 0s infinite;
+}
+.h-lbl {
+  display: block;
+  font-size: 0.9rem; font-weight: 500;
+  color: rgba(255,255,255,0.45);
+  margin-top: 2px;
+  white-space: nowrap;
 }
 
-/* ═══ 方案一：Hero + 3x2 网格 ═══ */
-.s1-layout {
-  display: flex; flex-direction: column;
-  gap: 2.2rem;
-  padding: 4px 0;
+/* 中心大数字 */
+.hex-center {
+  grid-area: CENTER;
+  text-align: center;
+  padding: 28px 16px;
+  animation: s1-in 0.6s ease-out 0.1s both;
+  width: 100%;
 }
-
-.s1-hero {
-  animation: s1-in 0.6s ease-out both;
-  animation-delay: calc(var(--d,0s) + 0.1s);
-}
-.s1-hero-num {
-  font-size: 3.2rem; font-weight: 700;
+.hex-center:hover .hc-lbl { color: rgba(255,255,255,0.7); }
+.hex-center:hover .hc-num { text-shadow: 0 0 24px rgba(255,255,255,0.15); }
+.hc-num {
+  font-size: 3.6rem; font-weight: 700;
   letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
   line-height: 1; color: #fff;
   display: inline-block;
-  animation: s1-num-in 0.5s cubic-bezier(0.16,1,0.3,1) calc(var(--d,0s) + 0.2s) both,
-             s1-sway 3.5s ease-in-out calc(var(--d,0s) + 1.5s) infinite;
+  animation: h-float 5s ease-in-out 0s infinite;
 }
-.s1-hero-suf {
-  font-size: 1.2rem; font-weight: 600;
+.hc-suf {
+  font-size: 1.3rem; font-weight: 600;
   color: rgba(255,255,255,0.45);
   margin-left: 4px;
 }
-.s1-hero-lbl {
+.hc-lbl {
   display: block;
-  font-size: 0.85rem; font-weight: 500;
+  font-size: 1.2rem; font-weight: 500;
   color: rgba(255,255,255,0.4);
   margin-top: 6px;
-}
-
-.s1-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1.6rem 2rem;
-}
-.s1-cell {
-  animation: s1-in 0.5s ease-out both;
-  animation-delay: var(--d,0s);
-  transition: transform 0.3s;
-}
-.s1-cell:hover { transform: translateY(-3px); }
-
-.s1-num {
-  display: inline-block;
-  font-size: 2rem; font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1; color: #fff;
-  animation: s1-num-in 0.4s cubic-bezier(0.16,1,0.3,1) calc(var(--d,0s) + 0.1s) both,
-             s1-sway 3s ease-in-out calc(var(--d,0s) + 1.5s) infinite;
-}
-.s1-lbl {
-  display: block;
-  font-size: 0.75rem; font-weight: 500;
-  color: rgba(255,255,255,0.35);
-  margin-top: 2px;
-  white-space: nowrap;
 }
 
 @keyframes s1-in {
@@ -264,13 +281,11 @@ onMounted(() => {
   from { opacity: 0; transform: scale(0.8); }
   to { opacity: 1; transform: scale(1); }
 }
-@keyframes s1-sway {
-  0%, 100% { transform: scale(1) rotate(0deg); }
-  15% { transform: scale(1) rotate(0.4deg); }
-  30% { transform: scale(1) rotate(-0.3deg); }
-  50% { transform: scale(1) rotate(0.2deg); }
-  70% { transform: scale(1) rotate(-0.2deg); }
-  85% { transform: scale(1) rotate(0.1deg); }
+@keyframes h-float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  25% { transform: translateY(-5px) scale(1.04); }
+  50% { transform: translateY(0) scale(1); }
+  75% { transform: translateY(4px) scale(0.96); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -297,6 +312,7 @@ onMounted(() => {
 /* ═══ 登录卡片 — Glass ═══ */
 .login-card {
   border-radius: 18px;
+  min-height: 420px;
   background: rgba(255,255,255,0.12);
   border: 1px solid rgba(255,255,255,0.15);
   backdrop-filter: blur(24px) saturate(180%);
