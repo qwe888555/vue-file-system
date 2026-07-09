@@ -105,3 +105,64 @@ export function actionFaqDraftApi(
 ): Promise<{ detail: string; status: string; reviewed_at: string }> {
   return request.post(`/faq/drafts/${id}/action/`, { action })
 }
+
+// ══════════════════════════════════════
+//  新 FAQ 列表接口 — /api/faq/items/（后端一次性返回全部，前端分页）
+// ══════════════════════════════════════
+
+export interface FaqNewItem {
+  id: number
+  question: string
+  answer: string
+  category: { id: number; name: string; icon: string }
+  college: { id: number; name: string; code: string } | null
+  tags: string[]
+  status: 'draft' | 'published' | 'rejected'
+  frequency: number
+  created_at: string
+  updated_at: string
+}
+
+/** 获取全部 FAQ 列表（后端一次性返回，前端自行分页） */
+export function getFaqAllItemsApi(params?: {
+  status?: string
+  category?: number
+  college_id?: number
+  q?: string
+}): Promise<FaqNewItem[]> {
+  return request.get('/faq/items/', { params })
+}
+
+// ══════════════════════════════════════
+//  FAQ 自动生成 — /api/faq/generate/ & /api/faq/generation-logs/
+// ══════════════════════════════════════
+
+export interface FaqGenerationLog {
+  id: number
+  status: 'running' | 'success' | 'failed'
+  total_questions: number
+  clusters_found: number
+  drafts_generated: number
+  error_message: string | null
+  started_at: string
+  completed_at: string | null
+  duration_seconds: number | null
+}
+
+/** 触发 FAQ 自动生成 */
+export function triggerFaqGenerationApi(): Promise<{ detail: string }> {
+  return request.post('/faq/generate/')
+}
+
+/** 获取生成日志列表 */
+export function getFaqGenerationLogsApi(params?: {
+  page?: number
+  page_size?: number
+}): Promise<{ count: number; results: FaqGenerationLog[] }> {
+  return request.get('/faq/generation-logs/', { params })
+}
+
+/** 获取单条生成日志详情 */
+export function getFaqGenerationLogDetailApi(id: number): Promise<FaqGenerationLog> {
+  return request.get(`/faq/generation-logs/${id}/`)
+}

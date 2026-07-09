@@ -152,7 +152,9 @@ async function sendMessage() {
     if (!isStreaming.value) return // 已被取消
     isStreaming.value = false
     const realId = currentSSE?.messageId?.value
-    chat.appendAssistantMessage(streamingContent.value, streamingReferences.value, realId || undefined)
+    // streamingContent 来自 SSE 流，为空时取 currentSSE.content（后端返回的错误消息如敏感词拦截）
+    const content = streamingContent.value || currentSSE?.content?.value || ''
+    chat.appendAssistantMessage(content, streamingReferences.value, realId || undefined)
     streamingContent.value = ''
     streamingReferences.value = []
     streamingMessageId.value = null
@@ -462,7 +464,7 @@ onUnmounted(() => {
     <aside class="chat-sidebar" :class="{ collapsed: !sidebarOpen }">
       <!-- 顶部 -->
       <div class="sidebar-logo">
-        <span class="sidebar-logo-text">NISU-CD</span>
+        <span class="sidebar-logo-text">NeuHub</span>
         <span class="sidebar-logo-sub">资源系统</span>
       </div>
 

@@ -39,6 +39,7 @@
     "autoprefixer": "^10.5.2",
     "eslint": "^10.6.0",
     "eslint-plugin-vue": "^10.9.2",
+    "playwright": "^1.61.1",
     "postcss": "^8.5.16",
     "prettier": "^3.9.4",
     "sass": "^1.101.0",
