@@ -42,15 +42,17 @@ function animateNumbers(targets: number[]) {
   function tick(now: number) {
     const p = Math.min((now - start) / dur, 1)
     const e = 1 - Math.pow(1 - p, 3)
-    displayVals.value = from.map((f, i) => Math.round(f + (targets[i] - f) * e))
+    displayVals.value = from.map((f, i) => {
+      const val = f + (targets[i] - f) * e
+      return targets[i] % 1 !== 0 ? Math.round(val * 10) / 10 : Math.round(val)
+    })
     if (p < 1) animFrame = requestAnimationFrame(tick)
   }
   requestAnimationFrame(tick)
 }
 
-let mc = 0
 
-const MOCK = [[29, 3145728, 0, 33, 5, 119, 4]]
+
 
 function fmtSize(b: number) {
   if (!b) return { v: 0, s: 'GB' }
@@ -81,10 +83,7 @@ async function fetchStats() {
     const lg = b && ok(b.login) ? b.login : null
     const op = b && ok(b.operation) ? b.operation : null
     applyStatsVals(t?.users ?? 0, t?.upload_total_size ?? 0, up?.total ?? 0, qy?.total ?? 0, sn?.total ?? 0, lg?.total ?? 0, op?.total ?? 0)
-  } catch {
-    mc = (mc + 1) % MOCK.length; const m = MOCK[mc]
-    applyStatsVals(m[0], m[1], m[2], m[3], m[4], m[5], m[6])
-  }
+  } catch { /* 接口不可用时保留默认值 0 */ }
 }
 
 onMounted(() => {
