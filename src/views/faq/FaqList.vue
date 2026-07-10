@@ -111,7 +111,7 @@ onMounted(async () => {
       getFaqItemsApi(),
     ])
     categories.value = cats
-    items.value = faqs.results || []
+    items.value = faqs || []
   } catch {
     // 静默
   } finally {
@@ -126,7 +126,7 @@ async function loadItems() {
     const res = await getFaqItemsApi({
       category: activeCategory.value || undefined,
     })
-    items.value = res.results || []
+    items.value = res || []
   } catch {
     items.value = []
   } finally {
