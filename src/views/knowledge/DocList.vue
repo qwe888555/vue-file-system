@@ -1,14 +1,13 @@
 <script setup lang="ts">
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ref, computed, onMounted, triggerRef, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search, Close, Plus, Check, Download, Edit, Delete } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getDocDetailApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi } from '@/api/knowledge'
 import mammoth from 'mammoth'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
-
-const router = useRouter()
 
 const searchQuery = ref('')
 // 本地描述缓存：后端列表接口不返回 description 字段，持久化到 localStorage 防刷新丢失
@@ -285,12 +284,6 @@ function handlePreviewClose() {
   isOfficePreview.value = false
 }
 
-function showAllKeywords(keywords: { id: number; phrase: string }[], title: string) {
-  keywordsDialogTitle.value = title
-  allKeywords.value = keywords
-  showKeywordsDialog.value = true
-}
-
 async function handleConfirmInfo() {
   if (!uploadForm.value.content.trim()) {
     ElMessage.warning('请输入文件内容')
@@ -467,7 +460,6 @@ const totalFiles = ref(0)
 const uploadedFiles = ref<KnowledgeFile[]>([])
 const allFiles = ref<KnowledgeFile[]>([])
 const keywordsCache = new Map<number, Keyword[]>()
-const loadingKeywords = new Set<number>()
 
 async function fetchFiles(keyword?: string) {
   loading.value = true
@@ -495,11 +487,21 @@ async function fetchFiles(keyword?: string) {
         })).filter((kw: Keyword) => kw.phrase)
       }
       
+      // 后端蛇形命名 → 前端驼峰命名映射
       if (file.created_at && !file.createdAt) {
         file.createdAt = file.created_at
       }
       if (file.updated_at && !file.updatedAt) {
         file.updatedAt = file.updated_at
+      }
+      if (file.college_name && !file.collegeName) {
+        file.collegeName = file.college_name
+      }
+      if (file.uploader && !file.author) {
+        file.author = file.uploader
+      }
+      if (file.uploader_name && !file.author) {
+        file.author = file.uploader_name
       }
       // 后端可能返回 description 或 summary，统一映射确保数据不丢失
       const rawDesc = (file as any).description
@@ -546,54 +548,6 @@ async function fetchFiles(keyword?: string) {
   } finally {
     loading.value = false
   }
-}
-
-async function loadKeywordsForFiles(files: KnowledgeFile[]) {
-  const filesToLoad = files.filter(f => !keywordsCache.has(f.id) && !loadingKeywords.has(f.id))
-  
-  const semaphore = 3
-  let activeCount = 0
-  let index = 0
-  
-  async function loadNext() {
-    while (index < filesToLoad.length) {
-      if (activeCount >= semaphore) {
-        await new Promise(resolve => setTimeout(resolve, 100))
-        continue
-      }
-      
-      const file = filesToLoad[index++]
-      activeCount++
-      loadingKeywords.add(file.id)
-      
-      try {
-        const keywords = await getKeywordsApi(file.id)
-        let keywordList: Keyword[] = []
-        if (Array.isArray(keywords)) {
-          keywordList = keywords.map((kw: any) => ({
-            id: kw.id,
-            phrase: kw.phrase || kw.keyword || kw.name || '',
-            match_type: kw.match_type || 'exact',
-            weight: kw.weight || 1,
-          })).filter((kw: Keyword) => kw.phrase)
-        }
-        keywordsCache.set(file.id, keywordList)
-        
-        const fileIndex = uploadedFiles.value.findIndex(f => f.id === file.id)
-        if (fileIndex > -1) {
-          uploadedFiles.value[fileIndex].keywords = keywordList
-          triggerRef(uploadedFiles)
-        }
-      } catch (error) {
-        console.error(`获取文件 ${file.title} 的关键词失败:`, error)
-      } finally {
-        loadingKeywords.delete(file.id)
-        activeCount--
-      }
-    }
-  }
-  
-  await loadNext()
 }
 
 onMounted(() => {
@@ -726,10 +680,6 @@ function formatDate(dateStr: string): string {
     hour: '2-digit',
     minute: '2-digit',
   })
-}
-
-function handleFileClick(file: KnowledgeFile) {
-  handlePreviewDoc(file.id, file.title)
 }
 
 async function handleEdit(file: KnowledgeFile) {
@@ -1238,6 +1188,7 @@ function saveFiles(files: KnowledgeFile[]) {
         <iframe v-if="isOfficePreview" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
         <iframe v-else-if="previewFileUrl && previewFileName.endsWith('.pdf')" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
         <img v-else-if="previewFileUrl" :src="previewFileUrl" style="max-width: 100%; max-height: 600px; object-fit: contain;" />
+        <!-- eslint-disable-next-line vue/no-v-html -->
         <div v-else v-html="previewContent" class="preview-text"></div>
       </div>
       <template #footer>

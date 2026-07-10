@@ -1,4 +1,5 @@
 <template>
+  <!-- eslint-disable vue/no-mutating-props -->
   <!-- 编辑超级管理员时禁用所有操作 -->
   <div v-if="isEdit && form.role === 'super_admin'" class="superadmin-hint">
     超级管理员的账号不可编辑
