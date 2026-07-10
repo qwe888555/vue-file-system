@@ -477,6 +477,20 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* ── iOS Safari 默认样式重置：去掉按钮/输入框的原生外观 ── */
+.mobile-chat button,
+.mobile-chat input,
+.mobile-chat textarea {
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
+}
+/* iOS Safari SVG 图标修复：防止被 flex 压缩、确保颜色继承 */
+.mobile-chat svg {
+  flex-shrink: 0;
+  color: inherit;
+}
+
 .mobile-chat {
   height: 100vh;
   height: -webkit-fill-available; /* iOS Safari < 15 兼容 */
@@ -513,6 +527,13 @@ onUnmounted(() => {
 .m-hot-questions {
   display: flex; flex-wrap: wrap; gap: 8px;
   justify-content: center; max-width: 400px;
+}
+/* iOS 14.5 以下不支持 gap，用 margin 兜底 */
+@supports not (gap: 8px) {
+  .m-hot-questions > * { margin: 4px; }
+  .m-input-wrap > * + * { margin-left: 8px; }
+  .m-topbar > * + * { margin-left: 8px; }
+  .m-msgs-inner > * + * { margin-top: 12px; }
 }
 .m-q-btn {
   padding: 8px 14px; background: #f5f5f7;
