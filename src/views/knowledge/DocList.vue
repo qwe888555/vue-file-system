@@ -1,16 +1,36 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, triggerRef } from 'vue'
+import { ref, computed, onMounted, triggerRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search, Close, Plus, Check } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search, Close, Plus, Check, Download, Edit, Delete } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getDocDetailApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, downloadDocApi, batchDeleteDocsApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getDocDetailApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi } from '@/api/knowledge'
 import mammoth from 'mammoth'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 
 const router = useRouter()
 
 const searchQuery = ref('')
+// 本地描述缓存：后端列表接口不返回 description 字段，持久化到 localStorage 防刷新丢失
+const DESC_CACHE_KEY = 'doc_description_cache'
+function loadDescCache(): Map<number, string> {
+  try {
+    const raw = localStorage.getItem(DESC_CACHE_KEY)
+    if (raw) return new Map(JSON.parse(raw))
+  } catch {}
+  return new Map()
+}
+function saveDescCache(map: Map<number, string>) {
+  try {
+    localStorage.setItem(DESC_CACHE_KEY, JSON.stringify([...map]))
+  } catch {}
+}
+function cacheDesc(id: number, desc: string) {
+  if (!desc) return
+  localDescriptionCache.value.set(id, desc)
+  saveDescCache(localDescriptionCache.value)
+}
+const localDescriptionCache = ref<Map<number, string>>(loadDescCache())
 const showEditDialog = ref(false)
 const editingFile = ref<KnowledgeFile | null>(null)
 const loading = ref(false)
@@ -23,6 +43,7 @@ const showPreviewDialog = ref(false)
 const previewContent = ref('')
 const previewFileName = ref('')
 const previewFileUrl = ref('')
+const isOfficePreview = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const showKeywordsDialog = ref(false)
@@ -209,6 +230,7 @@ async function handlePreviewDoc(id: number, title: string) {
     previewFileName.value = title
     previewContent.value = ''
     previewFileUrl.value = ''
+    isOfficePreview.value = false
     
     const result = await previewDocApi(id)
     
@@ -219,17 +241,12 @@ async function handlePreviewDoc(id: number, title: string) {
         previewFileUrl.value = result.content
       } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExtension)) {
         previewFileUrl.value = result.content
-      } else if (fileExtension === 'docx') {
-        try {
-          const response = await fetch(result.content)
-          const blob = await response.blob()
-          const arrayBuffer = await blob.arrayBuffer()
-          const mammothResult = await mammoth.convertToHtml({ arrayBuffer })
-          previewContent.value = mammothResult.value || '无法查看文件详细内容'
-        } catch (mammothError) {
-          console.error('mammoth解析失败:', mammothError)
-          previewContent.value = '无法查看文件详细内容'
-        }
+      } else if (result.preview_type === 'url' && result.file_type === 'document') {
+        previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(result.content)}`
+        isOfficePreview.value = true
+      } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'wps', 'et', 'dps'].includes(fileExtension)) {
+        previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(result.content)}`
+        isOfficePreview.value = true
       } else if (fileExtension === 'txt') {
         try {
           const response = await fetch(result.content)
@@ -265,6 +282,7 @@ function handlePreviewClose() {
     previewFileUrl.value = ''
   }
   previewContent.value = ''
+  isOfficePreview.value = false
 }
 
 function showAllKeywords(keywords: { id: number; phrase: string }[], title: string) {
@@ -367,6 +385,10 @@ async function handleUploadSubmit() {
         scope: uploadForm.value.scope === 'public' ? 'school' : 'college',
       })
       console.log('创建文件结果:', result)
+      // 缓存描述，防止 fetchFiles 刷新后丢失
+      if (result.id && uploadForm.value.description) {
+        cacheDesc(result.id, uploadForm.value.description)
+      }
       ElMessage.success('创建成功')
       resetUploadForm()
       fetchFiles()
@@ -419,6 +441,10 @@ async function handleUploadSubmit() {
         const result = await uploadFileApi(formData)
         if (result.id) {
           item.docId = result.id
+          // 缓存描述，防止 fetchFiles 刷新后丢失
+          if (item.description) {
+            cacheDesc(result.id, item.description)
+          }
         }
         successCount++
       }
@@ -439,15 +465,17 @@ const pageSize = ref(8)
 const totalFiles = ref(0)
 
 const uploadedFiles = ref<KnowledgeFile[]>([])
+const allFiles = ref<KnowledgeFile[]>([])
 const keywordsCache = new Map<number, Keyword[]>()
 const loadingKeywords = new Set<number>()
 
-async function fetchFiles() {
+async function fetchFiles(keyword?: string) {
   loading.value = true
   try {
     const res = await getDocListApi({
-      page: currentPage.value,
-      page_size: pageSize.value,
+      page: 1,
+      page_size: 1000,
+      keyword: keyword || undefined,
     })
     console.log('文档列表响应:', JSON.stringify(res, null, 2))
     const data = res.results || res.data || res
@@ -473,37 +501,46 @@ async function fetchFiles() {
       if (file.updated_at && !file.updatedAt) {
         file.updatedAt = file.updated_at
       }
-      if (file.description && !file.summary) {
-        file.summary = file.description
+      // 后端可能返回 description 或 summary，统一映射确保数据不丢失
+      const rawDesc = (file as any).description
+      if (rawDesc && !file.summary) {
+        file.summary = rawDesc
+      }
+      // 同时保留原始 description 字段，供编辑弹窗使用
+      if (rawDesc) {
+        ;(file as any).description = rawDesc
+      }
+      // 从本地缓存恢复描述（后端列表接口可能不返回 description 字段）
+      const cachedDesc = localDescriptionCache.value.get(file.id)
+      if (cachedDesc) {
+        if (!file.summary) file.summary = cachedDesc
+        ;(file as any).description = cachedDesc
+      }
+    })
+
+    // 在覆盖 allFiles 前，保存现有文件的描述到缓存（防止 fetchFiles 刷新后丢失）
+    allFiles.value.forEach((f) => {
+      const desc = f.summary || (f as any).description
+      if (desc && !localDescriptionCache.value.has(f.id)) {
+        cacheDesc(f.id, desc)
       }
     })
     
-    if (newFiles.length === 0) {
-      if (currentPage.value === 1) {
-        uploadedFiles.value = []
-        totalFiles.value = 0
-      } else {
-        totalFiles.value = (currentPage.value - 1) * pageSize.value
-        currentPage.value = currentPage.value - 1
-        await fetchFiles()
-        return
-      }
-    } else {
-      uploadedFiles.value = newFiles
-      if (newFiles.length < pageSize.value) {
-        totalFiles.value = (currentPage.value - 1) * pageSize.value + newFiles.length
-      } else {
-        const backendTotal = res.total || res.count || 0
-        totalFiles.value = backendTotal || (currentPage.value * pageSize.value)
-      }
+    allFiles.value = newFiles
+    totalFiles.value = newFiles.length
+    
+    const maxPage = Math.max(1, Math.ceil(totalFiles.value / pageSize.value))
+    if (currentPage.value > maxPage) {
+      currentPage.value = maxPage
     }
+    
+    const start = (currentPage.value - 1) * pageSize.value
+    const end = start + pageSize.value
+    uploadedFiles.value = allFiles.value.slice(start, end)
     
   } catch (error: any) {
     console.error('获取文件列表失败:', error)
-    if (error.response?.status === 404 && currentPage.value > 1) {
-      currentPage.value = 1
-      await fetchFiles()
-    } else if (error.response?.status === 401) {
+    if (error.response?.status === 401) {
       console.warn('Token过期，需要重新登录')
     }
   } finally {
@@ -563,17 +600,72 @@ onMounted(() => {
   fetchFiles()
 })
 
+watch(searchQuery, () => {
+  currentPage.value = 1
+})
+
+/**
+ * 标准化搜索文本：统一中英文标点符号，方便搜索匹配
+ */
+function normalizeSearchText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/：/g, ':')   // 中文冒号 → 英文冒号
+    .replace(/，/g, ',')   // 中文逗号 → 英文逗号
+    .replace(/。/g, '.')   // 中文句号 → 英文句号
+    .replace(/（/g, '(')   // 中文左括号
+    .replace(/）/g, ')')   // 中文右括号
+    .replace(/；/g, ';')   // 中文分号
+    .replace(/"/g, '"')   // 中文左引号
+    .replace(/"/g, '"')   // 中文右引号
+    .replace(/'/g, "'")   // 中文左单引号
+    .replace(/'/g, "'")   // 中文右单引号
+    .trim()
+}
+
 const filteredFiles = computed(() => {
-  if (!searchQuery.value) return uploadedFiles.value
-  const query = searchQuery.value.toLowerCase()
-  return uploadedFiles.value.filter(
-    (file) =>
-      file.title.toLowerCase().includes(query) ||
-      (file.summary && file.summary.toLowerCase().includes(query)) ||
-      (file.author && file.author.toLowerCase().includes(query)) ||
-      (file.collegeName && file.collegeName.toLowerCase().includes(query)) ||
-      (file.keywords && file.keywords.some((kw) => kw.phrase.toLowerCase().includes(query)))
-  )
+  if (!searchQuery.value) return allFiles.value
+  const query = normalizeSearchText(searchQuery.value)
+  if (!query) return allFiles.value
+
+  return allFiles.value.filter((file) => {
+    // 构建包含所有字段的搜索文本，确保输入任何字符都能匹配到相关文件
+    const searchableParts = [
+      file.id,
+      file.title,
+      file.summary,
+      file.author,
+      file.collegeName,
+      file.collegeId,
+      file.category,
+      file.categoryName,
+      file.fileType,
+      file.fileSize,
+      file.status,
+      file.content,
+      file.fileData,
+      file.createdAt,
+      file.updatedAt,
+      // 格式化后的日期（中文格式，方便按年月日搜索）
+      file.createdAt ? formatDate(file.createdAt) : '',
+      file.updatedAt ? formatDate(file.updatedAt) : '',
+      // 格式化后的文件大小（如 "1.5 MB"）
+      file.fileSize != null ? formatFileSize(file.fileSize) : '',
+      // 关键词（短语 + ID）
+      ...(file.keywords || []).flatMap((kw) => [kw.phrase, String(kw.id)]),
+    ]
+    const searchText = normalizeSearchText(
+      searchableParts
+        .filter((p) => p != null && p !== '')
+        .map((p) => String(p))
+        .join(' ')
+    )
+    return searchText.includes(query)
+  })
+})
+
+const displayTotalFiles = computed(() => {
+  return filteredFiles.value.length
 })
 
 const paginatedFiles = computed(() => {
@@ -583,12 +675,21 @@ const paginatedFiles = computed(() => {
 })
 
 function handleCurrentChange(page: number) {
+  const maxPage = Math.max(1, Math.ceil(displayTotalFiles.value / pageSize.value))
   if (page < 1) {
     currentPage.value = 1
     return
   }
+  if (page > maxPage) {
+    currentPage.value = maxPage
+    return
+  }
   currentPage.value = page
-  fetchFiles()
+}
+
+function handleSizeChange(size: number) {
+  pageSize.value = size
+  currentPage.value = 1
 }
 
 const fileTypeIcons: Record<string, any> = {
@@ -651,39 +752,96 @@ async function handleEdit(file: KnowledgeFile) {
   }
 }
 
+function handleEditSubmit(data: { title: string; description: string; keywords: Keyword[] }) {
+  if (editingFile.value) {
+    editingFile.value.title = data.title
+    editingFile.value.summary = data.description
+    ;(editingFile.value as any).description = data.description
+    editingFile.value.keywords = data.keywords
+    if (data.description) {
+      cacheDesc(editingFile.value.id, data.description)
+    }
+    saveFiles(uploadedFiles.value)
+    ElMessage.success('编辑成功')
+    fetchFiles()
+  }
+  showEditDialog.value = false
+}
+
 async function handleDownload(file: KnowledgeFile) {
   try {
-    const { data: blob } = await downloadDocApi(file.id)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    
-    const extMap: Record<string, string> = {
-      doc: '.doc',
-      docx: '.docx',
-      pdf: '.pdf',
-      txt: '.txt',
-      md: '.md',
-      image: '.jpg',
-      audio: '.mp3',
-      video: '.mp4',
-      archive: '.zip',
+    // 1. 先确定文件名：列表显示什么就下载什么
+    let fileName: string
+    if (file.title && file.title.includes('.')) {
+      fileName = file.title
+    } else {
+      let ext = ''
+      if (file.fileUrl) {
+        const urlExt = file.fileUrl.split('?')[0].split('.').pop()?.toLowerCase()
+        if (urlExt && /^[a-z0-9]{1,5}$/i.test(urlExt)) ext = '.' + urlExt
+      }
+      if (!ext) {
+        const extMap: Record<string, string> = {
+          doc: '.docx', docx: '.docx', pdf: '.pdf',
+          txt: '.txt', md: '.md',
+          image: '.png', audio: '.mp3', video: '.mp4', archive: '.zip',
+        }
+        ext = extMap[file.fileType] || ''
+      }
+      fileName = (file.title || `文件${file.id}`) + ext
     }
-    const ext = extMap[file.fileType] || ''
-    const fileName = file.title && !file.title.includes('.') 
-      ? `${file.title}${ext}` 
-      : (file.title || `文件${file.id}${ext}`)
-    
-    a.download = fileName
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    ElMessage.success('下载成功')
-  } catch (error) {
+
+    // 2. 请求后端下载接口
+    const token = localStorage.getItem('access_token')
+    const response = await fetch(`/api/knowledge/docs/${file.id}/download/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      throw new Error(text || `下载失败 (${response.status})`)
+    }
+
+    const contentType = response.headers.get('Content-Type') || ''
+
+    // 3. 后端返回 JSON（含 OSS 地址）：先尝试 fetch 为 Blob 以保留自定义文件名
+    if (contentType.includes('application/json')) {
+      const json = await response.json()
+      const fileUrl = json.url || json.file_url || json.fileUrl || json.download_url
+      if (!fileUrl) throw new Error('后端返回了 JSON 但没有包含文件下载地址')
+
+      try {
+        const ossRes = await fetch(fileUrl)
+        if (ossRes.ok) {
+          const blob = await ossRes.blob()
+          downloadBlob(blob, fileName)
+          return
+        }
+      } catch {
+        // CORS 不通，回退到 window.open（文件名由 OSS 决定）
+      }
+      window.open(fileUrl, '_blank')
+      return
+    }
+
+    // 4. 后端直接返回二进制文件流
+    downloadBlob(await response.blob(), fileName)
+  } catch (error: any) {
     console.error('下载文件失败:', error)
-    ElMessage.error('下载文件失败')
+    ElMessage.error(error.message || '下载文件失败')
   }
+}
+
+/** 创建 Blob URL 并触发浏览器下载 */
+function downloadBlob(blob: Blob, fileName: string) {
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 100)
 }
 
 async function handleBatchDelete() {
@@ -715,18 +873,6 @@ function handleSelectionChange(val: KnowledgeFile[]) {
   selectedDocIds.value = val.map(item => item.id)
 }
 
-function handleEditSubmit(data: { title: string; description: string; keywords: Keyword[] }) {
-  if (editingFile.value) {
-    editingFile.value.title = data.title
-    editingFile.value.summary = data.description
-    editingFile.value.keywords = data.keywords
-    saveFiles(uploadedFiles.value)
-    ElMessage.success('编辑成功')
-    fetchFiles()
-  }
-  showEditDialog.value = false
-}
-
 async function handleDelete(file: KnowledgeFile) {
   ElMessageBox.confirm('确定要删除该文件吗？', '提示', {
     confirmButtonText: '确定',
@@ -746,8 +892,6 @@ async function handleDelete(file: KnowledgeFile) {
     .catch(() => {})
 }
 
-
-
 function saveFiles(files: KnowledgeFile[]) {
   localStorage.setItem('uploadedFiles', JSON.stringify(files))
 }
@@ -760,15 +904,6 @@ function saveFiles(files: KnowledgeFile[]) {
         <h2 class="page-title">知识库管理</h2>
         <p class="page-subtitle">管理和浏览所有上传的文档资源</p>
       </div>
-    </div>
-
-    <div class="search-section">
-      <el-input
-        v-model="searchQuery"
-        placeholder="搜索文件名、学院/部门、作者、关键词、文件描述..."
-        prefix-icon="Search"
-        class="search-input"
-      />
     </div>
 
     <div class="upload-section">
@@ -792,9 +927,12 @@ function saveFiles(files: KnowledgeFile[]) {
             accept=".pdf,.doc,.docx,.txt,.jpg,.png,.gif,.mp3,.wav,.mp4,.avi,.mkv,.zip,.rar"
             class="upload-dragger"
           >
-            <el-icon :size="48" color="#c0c4cc"><Upload /></el-icon>
+            <el-icon :size="300" color="#c0c4cc"><Upload /></el-icon>
             <div class="el-upload__text">
               将文件拖到此处，或<em>点击上传</em>
+            </div>
+            <div class="upload-file-formats">
+              支持 PDF、Word、TXT、图片、音视频等格式
             </div>
           </el-upload>
         </div>
@@ -975,10 +1113,27 @@ function saveFiles(files: KnowledgeFile[]) {
       <div class="section-header">
         <h3 class="section-title">
           <el-icon><FolderOpened /></el-icon>
-          全部文件
-          <span class="file-count">{{ totalFiles }}</span>
+          全部资料
+          <span class="file-count">{{ displayTotalFiles }}</span>
         </h3>
       </div>
+      
+      <div class="search-section">
+        <el-input
+          v-model="searchQuery"
+          placeholder="搜索资料名、上传单位、上传者、上传时间、资料描述..."
+          prefix-icon="Search"
+          class="search-input"
+        />
+      </div>
+
+      <el-alert
+        title="如需修改文档内容，请先下载文件，本地修改后再重新上传"
+        type="info"
+        :closable="false"
+        show-icon
+        class="edit-hint"
+      />
 
       <div v-if="filteredFiles.length === 0" class="empty-state">
         <el-icon size="48" color="#c0c4cc"><FolderOpened /></el-icon>
@@ -1001,7 +1156,7 @@ function saveFiles(files: KnowledgeFile[]) {
       >
         <el-table-column type="selection" width="55" align="center" />
         
-        <el-table-column prop="title" label="文件名" min-width="200" show-overflow-tooltip>
+        <el-table-column prop="title" label="资料名" min-width="200" show-overflow-tooltip>
           <template #default="scope">
             <div class="file-name-cell">
               <el-icon 
@@ -1012,20 +1167,12 @@ function saveFiles(files: KnowledgeFile[]) {
               >
                 <component :is="fileTypeIcons[scope.row.fileType] || 'Document'" />
               </el-icon>
-              <span class="file-title">{{ scope.row.title }}</span>
+              <span class="file-title cursor-pointer" @click="handlePreviewDoc(scope.row.id, scope.row.title)">{{ scope.row.title }}</span>
             </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="categoryName" label="分类" min-width="120" align="center">
-          <template #default="scope">
-            <el-tag size="small" type="info" effect="plain">
-              {{ scope.row.categoryName || '未分类' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-
-        <el-table-column prop="collegeName" label="学院" min-width="120" align="center">
+        <el-table-column prop="collegeName" label="上传单位" min-width="120" align="center">
           <template #default="scope">
             <el-tag size="small" type="primary" effect="plain">
               {{ scope.row.collegeName || '未归属' }}
@@ -1041,17 +1188,19 @@ function saveFiles(files: KnowledgeFile[]) {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="180" align="center" fixed="right">
+        <el-table-column label="操作" width="240" align="center" fixed="right">
           <template #default="scope">
-            <el-button size="small" @click.stop="handleDownload(scope.row)" type="primary" link>
-              下载
-            </el-button>
-            <el-button size="small" @click.stop="handleEdit(scope.row)" type="primary" link>
-              编辑
-            </el-button>
-            <el-button size="small" @click.stop="handleDelete(scope.row)" type="danger" link>
-              删除
-            </el-button>
+            <div class="action-buttons">
+              <el-button size="small" type="primary" plain :icon="Download" @click.stop="handleDownload(scope.row)">
+                下载
+              </el-button>
+              <el-button size="small" type="warning" plain :icon="Edit" @click.stop="handleEdit(scope.row)">
+                编辑
+              </el-button>
+              <el-button size="small" type="danger" plain :icon="Delete" @click.stop="handleDelete(scope.row)">
+                删除
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -1060,13 +1209,13 @@ function saveFiles(files: KnowledgeFile[]) {
         <el-pagination
           :current-page="currentPage"
           :page-size="pageSize"
-          :total="totalFiles"
+          :total="displayTotalFiles"
           :page-sizes="[8, 10, 12, 16, 18]"
           :pager-count="6"
           layout="total, sizes, prev, pager, next, jumper"
           :hide-on-single-page="false"
           @current-change="handleCurrentChange"
-          @size-change="(size) => { pageSize.value = size; currentPage.value = 1; fetchFiles(); }"
+          @size-change="handleSizeChange"
         />
       </div>
     </div>
@@ -1086,7 +1235,8 @@ function saveFiles(files: KnowledgeFile[]) {
       @close="handlePreviewClose"
     >
       <div class="preview-content">
-        <iframe v-if="previewFileUrl && previewFileName.endsWith('.pdf')" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
+        <iframe v-if="isOfficePreview" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
+        <iframe v-else-if="previewFileUrl && previewFileName.endsWith('.pdf')" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
         <img v-else-if="previewFileUrl" :src="previewFileUrl" style="max-width: 100%; max-height: 600px; object-fit: contain;" />
         <div v-else v-html="previewContent" class="preview-text"></div>
       </div>
@@ -1159,21 +1309,20 @@ function saveFiles(files: KnowledgeFile[]) {
   max-width: 400px;
 }
 
+.edit-hint {
+  margin-bottom: var(--spacing-md);
+}
+
 .upload-section {
   background: #fff;
-  border: 3px dashed #409eff;
+  border: none;
   border-radius: var(--radius-lg);
   padding: 0;
   margin-bottom: var(--spacing-xl);
-  box-shadow: var(--shadow-lg);
+  box-shadow: none;
   overflow: hidden;
-  min-height: 650px;
+  min-height: auto;
   transition: all 0.3s ease;
-}
-
-.upload-section:hover {
-  border-color: #66b1ff;
-  box-shadow: var(--shadow-xl);
 }
 
 .mode-switch-wrapper {
@@ -1185,7 +1334,7 @@ function saveFiles(files: KnowledgeFile[]) {
 .create-area {
   display: flex;
   flex-direction: column;
-  min-height: 650px;
+  min-height: 300px;
 }
 
 .upload-header,
@@ -1209,7 +1358,8 @@ function saveFiles(files: KnowledgeFile[]) {
   align-items: center;
   justify-content: center;
   padding: 0;
-  min-height: 650px;
+  height: 100%;
+  min-height: 400px;
   background: transparent;
 }
 
@@ -1225,6 +1375,7 @@ function saveFiles(files: KnowledgeFile[]) {
   background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
   border-right: 1px solid #e4e7ed;
   overflow-y: auto;
+  max-height: 350px;
 }
 
 .upload-content-right {
@@ -1378,17 +1529,26 @@ function saveFiles(files: KnowledgeFile[]) {
 
 .upload-dragger {
   width: 100%;
-  height: 650px;
+  height: 100%;
+  min-height: 350px;
   border-radius: 12px;
 }
 
 .upload-dragger .el-upload-dragger {
   width: 100%;
   height: 100%;
+  min-height: 350px;
   border-radius: 12px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+.upload-file-formats {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 12px;
 }
 
 .upload-file-count {
@@ -1541,6 +1701,12 @@ function saveFiles(files: KnowledgeFile[]) {
   border-bottom: 1px solid var(--color-border);
 }
 
+.action-buttons {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
 .file-name-cell {
   display: flex;
   align-items: center;
@@ -1555,6 +1721,10 @@ function saveFiles(files: KnowledgeFile[]) {
   font-size: 14px;
   color: var(--color-text);
   font-weight: 500;
+  transition: color 0.2s;
+}
+.file-title:hover {
+  color: var(--color-primary, #409eff);
 }
 
 .keywords-cell {
@@ -1689,4 +1859,5 @@ function saveFiles(files: KnowledgeFile[]) {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
 </style>

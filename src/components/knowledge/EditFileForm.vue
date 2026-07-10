@@ -87,7 +87,8 @@ watch(
   (visible) => {
     if (visible && props.file) {
       form.value.title = props.file.title
-      form.value.description = props.file.summary || ''
+      // 优先使用 summary，其次 description（后端可能返回不同字段名）
+      form.value.description = props.file.summary || (props.file as any).description || ''
       form.value.keywords = [...(props.file.keywords || [])]
       originalKeywords.value = [...(props.file.keywords || [])]
     } else if (!visible) {
