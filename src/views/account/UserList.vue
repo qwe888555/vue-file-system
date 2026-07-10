@@ -125,6 +125,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable no-console */
 // ── 账号管理页面（对接后端 API） ──
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'

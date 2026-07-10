@@ -1,6 +1,6 @@
 // ── 智能问答状态管理 Composable ──
 // 功能：管理对话列表/消息缓存/增删改查/刷新
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import type { Conversation, Message, KnowledgeFile } from '@/types'
 import {
   getConversationsApi,

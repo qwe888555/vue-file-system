@@ -6,7 +6,6 @@ import { useUserStore } from '@/store/user'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
-import type { KnowledgeFile } from '@/types'
 import VoicePreviewDialog from '@/components/chat/VoicePreviewDialog.vue'
 
 const router = useRouter()
@@ -17,9 +16,7 @@ const inputText = ref('')
 const isStreaming = ref(false)
 const isRecording = ref(false)
 let mediaRecorder: MediaRecorder | null = null
-let lastTouchTime = 0 // 防双击
 const streamingContent = ref('')
-const streamingReferences = ref<KnowledgeFile[]>([])
 let currentSSE: ReturnType<typeof useSSE> | null = null
 
 // 热点问题

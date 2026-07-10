@@ -5,31 +5,36 @@ import { ref, computed, onMounted, triggerRef, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi } from '@/api/knowledge'
 import mammoth from 'mammoth'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 
 const searchQuery = ref('')
 // 本地描述缓存：后端列表接口不返回 description 字段，持久化到 localStorage 防刷新丢失
 const DESC_CACHE_KEY = 'doc_description_cache'
-function loadDescCache(): Map<number, string> {
+const KW_CACHE_KEY = 'doc_keywords_cache'
+
+function loadJsonCache(key: string): Map<number, any> {
   try {
-    const raw = localStorage.getItem(DESC_CACHE_KEY)
+    const raw = localStorage.getItem(key)
     if (raw) return new Map(JSON.parse(raw))
   } catch {}
   return new Map()
 }
-function saveDescCache(map: Map<number, string>) {
-  try {
-    localStorage.setItem(DESC_CACHE_KEY, JSON.stringify([...map]))
-  } catch {}
+function saveJsonCache(key: string, map: Map<number, any>) {
+  try { localStorage.setItem(key, JSON.stringify([...map])) } catch {}
 }
 function cacheDesc(id: number, desc: string) {
   if (!desc) return
   localDescriptionCache.value.set(id, desc)
-  saveDescCache(localDescriptionCache.value)
+  saveJsonCache(DESC_CACHE_KEY, localDescriptionCache.value)
 }
-const localDescriptionCache = ref<Map<number, string>>(loadDescCache())
+function cacheKeywords(id: number, keywords: Keyword[]) {
+  if (!keywords.length) return
+  keywordsCache.set(id, keywords)
+  saveJsonCache(KW_CACHE_KEY, keywordsCache)
+}
+const localDescriptionCache = ref<Map<number, string>>(loadJsonCache(DESC_CACHE_KEY) as Map<number, string>)
 const showEditDialog = ref(false)
 const editingFile = ref<KnowledgeFile | null>(null)
 const loading = ref(false)
@@ -429,6 +434,12 @@ async function handleUploadSubmit() {
         if (item.description) {
           formData.append('description', item.description)
         }
+        // 将用户修改后的关键词也发给后端
+        const uploadKeywords = item.keywords
+          .split(/[,，、\s]+/)
+          .map((kw: string) => kw.trim())
+          .filter((kw: string) => kw)
+        uploadKeywords.forEach((kw: string) => formData.append('keywords', kw))
         formData.append('scope', item.scope === 'public' ? 'school' : 'college')
 
         const result = await uploadFileApi(formData)
@@ -437,6 +448,13 @@ async function handleUploadSubmit() {
           // 缓存描述，防止 fetchFiles 刷新后丢失
           if (item.description) {
             cacheDesc(result.id, item.description)
+          }
+          // 手动写入关键词 + 本地缓存（后端异步 AI 提取可能覆盖用户修改）
+          if (uploadKeywords.length > 0) {
+            try { await addKeywordsApi(result.id, uploadKeywords) } catch {}
+            cacheKeywords(result.id, uploadKeywords.map((phrase: string) => ({
+              id: 0, phrase, match_type: 'exact', weight: 1,
+            })))
           }
         }
         successCount++
@@ -459,7 +477,7 @@ const totalFiles = ref(0)
 
 const uploadedFiles = ref<KnowledgeFile[]>([])
 const allFiles = ref<KnowledgeFile[]>([])
-const keywordsCache = new Map<number, Keyword[]>()
+const keywordsCache: Map<number, Keyword[]> = loadJsonCache(KW_CACHE_KEY) as Map<number, Keyword[]>
 
 async function fetchFiles(keyword?: string) {
   loading.value = true
@@ -708,6 +726,7 @@ function handleEditSubmit(data: { title: string; description: string; keywords: 
     editingFile.value.summary = data.description
     ;(editingFile.value as any).description = data.description
     editingFile.value.keywords = data.keywords
+    cacheKeywords(editingFile.value.id, data.keywords)
     if (data.description) {
       cacheDesc(editingFile.value.id, data.description)
     }

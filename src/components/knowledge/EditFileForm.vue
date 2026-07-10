@@ -58,6 +58,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable no-console */
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { KnowledgeFile, Keyword } from '@/types'
@@ -135,7 +136,7 @@ async function handleSubmit() {
       const originalMap = new Map(originalKeywords.value.map((kw) => [kw.id, kw]))
       const currentMap = new Map(validKeywords.map((kw) => [kw.id, kw]))
 
-      for (const [id, kw] of originalMap) {
+      for (const [id] of originalMap) {
         if (!currentMap.has(id)) {
           await deleteKeywordApi(id)
         }

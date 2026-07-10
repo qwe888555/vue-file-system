@@ -124,7 +124,6 @@ const loading = ref(false)
 const expandedId = ref<number | null>(null)
 const page = ref(1)
 const pageSize = ref(10)
-const total = ref(0)
 
 const tabs = [
   { value: '', label: '全部' },
@@ -164,14 +163,14 @@ async function loadData() {
 }
 
 /** 分类过滤 + 前端分页 */
+const filteredList = computed(() => {
+  if (!categoryFilter.value) return list.value
+  return list.value.filter((item) => item.category === categoryFilter.value)
+})
+const total = computed(() => filteredList.value.length)
 const displayedList = computed(() => {
-  let filtered = list.value
-  if (categoryFilter.value) {
-    filtered = filtered.filter((item) => item.category === categoryFilter.value)
-  }
-  total.value = filtered.length
   const start = (page.value - 1) * pageSize.value
-  return filtered.slice(start, start + pageSize.value)
+  return filteredList.value.slice(start, start + pageSize.value)
 })
 
 function handlePageChange(p: number) {

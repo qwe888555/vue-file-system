@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable no-console */
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
