@@ -207,21 +207,34 @@ async function handleSTT() {
       const recognition = new SpeechAPI()
       recognition.lang = 'zh-CN'; recognition.interimResults = true; recognition.continuous = true
       speechRecognition = recognition
-      inputText.value = ''; isRecording.value = true
+      isRecording.value = true
+      let finalTranscript = ''
       recognition.onresult = (event: any) => {
-        let transcript = ''
-        for (let i = event.resultIndex; i < event.results.length; i++) transcript += event.results[i][0].transcript
-        inputText.value = transcript
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            finalTranscript = event.results[i][0].transcript
+          }
+        }
+        if (!finalTranscript && event.results.length > 0) {
+          const last = event.results[event.results.length - 1]
+          if (!last.isFinal) inputText.value = last[0].transcript
+        }
       }
       recognition.onerror = (event: any) => {
         isRecording.value = false; speechRecognition = null
         if (event.error === "not-allowed") ElMessage.error("请允许麦克风权限后重试")
         else if (event.error !== "no-speech" && event.error !== "aborted") ElMessage.error("语音识别: " + event.error)
       }
-      recognition.onend = () => { isRecording.value = false; speechRecognition = null }
+      recognition.onend = () => {
+        isRecording.value = false; speechRecognition = null
+        if (finalTranscript) {
+          inputText.value = finalTranscript
+          sendMessage()
+        }
+      }
       recognition.start()
       return
-    } catch { speechRecognition = null }
+    } catch { isRecording.value = false; speechRecognition = null }
   }
 
   // 方案二：后端 ASR
