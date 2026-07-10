@@ -117,10 +117,9 @@ export function extractFreshnessApi(id: number): Promise<{ freshness: string }> 
 }
 
 /** 下载文档 */
-export function downloadDocApi(id: number): Promise<{ data: Blob; headers: any }> {
+export function downloadDocApi(id: number): Promise<Blob> {
   return request.get(`/knowledge/docs/${id}/download/`, {
     responseType: 'blob',
-    transformResponse: [(data, headers) => ({ data, headers })],
   })
 }
 
