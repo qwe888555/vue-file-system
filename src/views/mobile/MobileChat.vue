@@ -6,7 +6,6 @@ import { useUserStore } from '@/store/user'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
-import VoicePreviewDialog from '@/components/chat/VoicePreviewDialog.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -177,162 +176,99 @@ function startRecording(): Promise<Blob | null> {
 }
 function stopRecording() { if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop(); isRecording.value = false }
 
-/* ── 语音转文字（优先使用浏览器原生 Web Speech API，降级到后端 ASR） ── */
+/* ── 统一语音输入：录音 → 语音转文字 → 自动发送 ── */
 let speechRecognition: any = null
 
-async function handleSTT() {
+async function handleVoiceMsg() {
   if (isRecording.value) {
     if (speechRecognition) { speechRecognition.stop(); speechRecognition = null }
-    stopRecording(); return
+    stopRecording()
+    return
   }
 
-  // 方案一：浏览器原生 Web Speech API
-  
-  
-  // HTTP 环境不支持语音功能
   if (location.protocol !== "https:" && location.hostname !== "localhost") {
     ElMessage.warning("语音功能需要 HTTPS 环境")
     return
   }
-  // iOS Safari 不支持 Web Speech API，提示用户
   if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
-    ElMessage.info("iOS Safari 不支持语音转文字，请使用 Chrome 浏览器")
+    ElMessage.info("iOS Safari 不支持语音输入，请使用 Chrome 浏览器")
     return
   }
+
   const SpeechAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
   if (SpeechAPI) {
     try {
       const recognition = new SpeechAPI()
-      recognition.lang = 'zh-CN'; recognition.interimResults = true; recognition.continuous = true
+      recognition.lang = "zh-CN"
+      recognition.interimResults = true
+      recognition.continuous = true
       speechRecognition = recognition
-      inputText.value = ''; isRecording.value = true
+      isRecording.value = true
+      let finalTranscript = ""
+
       recognition.onresult = (event: any) => {
-        let transcript = ''
-        for (let i = event.resultIndex; i < event.results.length; i++) transcript += event.results[i][0].transcript
-        inputText.value = transcript
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            finalTranscript = event.results[i][0].transcript
+          }
+        }
+        if (!finalTranscript && event.results.length > 0) {
+          const last = event.results[event.results.length - 1]
+          if (!last.isFinal) inputText.value = last[0].transcript
+        }
       }
+
       recognition.onerror = (event: any) => {
         isRecording.value = false; speechRecognition = null
         if (event.error === "not-allowed") ElMessage.error("请允许麦克风权限后重试")
         else if (event.error !== "no-speech" && event.error !== "aborted") ElMessage.error("语音识别: " + event.error)
       }
-      recognition.onend = () => { isRecording.value = false; speechRecognition = null }
+
+      recognition.onend = () => {
+        isRecording.value = false; speechRecognition = null
+        if (finalTranscript) {
+          inputText.value = finalTranscript
+          sendMessage()
+        }
+      }
+
       recognition.start()
       return
-    } catch { speechRecognition = null }
+    } catch { isRecording.value = false; speechRecognition = null }
   }
 
-  // 方案二：后端 ASR
   const blob = await startRecording()
   if (!blob) return
   if (!chat.currentConversationId.value) { const conv = await chat.createConversation(); if (!conv) return }
   const convId = chat.currentConversationId.value!
-  inputText.value = '语音识别中…'
-  let gotText = false
+  inputText.value = "语音识别中…"
   try {
-    const { voiceAskApi } = await import('@/api/chat')
+    const { voiceAskApi } = await import("@/api/chat")
     const response = await voiceAskApi(blob, convId)
-    if (!response.ok) { inputText.value = ''; return }
+    if (!response.ok) { inputText.value = ""; return }
     const reader = response.body?.getReader()
-    if (!reader) { inputText.value = ''; return }
-    const decoder = new TextDecoder(); let buffer = ''; let currentEvent = ''
+    if (!reader) { inputText.value = ""; return }
+    const decoder = new TextDecoder(); let buffer = ""; let currentEvent = ""
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
       buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n'); buffer = lines.pop() || ''
+      const lines = buffer.split("\n"); buffer = lines.pop() || ""
       for (const line of lines) {
-        if (line.startsWith('event: ')) currentEvent = line.slice(7).trim()
-        else if (line.startsWith('data: ')) {
-          try { const data = JSON.parse(line.slice(6).trim())
-            switch (currentEvent) {
-              case 'asr_text': gotText = true; inputText.value = data.text || ''; break
-              case 'token': case 'msg':
-                if (!gotText && inputText.value === '语音识别中…') {
-                  inputText.value = ''; chat.appendUserMessage('[语音消息]')
-                  streamingContent.value = data.content || ''; isStreaming.value = true
-                } break
-              case 'done': if (!gotText) isStreaming.value = false; break
+        if (line.startsWith("event: ")) currentEvent = line.slice(7).trim()
+        else if (line.startsWith("data: ")) {
+          try {
+            const data = JSON.parse(line.slice(6).trim())
+            if (currentEvent === "asr_text" && data.text) {
+              inputText.value = data.text
+              sendMessage()
             }
           } catch {}
         }
       }
     }
-  } catch { inputText.value = '' }
-  if (!gotText && inputText.value === '语音识别中…') inputText.value = ''
+  } catch { inputText.value = "" }
 }
-
-/* ── 语音消息 ── */
-const voicePreviewUrl = ref('')
-const showVoicePreview = ref(false)
-let pendingVoiceBlob: Blob | null = null
-let voiceAudioEl: HTMLAudioElement | null = null
-const isVoicePlaying = ref(false)
-
-async function handleVoiceMsg() {
-  if (location.protocol !== "https:" && location.hostname !== "localhost") {
-    ElMessage.warning("语音功能需要 HTTPS 环境")
-    return
-  }
-  if (isRecording.value) { stopRecording(); return }
-  const blob = await startRecording()
-  if (!blob) return
-  pendingVoiceBlob = blob; voicePreviewUrl.value = URL.createObjectURL(blob)
-  voiceAudioEl = new Audio(voicePreviewUrl.value)
-  voiceAudioEl.onended = () => { isVoicePlaying.value = false }
-  showVoicePreview.value = true
-}
-function playVoicePreview() {
-  if (!voiceAudioEl) return
-  if (isVoicePlaying.value) { voiceAudioEl.pause(); voiceAudioEl.currentTime = 0; isVoicePlaying.value = false; return }
-  voiceAudioEl.play(); isVoicePlaying.value = true
-}
-function cancelVoicePreview() {
-  voiceAudioEl?.pause(); voiceAudioEl = null
-  if (voicePreviewUrl.value) URL.revokeObjectURL(voicePreviewUrl.value)
-  voicePreviewUrl.value = ''; pendingVoiceBlob = null; showVoicePreview.value = false; isVoicePlaying.value = false
-}
-async function confirmVoicePreview() {
-  voiceAudioEl?.pause(); voiceAudioEl = null; showVoicePreview.value = false; isVoicePlaying.value = false
-  if (!pendingVoiceBlob) return
-  const blob = pendingVoiceBlob; pendingVoiceBlob = null
-  if (voicePreviewUrl.value) URL.revokeObjectURL(voicePreviewUrl.value); voicePreviewUrl.value = ''
-  if (!chat.currentConversationId.value) { const conv = await chat.createConversation(); if (!conv) return }
-  const convId = chat.currentConversationId.value!
-  chat.appendUserMessage('[语音消息]'); isStreaming.value = true; streamingContent.value = ''
-  try {
-    const { voiceAskApi } = await import('@/api/chat')
-    const response = await voiceAskApi(blob, convId)
-    if (!response.ok) {
-      if (response.status === 401) ElMessage.warning("语音消息需要登录后使用")
-      else if (response.status === 500) ElMessage.error("语音识别服务异常，请稍后重试")
-      else ElMessage.warning("语音发送失败")
-      isStreaming.value = false; return
-    }
-    const reader = response.body?.getReader()
-    if (!reader) { isStreaming.value = false; return }
-    const decoder = new TextDecoder(); let buffer = ''; let currentEvent = ''
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n'); buffer = lines.pop() || ''
-      for (const line of lines) {
-        if (line.startsWith('event: ')) currentEvent = line.slice(7).trim()
-        else if (line.startsWith('data: ')) {
-          try { const data = JSON.parse(line.slice(6).trim())
-            switch (currentEvent) {
-              case 'token': case 'msg': streamingContent.value += data.content || ''; break
-              case 'done': chat.appendAssistantMessage(streamingContent.value, undefined, data.message_id); isStreaming.value = false; streamingContent.value = ''; break
-              case 'error': isStreaming.value = false; break
-            }
-          } catch {}
-        }
-      }
-    }
-  } catch { isStreaming.value = false }
-}
-
 onMounted(async () => {
   document.addEventListener('click', onDocClick)
   // 有 token 但无用户信息时尝试拉取，失败说明 token 过期
@@ -435,8 +371,7 @@ onUnmounted(() => {
           :disabled="isStreaming"
           @keyup.enter="sendMessage"
         />
-        <button class="m-mic-btn" :class="{ recording: isRecording }" @pointerdown="handleSTT" title="语音转文字">🎤</button>
-        <button class="m-mic-btn" :class="{ recording: isRecording }" @pointerdown="handleVoiceMsg" title="语音消息">
+        <button class="m-mic-btn" :class="{ recording: isRecording }" @pointerdown="handleVoiceMsg" title="语音输入">
           <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
             <path d="M10 2a3 3 0 00-3 3v4a3 3 0 106 0V5a3 3 0 00-3-3zM5 9a5 5 0 0010 0h-1.5a3.5 3.5 0 01-7 0H5z"/>
             <path d="M9.25 13.5v2.75h1.5V13.5h-1.5z"/>
@@ -538,16 +473,7 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <!-- 语音预览弹窗 -->
-    <VoicePreviewDialog
-      :visible="showVoicePreview"
-      :is-playing="isVoicePlaying"
-      @play="playVoicePreview"
-      @cancel="cancelVoicePreview"
-      @confirm="confirmVoicePreview"
-      @close="cancelVoicePreview"
-    />
-  </div>
+    <!-- 语音预览弹窗 --></div>
 </template>
 
 <style scoped>
@@ -614,135 +540,6 @@ onUnmounted(() => {
 .m-mic-btn.recording { color: #f56c6c; animation: mPulse 1s ease-in-out infinite; }
 @keyframes mPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-/* 语音预览弹窗 */
-.vp-overlay {
-  position: fixed; inset: 0; z-index: 2000;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(0,0,0,0.35);
-}
-.vp-card {
-  width: 280px; background: #fff; border-radius: 20px;
-  overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,0.12);
-}
-.vp-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px; border-bottom: 1px solid #f0f0f0;
-  font-weight: 600; font-size: 15px;
-}
-.vp-close { width: 28px; height: 28px; border: none; background: none; font-size: 20px; color: #999; cursor: pointer; }
-.vp-body { display: flex; flex-direction: column; align-items: center; padding: 28px 20px; gap: 14px; }
-.vp-wave { display: flex; align-items: center; gap: 3px; height: 28px; }
-.vp-wave span {
-  width: 4px; height: 100%; border-radius: 2px; background: #409eff;
-  animation: waveAnim 0.6s ease-in-out infinite alternate;
-}
-.vp-wave.playing span:nth-child(1) { animation-delay: 0s; }
-.vp-wave.playing span:nth-child(2) { animation-delay: 0.1s; }
-.vp-wave.playing span:nth-child(3) { animation-delay: 0.2s; }
-.vp-wave.playing span:nth-child(4) { animation-delay: 0.3s; }
-.vp-wave.playing span:nth-child(5) { animation-delay: 0.4s; }
-@keyframes waveAnim { 0% { height: 6px; } 100% { height: 28px; } }
-.vp-play-btn { width: 50px; height: 50px; border-radius: 50%; border: none; background: #409eff; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-.vp-hint { font-size: 13px; color: #8e8e93; margin: 0; }
-.vp-footer { display: flex; gap: 12px; padding: 0 20px 20px; }
-.vp-btn { flex: 1; height: 40px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; }
-.vp-cancel { background: #f5f5f5; color: #666; }
-.vp-cancel:hover { background: #e8e8e8; }
-.vp-confirm { background: #409eff; color: #fff; }
-.vp-confirm:hover { background: #3a8ee6; }
-.m-send-btn {
-  width: 36px; height: 36px; border-radius: 50%;
-  border: none; background: #409eff; color: #fff;
-  display: flex; align-items: center; justify-content: center; cursor: pointer;
-}
-.m-send-btn:disabled { background: #d9d9d9; cursor: not-allowed; }
-
-/* 历史侧边面板（左侧滑入，6/7 宽） */
-.m-panel-wrap { position: fixed; inset: 0; z-index: 500; display: flex; }
-.m-panel {
-  width: calc(100vw * 5 / 7); background: #fff;
-  display: flex; flex-direction: column; overflow: hidden;
-}
-.m-panel-overlay { flex: 1; background: rgba(0,0,0,0.25); }
-
-.m-panel-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px; border-bottom: 1px solid #f0f0f0;
-}
-.m-panel-title { font-size: 17px; font-weight: 600; }
-.m-panel-close { width: 28px; height: 28px; border: none; background: none; font-size: 20px; color: #999; cursor: pointer; }
-
-/* 搜索 */
-.m-panel-search {
-  display: flex; align-items: center; gap: 6px;
-  margin: 12px 16px; padding: 8px 12px;
-  background: #f5f5f5; border-radius: 8px; color: #999;
-}
-.m-panel-search input {
-  flex: 1; border: none; background: transparent; outline: none;
-  font-size: 13px; color: #333;
-}
-.m-panel-search input::placeholder { color: #bbb; }
-
-.m-panel-new-btn {
-  margin: 0 16px 8px; padding: 10px;
-  border: 1px dashed #d0d0d0; border-radius: 8px;
-  background: none; color: #409eff; font-size: 13px; cursor: pointer;
-}
-
-.m-panel-list { flex: 1; overflow-y: auto; padding: 0 8px; }
-.m-panel-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 12px; margin-bottom: 2px;
-  border-radius: 10px; cursor: pointer;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-.m-panel-item:active { background: #f5f5f5; }
-.m-panel-item.active { background: #f0f4ff; }
-.m-panel-item-icon {
-  width: 36px; height: 36px; border-radius: 10px;
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  color: #409eff; background: rgba(64,158,255,0.1);
-}
-.m-panel-item-content {
-  flex: 1; display: flex; flex-direction: column; gap: 3px;
-  min-width: 0;
-}
-.m-panel-item-title {
-  font-size: 14px; font-weight: 500; color: #1f1f1f;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.m-panel-item-time { font-size: 12px; color: #aeaeb2; }
-
-/* 未登录提示 */
-.m-panel-login-hint { padding: 20px; text-align: center; }
-.m-panel-login-hint p { font-size: 13px; color: #8e8e93; margin: 0; }
-
-/* 底部用户 */
-.m-panel-footer { border-top: 1px solid #f0f0f0; }
-.m-panel-user {
-  display: flex; align-items: center; gap: 10px;
-  padding: 14px 16px; cursor: pointer;
-}
-.m-panel-user:active { background: #f5f5f5; }
-.m-panel-avatar {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: rgba(64,158,255,0.15); color: #409eff;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: 600; flex-shrink: 0;
-}
-.m-panel-avatar-guest { background: #e8ecf1; color: #409eff; font-size: 15px; font-weight: 600; }
-.m-panel-username { flex: 1; font-size: 13px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.m-panel-logout { color: #aaa; }
-.m-panel-login-tip { font-size: 12px; color: #409eff; }
-
-/* 覆盖 AI 气泡左偏移 — 手机端不需要 */
-.msg-row-ai { margin-left: 0 !important; }
-.msg-row-ai .msg-content-area { max-width: 88% !important; }
-
-/* 动画：从左侧滑入 */
 .panel-slide-enter-active { transition: all 0.3s ease; }
 .panel-slide-leave-active { transition: all 0.2s ease; }
 .panel-slide-enter-from .m-panel { transform: translateX(-100%); }
