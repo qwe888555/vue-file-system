@@ -12,6 +12,7 @@ import { useSSE } from '@/composables/useSSE'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ChatLoginDialog from '@/components/chat/ChatLoginDialog.vue'
 import SidebarUser from '@/components/common/SidebarUser.vue'
+import VoicePreviewDialog from '@/components/chat/VoicePreviewDialog.vue'
 
 const userStore = useUserStore()
 const router = useRouter()
@@ -661,30 +662,14 @@ onUnmounted(() => {
     <ChatLoginDialog v-if="showLoginDialog" @success="handleLoginSuccess" @cancel="handleLoginCancel" />
 
     <!-- 语音预览弹窗 -->
-    <Transition name="panel">
-      <div v-if="showVoicePreview" class="voice-preview-overlay" @click.self="cancelVoicePreview">
-        <div class="voice-preview-card">
-          <div class="vp-header">
-            <span>语音预览</span>
-            <button class="vp-close" @click="cancelVoicePreview">×</button>
-          </div>
-          <div class="vp-body">
-            <div class="vp-wave" :class="{ playing: isVoicePlaying }">
-              <span></span><span></span><span></span><span></span><span></span>
-            </div>
-            <button class="vp-play-btn" @click="playVoicePreview">
-              <svg v-if="!isVoicePlaying" viewBox="0 0 20 20" width="24" height="24" fill="currentColor"><path d="M5 3l12 7-12 7V3z"/></svg>
-              <svg v-else viewBox="0 0 20 20" width="24" height="24" fill="currentColor"><path d="M6 3h3v14H6V3zm5 0h3v14h-3V3z"/></svg>
-            </button>
-            <p class="vp-hint">点击播放试听，确认后发送</p>
-          </div>
-          <div class="vp-footer">
-            <button class="vp-btn vp-cancel" @click="cancelVoicePreview">重录</button>
-            <button class="vp-btn vp-confirm" @click="confirmVoicePreview">发送</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
+    <VoicePreviewDialog
+      :visible="showVoicePreview"
+      :is-playing="isVoicePlaying"
+      @play="playVoicePreview"
+      @cancel="cancelVoicePreview"
+      @confirm="confirmVoicePreview"
+      @close="cancelVoicePreview"
+    />
   </div>
 </template>
 

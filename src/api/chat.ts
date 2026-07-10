@@ -1,7 +1,7 @@
 // ── 智能问答模块接口 ──
 // 人员 B 实现
 import request from './request'
-import type { Conversation, Message, PaginatedResult } from '@/types'
+import type { Conversation, Message } from '@/types'
 
 /** 获取会话列表（文档 1.1）— 兼容纯数组和分页格式 */
 export async function getConversationsApi(): Promise<Conversation[]> {
