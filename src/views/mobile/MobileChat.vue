@@ -478,16 +478,19 @@ onUnmounted(() => {
 
 <style scoped>
 .mobile-chat {
-  height: 100vh; /* 旧浏览器回退 */
-  height: 100dvh; /* iOS Safari 动态视口，排除地址栏 */
+  height: 100vh;
+  height: -webkit-fill-available; /* iOS Safari < 15 兼容 */
+  height: 100dvh;
   display: flex; flex-direction: column;
   background: #fff; font-family: -apple-system, 'PingFang SC', sans-serif;
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0; /* 兜底方案：直接固定四边 */
 }
 /* 顶栏 */
 .m-topbar {
   height: 48px; display: flex; align-items: center;
   padding: 0 12px; flex-shrink: 0; gap: 8px;
-  padding-top: env(safe-area-inset-top); /* iPhone 灵动岛适配 */
+  padding-top: constant(safe-area-inset-top); /* iOS 11.0 */
+  padding-top: env(safe-area-inset-top);      /* iOS 11.2+ */
 }
 .m-menu-btn {
   width: 36px; height: 36px; border: none; background: none;
@@ -498,7 +501,7 @@ onUnmounted(() => {
 .m-title { font-size: 17px; font-weight: 600; color: #1f1f1f; }
 
 /* 对话区 */
-.m-messages { flex: 1; overflow-y: auto; padding: 8px 0; }
+.m-messages { flex: 1; overflow-y: auto; padding: 8px 0; -webkit-overflow-scrolling: touch; }
 .m-msgs-inner { padding: 0 8px; display: flex; flex-direction: column; gap: 12px; }
 
 /* 欢迎页 */
@@ -521,7 +524,11 @@ onUnmounted(() => {
 .m-q-btn:active { background: #e8e8ed; color: #409eff; }
 
 /* 输入栏 */
-.m-input-area { flex-shrink: 0; padding: 8px 12px 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+.m-input-area {
+  flex-shrink: 0; padding: 8px 12px 12px;
+  padding-bottom: calc(12px + constant(safe-area-inset-bottom)); /* iOS 11.0 */
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));      /* iOS 11.2+ */
+}
 .m-input-wrap {
   display: flex; align-items: center; gap: 8px;
   background: #fff; border-radius: 22px;
