@@ -13,13 +13,14 @@
         clearable
         size="default"
         class="faq-search-input kw"
-        @input="handleSearch"
-        @clear="handleSearch"
+        @keyup.enter="page = 1; loadItems()"
+        @clear="page = 1; loadItems()"
       >
-        <template #prefix>
-          <el-icon class="search-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg></el-icon>
+        <template #append>
+          <el-button :icon="Search" @click="page = 1; loadItems()" />
         </template>
       </el-input>
+      <el-button size="default" @click="handleReset">重置</el-button>
     </div>
 
     <!-- 分类标签 -->
@@ -91,6 +92,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { Search } from '@element-plus/icons-vue'
 import { getFaqCategoriesApi, getFaqItemsApi } from '@/api/faq'
 import type { FaqCategory, FaqItem } from '@/api/faq'
 
@@ -108,7 +110,7 @@ onMounted(async () => {
   try {
     const [cats, faqs] = await Promise.all([
       getFaqCategoriesApi(),
-      getFaqItemsApi(),
+      getFaqItemsApi({ status: 'published' }),
     ])
     categories.value = cats
     items.value = faqs || []
@@ -124,7 +126,9 @@ async function loadItems() {
   loading.value = true
   try {
     const res = await getFaqItemsApi({
+      status: 'published',
       category: activeCategory.value || undefined,
+      q: searchQuery.value || undefined,
     })
     items.value = res || []
   } catch {
@@ -147,12 +151,17 @@ function handleSizeChange(s: number) {
   page.value = 1
 }
 
-function searchTag(tag: string) {
-  searchQuery.value = tag
+function handleReset() {
+  searchQuery.value = ''
+  activeCategory.value = null
+  page.value = 1
+  loadItems()
 }
 
-function handleSearch() {
-  // computed 实时过滤
+function searchTag(tag: string) {
+  searchQuery.value = tag
+  page.value = 1
+  loadItems()
 }
 
 // 搜索 + 分类过滤后的全部数据（用于分页统计）
@@ -160,15 +169,6 @@ const allFiltered = computed(() => {
   let result = items.value
   if (activeCategory.value !== null) {
     result = result.filter((item) => item.category === activeCategory.value)
-  }
-  if (searchQuery.value) {
-    const kw = searchQuery.value.toLowerCase()
-    result = result.filter(
-      (item) =>
-        item.question.toLowerCase().includes(kw) ||
-        (item.answer && item.answer.toLowerCase().includes(kw)) ||
-        item.tags?.some((t) => t.toLowerCase().includes(kw)),
-    )
   }
   return result
 })
@@ -194,11 +194,10 @@ const filteredItems = computed(() => {
 .faq-header-desc { font-size: 14px; color: #94a3b8; margin: 0; }
 
 /* ── 搜索框（匹配 .fi 风格） ── */
-.faq-search { margin-bottom: 20px; }
+.faq-search { margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
 .faq-search-input :deep(.el-input__wrapper) {
   border-radius: 4px !important;
   box-shadow: 0 0 0 1px #e2e8f0 !important;
-  background: #fff !important;
   transition: box-shadow 0.2s ease;
 }
 .faq-search-input :deep(.el-input__wrapper:hover) {
@@ -206,12 +205,11 @@ const filteredItems = computed(() => {
 }
 .faq-search-input :deep(.el-input__wrapper.is-focus) {
   box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
-  background: #fff !important;
 }
 .faq-search-input :deep(.el-input__inner) {
   height: 34px; font-size: 13px; color: #0f172a;
 }
-:deep(.kw) { width: 300px; max-width: 100%; }
+:deep(.kw) { width: 240px; }
 .search-icon { color: #94a3b8; font-size: 16px; }
 
 /* ── 分类 Pills（匹配 FaqManage .fm-tabs） ── */

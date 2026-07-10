@@ -13,13 +13,15 @@ export interface FaqItem {
   id: number
   question: string
   answer: string
-  category: number
-  category_name: string
+  category: number | null
+  category_name: string | null
   college: number | null
   college_name: string | null
   tags: string[]
   frequency: number
+  status: 'draft' | 'published' | 'rejected'
   created_at: string
+  updated_at?: string
 }
 
 /** 获取 FAQ 分类 */
@@ -27,9 +29,12 @@ export function getFaqCategoriesApi(): Promise<FaqCategory[]> {
   return request.get('/faq/categories/')
 }
 
-/** 获取已发布的 FAQ 列表（后端返回全量数组，前端自行分页） */
+/** 获取 FAQ 列表 */
 export function getFaqItemsApi(params?: {
   category?: number
+  status?: string
+  q?: string
+  college_id?: number
   page?: number
   page_size?: number
 }): Promise<FaqItem[]> {
@@ -106,32 +111,6 @@ export function actionFaqDraftApi(
   return request.post(`/faq/drafts/${id}/action/`, { action })
 }
 
-// ══════════════════════════════════════
-//  新 FAQ 列表接口 — /api/faq/items/（后端一次性返回全部，前端分页）
-// ══════════════════════════════════════
-
-export interface FaqNewItem {
-  id: number
-  question: string
-  answer: string
-  category: { id: number; name: string; icon: string }
-  college: { id: number; name: string; code: string } | null
-  tags: string[]
-  status: 'draft' | 'published' | 'rejected'
-  frequency: number
-  created_at: string
-  updated_at: string
-}
-
-/** 获取全部 FAQ 列表（后端一次性返回，前端自行分页） */
-export function getFaqAllItemsApi(params?: {
-  status?: string
-  category?: number
-  college_id?: number
-  q?: string
-}): Promise<FaqNewItem[]> {
-  return request.get('/faq/items/', { params })
-}
 
 // ══════════════════════════════════════
 //  FAQ 自动生成 — /api/faq/generate/ & /api/faq/generation-logs/
