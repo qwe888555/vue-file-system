@@ -257,13 +257,14 @@ onMounted(() => {
   font-size: 3.6rem; font-weight: 700;
   letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
   line-height: 1; color: #fff;
-  display: inline-block;
+  display: inline;
   animation: h-float 5s ease-in-out 0s infinite;
 }
 .hc-suf {
   font-size: 1.3rem; font-weight: 600;
   color: rgba(255,255,255,0.45);
   margin-left: 4px;
+  display: inline;
 }
 .hc-lbl {
   display: block;
