@@ -122,7 +122,13 @@ onMounted(async () => {
 
   loading.value = true
   try {
-    await ssoCallbackApi(code)
+    const ssoRes = await ssoCallbackApi(code)
+    setAccessToken(ssoRes.access)
+    setRefreshToken(ssoRes.refresh)
+    userStore.token = ssoRes.access
+    userStore.refreshToken = ssoRes.refresh
+    userStore.userInfo = ssoRes.user
+    localStorage.setItem('user', JSON.stringify(ssoRes.user))
     if (!userStore.role) {
       try { await userStore.getUserInfo() } catch {}
     }

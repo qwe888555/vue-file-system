@@ -27,12 +27,12 @@ export function getFaqCategoriesApi(): Promise<FaqCategory[]> {
   return request.get('/faq/categories/')
 }
 
-/** 获取已发布的 FAQ 列表（支持按分类筛选 + 分页） */
+/** 获取已发布的 FAQ 列表（后端返回全量数组，前端自行分页） */
 export function getFaqItemsApi(params?: {
   category?: number
   page?: number
   page_size?: number
-}): Promise<{ count: number; results: FaqItem[] }> {
+}): Promise<FaqItem[]> {
   return request.get('/faq/items/', { params })
 }
 

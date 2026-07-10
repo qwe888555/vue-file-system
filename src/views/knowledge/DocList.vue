@@ -11,8 +11,26 @@ import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 const router = useRouter()
 
 const searchQuery = ref('')
-// 本地描述缓存：上传文件后后端列表可能不返回 description 字段，这里暂存以便编辑时使用
-const localDescriptionCache = ref<Map<number, string>>(new Map())
+// 本地描述缓存：后端列表接口不返回 description 字段，持久化到 localStorage 防刷新丢失
+const DESC_CACHE_KEY = 'doc_description_cache'
+function loadDescCache(): Map<number, string> {
+  try {
+    const raw = localStorage.getItem(DESC_CACHE_KEY)
+    if (raw) return new Map(JSON.parse(raw))
+  } catch {}
+  return new Map()
+}
+function saveDescCache(map: Map<number, string>) {
+  try {
+    localStorage.setItem(DESC_CACHE_KEY, JSON.stringify([...map]))
+  } catch {}
+}
+function cacheDesc(id: number, desc: string) {
+  if (!desc) return
+  localDescriptionCache.value.set(id, desc)
+  saveDescCache(localDescriptionCache.value)
+}
+const localDescriptionCache = ref<Map<number, string>>(loadDescCache())
 const showEditDialog = ref(false)
 const editingFile = ref<KnowledgeFile | null>(null)
 const loading = ref(false)
@@ -369,7 +387,7 @@ async function handleUploadSubmit() {
       console.log('创建文件结果:', result)
       // 缓存描述，防止 fetchFiles 刷新后丢失
       if (result.id && uploadForm.value.description) {
-        localDescriptionCache.value.set(result.id, uploadForm.value.description)
+        cacheDesc(result.id, uploadForm.value.description)
       }
       ElMessage.success('创建成功')
       resetUploadForm()
@@ -425,7 +443,7 @@ async function handleUploadSubmit() {
           item.docId = result.id
           // 缓存描述，防止 fetchFiles 刷新后丢失
           if (item.description) {
-            localDescriptionCache.value.set(result.id, item.description)
+            cacheDesc(result.id, item.description)
           }
         }
         successCount++
@@ -504,7 +522,7 @@ async function fetchFiles(keyword?: string) {
     allFiles.value.forEach((f) => {
       const desc = f.summary || (f as any).description
       if (desc && !localDescriptionCache.value.has(f.id)) {
-        localDescriptionCache.value.set(f.id, desc)
+        cacheDesc(f.id, desc)
       }
     })
     
@@ -734,8 +752,46 @@ async function handleEdit(file: KnowledgeFile) {
   }
 }
 
+function handleEditSubmit(data: { title: string; description: string; keywords: Keyword[] }) {
+  if (editingFile.value) {
+    editingFile.value.title = data.title
+    editingFile.value.summary = data.description
+    ;(editingFile.value as any).description = data.description
+    editingFile.value.keywords = data.keywords
+    if (data.description) {
+      cacheDesc(editingFile.value.id, data.description)
+    }
+    saveFiles(uploadedFiles.value)
+    ElMessage.success('编辑成功')
+    fetchFiles()
+  }
+  showEditDialog.value = false
+}
+
 async function handleDownload(file: KnowledgeFile) {
   try {
+    // 1. 先确定文件名：列表显示什么就下载什么
+    let fileName: string
+    if (file.title && file.title.includes('.')) {
+      fileName = file.title
+    } else {
+      let ext = ''
+      if (file.fileUrl) {
+        const urlExt = file.fileUrl.split('?')[0].split('.').pop()?.toLowerCase()
+        if (urlExt && /^[a-z0-9]{1,5}$/i.test(urlExt)) ext = '.' + urlExt
+      }
+      if (!ext) {
+        const extMap: Record<string, string> = {
+          doc: '.docx', docx: '.docx', pdf: '.pdf',
+          txt: '.txt', md: '.md',
+          image: '.png', audio: '.mp3', video: '.mp4', archive: '.zip',
+        }
+        ext = extMap[file.fileType] || ''
+      }
+      fileName = (file.title || `文件${file.id}`) + ext
+    }
+
+    // 2. 请求后端下载接口
     const token = localStorage.getItem('access_token')
     const response = await fetch(`/api/knowledge/docs/${file.id}/download/`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -748,59 +804,44 @@ async function handleDownload(file: KnowledgeFile) {
 
     const contentType = response.headers.get('Content-Type') || ''
 
-    // 后端可能返回 JSON（含 OSS 下载地址）也可能直接返回文件流
+    // 3. 后端返回 JSON（含 OSS 地址）：先尝试 fetch 为 Blob 以保留自定义文件名
     if (contentType.includes('application/json')) {
       const json = await response.json()
       const fileUrl = json.url || json.file_url || json.fileUrl || json.download_url
-      if (fileUrl) {
-        // OSS 等外部地址用 window.open 触发浏览器下载，避免 CORS 问题
-        window.open(fileUrl, '_blank')
-        ElMessage.success('开始下载')
-        return
+      if (!fileUrl) throw new Error('后端返回了 JSON 但没有包含文件下载地址')
+
+      try {
+        const ossRes = await fetch(fileUrl)
+        if (ossRes.ok) {
+          const blob = await ossRes.blob()
+          downloadBlob(blob, fileName)
+          return
+        }
+      } catch {
+        // CORS 不通，回退到 window.open（文件名由 OSS 决定）
       }
-      throw new Error('后端返回了 JSON 但没有包含文件下载地址')
+      window.open(fileUrl, '_blank')
+      return
     }
 
-    // 后端直接返回二进制文件流
-    const blob = await response.blob()
-
-    // 动态判断文件后缀：优先从 fileUrl，其次 title，最后 fileType
-    let ext = ''
-    if (file.fileUrl) {
-      const urlExt = file.fileUrl.split('?')[0].split('.').pop()?.toLowerCase()
-      if (urlExt && /^[a-z0-9]{1,5}$/i.test(urlExt)) ext = '.' + urlExt
-    }
-    if (!ext && file.title) {
-      const titleExt = file.title.split('.').pop()?.toLowerCase()
-      if (titleExt && /^[a-z0-9]{1,5}$/i.test(titleExt)) ext = '.' + titleExt
-    }
-    if (!ext) {
-      const extMap: Record<string, string> = {
-        doc: '.docx', docx: '.docx', pdf: '.pdf',
-        txt: '.txt', md: '.md',
-        image: '.png', audio: '.mp3', video: '.mp4', archive: '.zip',
-      }
-      ext = extMap[file.fileType] || ''
-    }
-
-    const baseName = file.title?.replace(/\.[^/.]+$/, '') || `文件${file.id}`
-    const fileName = baseName + ext
-
-    // 创建 Blob URL 触发浏览器下载
-    const blobUrl = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = blobUrl
-    a.download = fileName
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 100)
-
-    ElMessage.success('下载成功')
+    // 4. 后端直接返回二进制文件流
+    downloadBlob(await response.blob(), fileName)
   } catch (error: any) {
     console.error('下载文件失败:', error)
     ElMessage.error(error.message || '下载文件失败')
   }
+}
+
+/** 创建 Blob URL 并触发浏览器下载 */
+function downloadBlob(blob: Blob, fileName: string) {
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 100)
 }
 
 async function handleBatchDelete() {
@@ -832,24 +873,6 @@ function handleSelectionChange(val: KnowledgeFile[]) {
   selectedDocIds.value = val.map(item => item.id)
 }
 
-function handleEditSubmit(data: { title: string; description: string; keywords: Keyword[] }) {
-  if (editingFile.value) {
-    editingFile.value.title = data.title
-    editingFile.value.summary = data.description
-    // 同步保留原始 description 字段，方便再次编辑时读取
-    ;(editingFile.value as any).description = data.description
-    editingFile.value.keywords = data.keywords
-    // 更新本地缓存，防止 fetchFiles 刷新后丢失
-    if (data.description) {
-      localDescriptionCache.value.set(editingFile.value.id, data.description)
-    }
-    saveFiles(uploadedFiles.value)
-    ElMessage.success('编辑成功')
-    fetchFiles()
-  }
-  showEditDialog.value = false
-}
-
 async function handleDelete(file: KnowledgeFile) {
   ElMessageBox.confirm('确定要删除该文件吗？', '提示', {
     confirmButtonText: '确定',
@@ -868,8 +891,6 @@ async function handleDelete(file: KnowledgeFile) {
     })
     .catch(() => {})
 }
-
-
 
 function saveFiles(files: KnowledgeFile[]) {
   localStorage.setItem('uploadedFiles', JSON.stringify(files))
@@ -1106,6 +1127,14 @@ function saveFiles(files: KnowledgeFile[]) {
         />
       </div>
 
+      <el-alert
+        title="如需修改文档内容，请先下载文件，本地修改后再重新上传"
+        type="info"
+        :closable="false"
+        show-icon
+        class="edit-hint"
+      />
+
       <div v-if="filteredFiles.length === 0" class="empty-state">
         <el-icon size="48" color="#c0c4cc"><FolderOpened /></el-icon>
         <p>暂无文件，请上传</p>
@@ -1276,6 +1305,10 @@ function saveFiles(files: KnowledgeFile[]) {
 
 .search-input {
   max-width: 400px;
+}
+
+.edit-hint {
+  margin-bottom: var(--spacing-md);
 }
 
 .upload-section {
