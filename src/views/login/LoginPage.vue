@@ -90,7 +90,7 @@ watch(loginMode, (val) => {
 
 // 页面不可见时暂停轮询，减少无意义的请求
 let pollingPaused = false
-document.addEventListener('visibilitychange', () => {
+function handleVisibilityChange() {
   if (pollTimer) {
     if (document.hidden) {
       clearInterval(pollTimer)
@@ -101,9 +101,13 @@ document.addEventListener('visibilitychange', () => {
       loadDingTalkQr()
     }
   }
-})
+}
+document.addEventListener('visibilitychange', handleVisibilityChange)
 
-onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
 
 // SSO 状态
 const ssoDialogVisible = ref(false)

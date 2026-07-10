@@ -45,3 +45,35 @@ const emit = defineEmits<{
     </button>
   </div>
 </template>
+
+<style scoped>
+/* ── 品牌 ── */
+.login-brand { text-align: center; margin-bottom: 32px; }
+.login-title { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0 0 2px; }
+.login-sub { font-size: 14px; color: #64748b; margin: 0; }
+
+/* ── 扫码登录 ── */
+.qrcode-wrap {
+  display: flex; justify-content: center; padding: 16px 0 8px;
+}
+.qrcode-img {
+  width: 220px; height: 220px; border-radius: 14px;
+  border: 1px solid #e2e8f0; padding: 8px; background: #f8fafc;
+}
+.qrcode-placeholder {
+  width: 220px; height: 220px; border-radius: 14px;
+  border: 1px solid #e2e8f0; background: #f8fafc;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.qrcode-actions {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.qrcode-refresh {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: #94a3b8; background: none; border: none;
+  cursor: pointer; transition: all 0.2s; padding: 4px 10px; border-radius: 6px;
+}
+.qrcode-refresh:hover { color: #409eff; background: rgba(64,158,255,0.1); }
+.qrcode-refresh svg { transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.qrcode-refresh:hover svg { transform: rotate(180deg); }
+</style>
