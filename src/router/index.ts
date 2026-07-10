@@ -37,6 +37,9 @@ function isMobileDevice(): boolean {
   return /mobile|android|iphone|ipad|phone/i.test(ua)
 }
 
+// ── 页面级初始化标记（刷新时重置，同页导航不复请求） ──
+let pageInitialized = false
+
 // ── 路由守卫：权限拦截 + 登录校验 ──
 router.beforeEach(async (to, _from, next) => {
   const userStore = useUserStore()
@@ -59,7 +62,19 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  // 已登录但未获取用户信息 → 拉取
+  // 页面刷新时：始终调用 getUserInfo() 确保角色为最新（覆盖 localStorage 旧缓存）
+  if (!pageInitialized) {
+    try {
+      await userStore.getUserInfo()
+      pageInitialized = true
+    } catch {
+      userStore.logout()
+      next({ path: '/' })
+      return
+    }
+  }
+
+  // 已登录但未获取用户信息 → 拉取（兜底）
   if (!userStore.role) {
     try {
       await userStore.getUserInfo()
@@ -97,10 +112,11 @@ router.beforeEach(async (to, _from, next) => {
   const matched = to.matched.some((r) => allowedPaths.some((p) => r.path === p || r.path.startsWith(p + '/')))
   if (!matched && to.path !== '/') {
     console.warn(
-      `[权限守卫] 路径 "${to.path}" 不在角色 "${currentRole}" 的允许列表中:`,
+      `[权限守卫] 路径 "${to.path}" 不在角色 "${currentRole}" 的允许列表中，跳转角色首页`,
       allowedPaths,
     )
-    next({ path: '/403' })
+    const home = currentRole === 'super_admin' || currentRole === 'admin' || currentRole === 'college_admin' || currentRole === 'dept_admin' ? '/knowledge/list' : '/chat'
+    next({ path: home })
     return
   }
 
