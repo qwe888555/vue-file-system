@@ -552,13 +552,16 @@ onUnmounted(() => {
 
 <style scoped>
 .mobile-chat {
-  height: 100vh; display: flex; flex-direction: column;
+  height: 100vh; /* 旧浏览器回退 */
+  height: 100dvh; /* iOS Safari 动态视口，排除地址栏 */
+  display: flex; flex-direction: column;
   background: #fff; font-family: -apple-system, 'PingFang SC', sans-serif;
 }
 /* 顶栏 */
 .m-topbar {
   height: 48px; display: flex; align-items: center;
   padding: 0 12px; flex-shrink: 0; gap: 8px;
+  padding-top: env(safe-area-inset-top); /* iPhone 灵动岛适配 */
 }
 .m-menu-btn {
   width: 36px; height: 36px; border: none; background: none;
@@ -592,7 +595,7 @@ onUnmounted(() => {
 .m-q-btn:active { background: #e8e8ed; color: #409eff; }
 
 /* 输入栏 */
-.m-input-area { flex-shrink: 0; padding: 8px 12px 12px; }
+.m-input-area { flex-shrink: 0; padding: 8px 12px 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
 .m-input-wrap {
   display: flex; align-items: center; gap: 8px;
   background: #fff; border-radius: 22px;

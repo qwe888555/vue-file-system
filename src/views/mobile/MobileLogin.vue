@@ -94,7 +94,7 @@ function goBack() {
 
 <style scoped>
 .m-login-page {
-  min-height: 100vh; background: #f8f9fc;
+  min-height: 100vh; min-height: 100dvh; background: #f8f9fc;
   display: flex; flex-direction: column; position: relative; overflow: hidden;
 }
 /* 背景光晕 */
