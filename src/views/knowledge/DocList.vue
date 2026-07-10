@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, triggerRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search, Close, Plus, Check } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search, Close, Plus, Check, Download, Edit, Delete } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
 import { deleteDocApi, getDocListApi, getDocDetailApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi } from '@/api/knowledge'
 import mammoth from 'mammoth'
@@ -1188,17 +1188,19 @@ function saveFiles(files: KnowledgeFile[]) {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="180" align="center" fixed="right">
+        <el-table-column label="操作" width="240" align="center" fixed="right">
           <template #default="scope">
-            <el-button size="small" @click.stop="handleDownload(scope.row)" type="primary" link>
-              下载
-            </el-button>
-            <el-button size="small" @click.stop="handleEdit(scope.row)" type="primary" link>
-              编辑
-            </el-button>
-            <el-button size="small" @click.stop="handleDelete(scope.row)" type="danger" link>
-              删除
-            </el-button>
+            <div class="action-buttons">
+              <el-button size="small" type="primary" plain :icon="Download" @click.stop="handleDownload(scope.row)">
+                下载
+              </el-button>
+              <el-button size="small" type="warning" plain :icon="Edit" @click.stop="handleEdit(scope.row)">
+                编辑
+              </el-button>
+              <el-button size="small" type="danger" plain :icon="Delete" @click.stop="handleDelete(scope.row)">
+                删除
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -1697,6 +1699,12 @@ function saveFiles(files: KnowledgeFile[]) {
 .file-table :deep(.el-table__body td) {
   padding: 12px 8px;
   border-bottom: 1px solid var(--color-border);
+}
+
+.action-buttons {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
 }
 
 .file-name-cell {
