@@ -25,3 +25,7 @@ dist-ssr
 
 # Claude Code config (skills are installed per-project)
 .claude/
+
+# 环境变量（含敏感信息，不提交）
+.env.production
+.env.local
