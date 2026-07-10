@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search, Close, Plus, Check } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getDocDetailApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, downloadDocApi, batchDeleteDocsApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getDocDetailApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi } from '@/api/knowledge'
 import mammoth from 'mammoth'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 
@@ -736,36 +736,70 @@ async function handleEdit(file: KnowledgeFile) {
 
 async function handleDownload(file: KnowledgeFile) {
   try {
-    const { data: blob } = await downloadDocApi(file.id)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    
-    const extMap: Record<string, string> = {
-      doc: '.doc',
-      docx: '.docx',
-      pdf: '.pdf',
-      txt: '.txt',
-      md: '.md',
-      image: '.jpg',
-      audio: '.mp3',
-      video: '.mp4',
-      archive: '.zip',
+    const token = localStorage.getItem('access_token')
+    const response = await fetch(`/api/knowledge/docs/${file.id}/download/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      throw new Error(text || `下载失败 (${response.status})`)
     }
-    const ext = extMap[file.fileType] || ''
-    const fileName = file.title && !file.title.includes('.') 
-      ? `${file.title}${ext}` 
-      : (file.title || `文件${file.id}${ext}`)
-    
+
+    const contentType = response.headers.get('Content-Type') || ''
+
+    // 后端可能返回 JSON（含 OSS 下载地址）也可能直接返回文件流
+    if (contentType.includes('application/json')) {
+      const json = await response.json()
+      const fileUrl = json.url || json.file_url || json.fileUrl || json.download_url
+      if (fileUrl) {
+        // OSS 等外部地址用 window.open 触发浏览器下载，避免 CORS 问题
+        window.open(fileUrl, '_blank')
+        ElMessage.success('开始下载')
+        return
+      }
+      throw new Error('后端返回了 JSON 但没有包含文件下载地址')
+    }
+
+    // 后端直接返回二进制文件流
+    const blob = await response.blob()
+
+    // 动态判断文件后缀：优先从 fileUrl，其次 title，最后 fileType
+    let ext = ''
+    if (file.fileUrl) {
+      const urlExt = file.fileUrl.split('?')[0].split('.').pop()?.toLowerCase()
+      if (urlExt && /^[a-z0-9]{1,5}$/i.test(urlExt)) ext = '.' + urlExt
+    }
+    if (!ext && file.title) {
+      const titleExt = file.title.split('.').pop()?.toLowerCase()
+      if (titleExt && /^[a-z0-9]{1,5}$/i.test(titleExt)) ext = '.' + titleExt
+    }
+    if (!ext) {
+      const extMap: Record<string, string> = {
+        doc: '.docx', docx: '.docx', pdf: '.pdf',
+        txt: '.txt', md: '.md',
+        image: '.png', audio: '.mp3', video: '.mp4', archive: '.zip',
+      }
+      ext = extMap[file.fileType] || ''
+    }
+
+    const baseName = file.title?.replace(/\.[^/.]+$/, '') || `文件${file.id}`
+    const fileName = baseName + ext
+
+    // 创建 Blob URL 触发浏览器下载
+    const blobUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
     a.download = fileName
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 100)
+
     ElMessage.success('下载成功')
-  } catch (error) {
+  } catch (error: any) {
     console.error('下载文件失败:', error)
-    ElMessage.error('下载文件失败')
+    ElMessage.error(error.message || '下载文件失败')
   }
 }
 
