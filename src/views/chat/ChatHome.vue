@@ -12,6 +12,7 @@ import { useSSE } from '@/composables/useSSE'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ChatLoginDialog from '@/components/chat/ChatLoginDialog.vue'
 import SidebarUser from '@/components/common/SidebarUser.vue'
+import VoicePreviewDialog from '@/components/chat/VoicePreviewDialog.vue'
 
 const userStore = useUserStore()
 const router = useRouter()

@@ -6,7 +6,7 @@ import { useUserStore } from '@/store/user'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
-import type { KnowledgeFile } from '@/types'
+import VoicePreviewDialog from '@/components/chat/VoicePreviewDialog.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -16,9 +16,7 @@ const inputText = ref('')
 const isStreaming = ref(false)
 const isRecording = ref(false)
 let mediaRecorder: MediaRecorder | null = null
-let lastTouchTime = 0 // 防双击
 const streamingContent = ref('')
-const streamingReferences = ref<KnowledgeFile[]>([])
 let currentSSE: ReturnType<typeof useSSE> | null = null
 
 // 热点问题
@@ -554,25 +552,14 @@ onUnmounted(() => {
     </Transition>
 
     <!-- 语音预览弹窗 -->
-    <div v-if="showVoicePreview" class="vp-overlay" @click.self="cancelVoicePreview">
-      <div class="vp-card">
-        <div class="vp-header"><span>语音预览</span><button class="vp-close" @click="cancelVoicePreview">×</button></div>
-        <div class="vp-body">
-          <div class="vp-wave" :class="{ playing: isVoicePlaying }">
-            <span></span><span></span><span></span><span></span><span></span>
-          </div>
-          <button class="vp-play-btn" @click="playVoicePreview">
-            <svg v-if="!isVoicePlaying" viewBox="0 0 20 20" width="24" height="24" fill="currentColor"><path d="M5 3l12 7-12 7V3z"/></svg>
-            <svg v-else viewBox="0 0 20 20" width="24" height="24" fill="currentColor"><path d="M6 3h3v14H6V3zm5 0h3v14h-3V3z"/></svg>
-          </button>
-          <p class="vp-hint">点击播放试听</p>
-        </div>
-        <div class="vp-footer">
-          <button class="vp-btn vp-cancel" @click="cancelVoicePreview">重录</button>
-          <button class="vp-btn vp-confirm" @click="confirmVoicePreview">发送</button>
-        </div>
-      </div>
-    </div>
+    <VoicePreviewDialog
+      :visible="showVoicePreview"
+      :is-playing="isVoicePlaying"
+      @play="playVoicePreview"
+      @cancel="cancelVoicePreview"
+      @confirm="confirmVoicePreview"
+      @close="cancelVoicePreview"
+    />
   </div>
 </template>
 

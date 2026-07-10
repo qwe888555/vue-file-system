@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // ── 独立登录页（JWT + SSO） ──
-import { ref, reactive, watch, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
@@ -8,6 +8,8 @@ import { ssoLoginUrl, ssoCallbackApi, dingtalkQrApi } from '@/api/auth'
 import { setAccessToken, setRefreshToken } from '@/api/request'
 import request from '@/api/request'
 import QRCode from 'qrcode'
+import AccountLoginForm from '@/components/login/AccountLoginForm.vue'
+import DingTalkQRLogin from '@/components/login/DingTalkQRLogin.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -17,8 +19,6 @@ const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: fa
 
 const loading = ref(false)
 const errorMsg = ref('')
-const formRef = ref()
-const form = reactive({ username: '', password: '' })
 const loginMode = ref<'account' | 'qrcode'>('account')
 const qrCodeDataUrl = ref('')
 const qrLoading = ref(false)
@@ -90,7 +90,7 @@ watch(loginMode, (val) => {
 
 // 页面不可见时暂停轮询，减少无意义的请求
 let pollingPaused = false
-document.addEventListener('visibilitychange', () => {
+function handleVisibilityChange() {
   if (pollTimer) {
     if (document.hidden) {
       clearInterval(pollTimer)
@@ -101,19 +101,18 @@ document.addEventListener('visibilitychange', () => {
       loadDingTalkQr()
     }
   }
-})
+}
+document.addEventListener('visibilitychange', handleVisibilityChange)
 
-onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
 
 // SSO 状态
 const ssoDialogVisible = ref(false)
 const ssoAccounts = ref<Array<{ code: string; username?: string; role?: string; description?: string }>>([])
 const ssoLoading = ref(false)
-
-const rules = {
-  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
-}
 
 // SSO 回调处理（?code=xxx）
 onMounted(async () => {
@@ -122,7 +121,13 @@ onMounted(async () => {
 
   loading.value = true
   try {
-    await ssoCallbackApi(code)
+    const ssoRes = await ssoCallbackApi(code)
+    setAccessToken(ssoRes.access)
+    setRefreshToken(ssoRes.refresh)
+    userStore.token = ssoRes.access
+    userStore.refreshToken = ssoRes.refresh
+    userStore.userInfo = ssoRes.user
+    localStorage.setItem('user', JSON.stringify(ssoRes.user))
     if (!userStore.role) {
       try { await userStore.getUserInfo() } catch {}
     }
@@ -139,14 +144,13 @@ onMounted(async () => {
 })
 
 // JWT 账号密码登录
-async function handleLogin() {
-  if (!formRef.value || loading.value) return
-  try { await formRef.value.validate() } catch { return }
+async function handleLogin(username: string, password: string) {
+  if (loading.value) return
 
   loading.value = true
   errorMsg.value = ''
   try {
-    await userStore.login(form)
+    await userStore.login({ username, password })
     if (!userStore.role) {
       try { await userStore.getUserInfo() } catch {}
     }
@@ -228,77 +232,24 @@ async function handleSSOSelect(code: string) {
       </div>
 
       <!-- 账号密码登录 -->
-      <template v-if="loginMode === 'account'">
-        <div class="login-brand">
-          <h2 class="login-title">NeuHub</h2>
-          <p class="login-sub">资源系统 · 账号登录</p>
-        </div>
-
-        <el-form ref="formRef" :model="form" :rules="rules" @keyup.enter="handleLogin" class="login-form">
-          <div class="field-grp">
-            <label class="field-lbl">账号</label>
-            <el-input v-model="form.username" placeholder="请输入工号或学号" size="large" />
-          </div>
-          <div class="field-grp">
-            <label class="field-lbl">密码</label>
-            <el-input v-model="form.password" type="password" placeholder="请输入密码" size="large" show-password />
-          </div>
-          <p v-if="errorMsg" class="err-msg">{{ errorMsg }}</p>
-          <button class="login-btn" :disabled="loading" @click="handleLogin">
-            {{ loading ? '登录中...' : '登 录' }}
-          </button>
-        </el-form>
-
-        <div class="sso-divider">
-          <span class="sso-line" />
-          <span class="sso-txt">或</span>
-          <span class="sso-line" />
-        </div>
-        <button class="sso-btn" :disabled="ssoLoading" @click="handleSSOLogin">
-          <svg class="sso-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="8" r="4" />
-            <path d="M20 21a8 8 0 10-16 0" />
-          </svg>
-          <span>{{ ssoLoading ? '跳转中...' : '统一身份认证登录' }}</span>
-        </button>
-      </template>
+      <AccountLoginForm
+        v-if="loginMode === 'account'"
+        :loading="loading"
+        :error-msg="errorMsg"
+        :sso-loading="ssoLoading"
+        @login="handleLogin"
+        @sso-login="handleSSOLogin"
+      />
 
       <!-- 钉钉扫码登录 -->
-      <template v-if="loginMode === 'qrcode'">
-        <div class="login-brand">
-          <h2 class="login-title">钉钉扫码登录</h2>
-          <p class="login-sub">请使用钉钉扫码登录</p>
-        </div>
-        <div class="qrcode-wrap">
-          <template v-if="loginSuccess">
-            <div class="qrcode-placeholder" style="border-color:#22c55e">
-              <svg class="w-10 h-10 text-[#22c55e]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-              <p class="text-sm text-[#22c55e] font-medium mt-2">登录成功，正在跳转...</p>
-            </div>
-          </template>
-          <template v-else>
-            <img v-if="qrCodeDataUrl" :src="qrCodeDataUrl" alt="钉钉扫码登录" class="qrcode-img" />
-            <div v-else-if="qrLoading" class="qrcode-placeholder">
-              <svg class="w-8 h-8 text-[#94a3b8] animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              <p class="text-xs text-[#94a3b8] mt-2">获取二维码中...</p>
-            </div>
-            <div v-else-if="qrError" class="qrcode-placeholder">
-              <p class="text-xs text-[#ef4444]">{{ qrError }}</p>
-              <button class="mt-2 text-xs text-[#2563eb] hover:underline" @click="loadDingTalkQr">重新获取</button>
-            </div>
-          </template>
-        </div>
-        <div class="qrcode-actions">
-
-          <button v-if="qrCodeDataUrl && !qrLoading && !loginSuccess" class="qrcode-refresh" @click="loadDingTalkQr">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-            重新生成
-          </button>
-        </div>
-      </template>
+      <DingTalkQRLogin
+        v-if="loginMode === 'qrcode'"
+        :qr-code-data-url="qrCodeDataUrl"
+        :qr-loading="qrLoading"
+        :qr-error="qrError"
+        :login-success="loginSuccess"
+        @refresh="loadDingTalkQr"
+      />
 
       <!-- SSO 弹窗 -->
       <el-dialog v-model="ssoDialogVisible" title="选择测试账号" width="400px" destroy-on-close>
@@ -358,7 +309,7 @@ async function handleSSOSelect(code: string) {
 .login-page--embedded :deep(.el-input__wrapper:hover) { box-shadow: 0 0 0 1px rgba(255,255,255,0.25) !important; }
 .login-page--embedded :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 2px rgba(64,158,255,0.2) !important; }
 .login-page--embedded :deep(.el-input__inner) { color: #0f172a !important; font-size: 15px !important; height: 46px !important; }
-.login-page--embedded :deep(.el-input__inner::placeholder) { color: #334155 !important; }
+.login-page--embedded :deep(.el-input__inner::placeholder) { color: rgba(255,255,255,0.5) !important; }
 
 /* ── 品牌 ── */
 .login-brand { text-align: center; margin-bottom: 32px; }
@@ -471,7 +422,7 @@ async function handleSSOSelect(code: string) {
 :deep(.el-input__wrapper:hover) { box-shadow: 0 0 0 1px #cbd5e1 !important; }
 :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important; }
 :deep(.el-input__inner) { height: 42px; font-size: 14px; color: #0f172a; }
-:deep(.el-input__inner::placeholder) { color: #94a3b8; }
+:deep(.el-input__inner::placeholder) { color: rgba(255,255,255,0.5); }
 :deep(.el-form-item) { margin-bottom: 0; }
 :deep(.el-form-item__error) { padding-top: 4px; font-size: 12px; }
 </style>

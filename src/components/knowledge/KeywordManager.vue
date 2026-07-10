@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable no-console */
 import { ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getKeywordsApi, addKeywordApi, deleteKeywordApi } from '@/api/knowledge'

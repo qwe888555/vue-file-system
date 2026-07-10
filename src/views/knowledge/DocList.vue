@@ -1,18 +1,40 @@
 <script setup lang="ts">
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ref, computed, onMounted, triggerRef, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Search, Close, Plus, Check } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getDocDetailApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, downloadDocApi, batchDeleteDocsApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi } from '@/api/knowledge'
 import mammoth from 'mammoth'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 
-const router = useRouter()
-
 const searchQuery = ref('')
-// 本地描述缓存：上传文件后后端列表可能不返回 description 字段，这里暂存以便编辑时使用
-const localDescriptionCache = ref<Map<number, string>>(new Map())
+// 本地描述缓存：后端列表接口不返回 description 字段，持久化到 localStorage 防刷新丢失
+const DESC_CACHE_KEY = 'doc_description_cache'
+const KW_CACHE_KEY = 'doc_keywords_cache'
+
+function loadJsonCache(key: string): Map<number, any> {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw) return new Map(JSON.parse(raw))
+  } catch {}
+  return new Map()
+}
+function saveJsonCache(key: string, map: Map<number, any>) {
+  try { localStorage.setItem(key, JSON.stringify([...map])) } catch {}
+}
+function cacheDesc(id: number, desc: string) {
+  if (!desc) return
+  localDescriptionCache.value.set(id, desc)
+  saveJsonCache(DESC_CACHE_KEY, localDescriptionCache.value)
+}
+function cacheKeywords(id: number, keywords: Keyword[]) {
+  if (!keywords.length) return
+  keywordsCache.set(id, keywords)
+  saveJsonCache(KW_CACHE_KEY, keywordsCache)
+}
+const localDescriptionCache = ref<Map<number, string>>(loadJsonCache(DESC_CACHE_KEY) as Map<number, string>)
 const showEditDialog = ref(false)
 const editingFile = ref<KnowledgeFile | null>(null)
 const loading = ref(false)
@@ -267,12 +289,6 @@ function handlePreviewClose() {
   isOfficePreview.value = false
 }
 
-function showAllKeywords(keywords: { id: number; phrase: string }[], title: string) {
-  keywordsDialogTitle.value = title
-  allKeywords.value = keywords
-  showKeywordsDialog.value = true
-}
-
 async function handleConfirmInfo() {
   if (!uploadForm.value.content.trim()) {
     ElMessage.warning('请输入文件内容')
@@ -369,7 +385,7 @@ async function handleUploadSubmit() {
       console.log('创建文件结果:', result)
       // 缓存描述，防止 fetchFiles 刷新后丢失
       if (result.id && uploadForm.value.description) {
-        localDescriptionCache.value.set(result.id, uploadForm.value.description)
+        cacheDesc(result.id, uploadForm.value.description)
       }
       ElMessage.success('创建成功')
       resetUploadForm()
@@ -418,6 +434,12 @@ async function handleUploadSubmit() {
         if (item.description) {
           formData.append('description', item.description)
         }
+        // 将用户修改后的关键词也发给后端
+        const uploadKeywords = item.keywords
+          .split(/[,，、\s]+/)
+          .map((kw: string) => kw.trim())
+          .filter((kw: string) => kw)
+        uploadKeywords.forEach((kw: string) => formData.append('keywords', kw))
         formData.append('scope', item.scope === 'public' ? 'school' : 'college')
 
         const result = await uploadFileApi(formData)
@@ -425,7 +447,14 @@ async function handleUploadSubmit() {
           item.docId = result.id
           // 缓存描述，防止 fetchFiles 刷新后丢失
           if (item.description) {
-            localDescriptionCache.value.set(result.id, item.description)
+            cacheDesc(result.id, item.description)
+          }
+          // 手动写入关键词 + 本地缓存（后端异步 AI 提取可能覆盖用户修改）
+          if (uploadKeywords.length > 0) {
+            try { await addKeywordsApi(result.id, uploadKeywords) } catch {}
+            cacheKeywords(result.id, uploadKeywords.map((phrase: string) => ({
+              id: 0, phrase, match_type: 'exact', weight: 1,
+            })))
           }
         }
         successCount++
@@ -448,8 +477,7 @@ const totalFiles = ref(0)
 
 const uploadedFiles = ref<KnowledgeFile[]>([])
 const allFiles = ref<KnowledgeFile[]>([])
-const keywordsCache = new Map<number, Keyword[]>()
-const loadingKeywords = new Set<number>()
+const keywordsCache: Map<number, Keyword[]> = loadJsonCache(KW_CACHE_KEY) as Map<number, Keyword[]>
 
 async function fetchFiles(keyword?: string) {
   loading.value = true
@@ -477,11 +505,21 @@ async function fetchFiles(keyword?: string) {
         })).filter((kw: Keyword) => kw.phrase)
       }
       
+      // 后端蛇形命名 → 前端驼峰命名映射
       if (file.created_at && !file.createdAt) {
         file.createdAt = file.created_at
       }
       if (file.updated_at && !file.updatedAt) {
         file.updatedAt = file.updated_at
+      }
+      if (file.college_name && !file.collegeName) {
+        file.collegeName = file.college_name
+      }
+      if (file.uploader && !file.author) {
+        file.author = file.uploader
+      }
+      if (file.uploader_name && !file.author) {
+        file.author = file.uploader_name
       }
       // 后端可能返回 description 或 summary，统一映射确保数据不丢失
       const rawDesc = (file as any).description
@@ -504,7 +542,7 @@ async function fetchFiles(keyword?: string) {
     allFiles.value.forEach((f) => {
       const desc = f.summary || (f as any).description
       if (desc && !localDescriptionCache.value.has(f.id)) {
-        localDescriptionCache.value.set(f.id, desc)
+        cacheDesc(f.id, desc)
       }
     })
     
@@ -528,54 +566,6 @@ async function fetchFiles(keyword?: string) {
   } finally {
     loading.value = false
   }
-}
-
-async function loadKeywordsForFiles(files: KnowledgeFile[]) {
-  const filesToLoad = files.filter(f => !keywordsCache.has(f.id) && !loadingKeywords.has(f.id))
-  
-  const semaphore = 3
-  let activeCount = 0
-  let index = 0
-  
-  async function loadNext() {
-    while (index < filesToLoad.length) {
-      if (activeCount >= semaphore) {
-        await new Promise(resolve => setTimeout(resolve, 100))
-        continue
-      }
-      
-      const file = filesToLoad[index++]
-      activeCount++
-      loadingKeywords.add(file.id)
-      
-      try {
-        const keywords = await getKeywordsApi(file.id)
-        let keywordList: Keyword[] = []
-        if (Array.isArray(keywords)) {
-          keywordList = keywords.map((kw: any) => ({
-            id: kw.id,
-            phrase: kw.phrase || kw.keyword || kw.name || '',
-            match_type: kw.match_type || 'exact',
-            weight: kw.weight || 1,
-          })).filter((kw: Keyword) => kw.phrase)
-        }
-        keywordsCache.set(file.id, keywordList)
-        
-        const fileIndex = uploadedFiles.value.findIndex(f => f.id === file.id)
-        if (fileIndex > -1) {
-          uploadedFiles.value[fileIndex].keywords = keywordList
-          triggerRef(uploadedFiles)
-        }
-      } catch (error) {
-        console.error(`获取文件 ${file.title} 的关键词失败:`, error)
-      } finally {
-        loadingKeywords.delete(file.id)
-        activeCount--
-      }
-    }
-  }
-  
-  await loadNext()
 }
 
 onMounted(() => {
@@ -710,10 +700,6 @@ function formatDate(dateStr: string): string {
   })
 }
 
-function handleFileClick(file: KnowledgeFile) {
-  handlePreviewDoc(file.id, file.title)
-}
-
 async function handleEdit(file: KnowledgeFile) {
   try {
     if (!file.keywords || file.keywords.length === 0) {
@@ -734,39 +720,97 @@ async function handleEdit(file: KnowledgeFile) {
   }
 }
 
+function handleEditSubmit(data: { title: string; description: string; keywords: Keyword[] }) {
+  if (editingFile.value) {
+    editingFile.value.title = data.title
+    editingFile.value.summary = data.description
+    ;(editingFile.value as any).description = data.description
+    editingFile.value.keywords = data.keywords
+    cacheKeywords(editingFile.value.id, data.keywords)
+    if (data.description) {
+      cacheDesc(editingFile.value.id, data.description)
+    }
+    saveFiles(uploadedFiles.value)
+    ElMessage.success('编辑成功')
+    fetchFiles()
+  }
+  showEditDialog.value = false
+}
+
 async function handleDownload(file: KnowledgeFile) {
   try {
-    const { data: blob } = await downloadDocApi(file.id)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    
-    const extMap: Record<string, string> = {
-      doc: '.doc',
-      docx: '.docx',
-      pdf: '.pdf',
-      txt: '.txt',
-      md: '.md',
-      image: '.jpg',
-      audio: '.mp3',
-      video: '.mp4',
-      archive: '.zip',
+    // 1. 先确定文件名：列表显示什么就下载什么
+    let fileName: string
+    if (file.title && file.title.includes('.')) {
+      fileName = file.title
+    } else {
+      let ext = ''
+      if (file.fileUrl) {
+        const urlExt = file.fileUrl.split('?')[0].split('.').pop()?.toLowerCase()
+        if (urlExt && /^[a-z0-9]{1,5}$/i.test(urlExt)) ext = '.' + urlExt
+      }
+      if (!ext) {
+        const extMap: Record<string, string> = {
+          doc: '.docx', docx: '.docx', pdf: '.pdf',
+          txt: '.txt', md: '.md',
+          image: '.png', audio: '.mp3', video: '.mp4', archive: '.zip',
+        }
+        ext = extMap[file.fileType] || ''
+      }
+      fileName = (file.title || `文件${file.id}`) + ext
     }
-    const ext = extMap[file.fileType] || ''
-    const fileName = file.title && !file.title.includes('.') 
-      ? `${file.title}${ext}` 
-      : (file.title || `文件${file.id}${ext}`)
-    
-    a.download = fileName
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    ElMessage.success('下载成功')
-  } catch (error) {
+
+    // 2. 请求后端下载接口
+    const token = localStorage.getItem('access_token')
+    const response = await fetch(`/api/knowledge/docs/${file.id}/download/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      throw new Error(text || `下载失败 (${response.status})`)
+    }
+
+    const contentType = response.headers.get('Content-Type') || ''
+
+    // 3. 后端返回 JSON（含 OSS 地址）：先尝试 fetch 为 Blob 以保留自定义文件名
+    if (contentType.includes('application/json')) {
+      const json = await response.json()
+      const fileUrl = json.url || json.file_url || json.fileUrl || json.download_url
+      if (!fileUrl) throw new Error('后端返回了 JSON 但没有包含文件下载地址')
+
+      try {
+        const ossRes = await fetch(fileUrl)
+        if (ossRes.ok) {
+          const blob = await ossRes.blob()
+          downloadBlob(blob, fileName)
+          return
+        }
+      } catch {
+        // CORS 不通，回退到 window.open（文件名由 OSS 决定）
+      }
+      window.open(fileUrl, '_blank')
+      return
+    }
+
+    // 4. 后端直接返回二进制文件流
+    downloadBlob(await response.blob(), fileName)
+  } catch (error: any) {
     console.error('下载文件失败:', error)
-    ElMessage.error('下载文件失败')
+    ElMessage.error(error.message || '下载文件失败')
   }
+}
+
+/** 创建 Blob URL 并触发浏览器下载 */
+function downloadBlob(blob: Blob, fileName: string) {
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 100)
 }
 
 async function handleBatchDelete() {
@@ -798,24 +842,6 @@ function handleSelectionChange(val: KnowledgeFile[]) {
   selectedDocIds.value = val.map(item => item.id)
 }
 
-function handleEditSubmit(data: { title: string; description: string; keywords: Keyword[] }) {
-  if (editingFile.value) {
-    editingFile.value.title = data.title
-    editingFile.value.summary = data.description
-    // 同步保留原始 description 字段，方便再次编辑时读取
-    ;(editingFile.value as any).description = data.description
-    editingFile.value.keywords = data.keywords
-    // 更新本地缓存，防止 fetchFiles 刷新后丢失
-    if (data.description) {
-      localDescriptionCache.value.set(editingFile.value.id, data.description)
-    }
-    saveFiles(uploadedFiles.value)
-    ElMessage.success('编辑成功')
-    fetchFiles()
-  }
-  showEditDialog.value = false
-}
-
 async function handleDelete(file: KnowledgeFile) {
   ElMessageBox.confirm('确定要删除该文件吗？', '提示', {
     confirmButtonText: '确定',
@@ -834,8 +860,6 @@ async function handleDelete(file: KnowledgeFile) {
     })
     .catch(() => {})
 }
-
-
 
 function saveFiles(files: KnowledgeFile[]) {
   localStorage.setItem('uploadedFiles', JSON.stringify(files))
@@ -1072,6 +1096,14 @@ function saveFiles(files: KnowledgeFile[]) {
         />
       </div>
 
+      <el-alert
+        title="如需修改文档内容，请先下载文件，本地修改后再重新上传"
+        type="info"
+        :closable="false"
+        show-icon
+        class="edit-hint"
+      />
+
       <div v-if="filteredFiles.length === 0" class="empty-state">
         <el-icon size="48" color="#c0c4cc"><FolderOpened /></el-icon>
         <p>暂无文件，请上传</p>
@@ -1125,17 +1157,19 @@ function saveFiles(files: KnowledgeFile[]) {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="180" align="center" fixed="right">
+        <el-table-column label="操作" width="240" align="center" fixed="right">
           <template #default="scope">
-            <el-button size="small" @click.stop="handleDownload(scope.row)" type="primary" link>
-              下载
-            </el-button>
-            <el-button size="small" @click.stop="handleEdit(scope.row)" type="primary" link>
-              编辑
-            </el-button>
-            <el-button size="small" @click.stop="handleDelete(scope.row)" type="danger" link>
-              删除
-            </el-button>
+            <div class="action-buttons">
+              <el-button size="small" type="primary" plain :icon="Download" @click.stop="handleDownload(scope.row)">
+                下载
+              </el-button>
+              <el-button size="small" type="warning" plain :icon="Edit" @click.stop="handleEdit(scope.row)">
+                编辑
+              </el-button>
+              <el-button size="small" type="danger" plain :icon="Delete" @click.stop="handleDelete(scope.row)">
+                删除
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -1173,6 +1207,7 @@ function saveFiles(files: KnowledgeFile[]) {
         <iframe v-if="isOfficePreview" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
         <iframe v-else-if="previewFileUrl && previewFileName.endsWith('.pdf')" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
         <img v-else-if="previewFileUrl" :src="previewFileUrl" style="max-width: 100%; max-height: 600px; object-fit: contain;" />
+        <!-- eslint-disable-next-line vue/no-v-html -->
         <div v-else v-html="previewContent" class="preview-text"></div>
       </div>
       <template #footer>
@@ -1242,6 +1277,10 @@ function saveFiles(files: KnowledgeFile[]) {
 
 .search-input {
   max-width: 400px;
+}
+
+.edit-hint {
+  margin-bottom: var(--spacing-md);
 }
 
 .upload-section {
@@ -1630,6 +1669,12 @@ function saveFiles(files: KnowledgeFile[]) {
 .file-table :deep(.el-table__body td) {
   padding: 12px 8px;
   border-bottom: 1px solid var(--color-border);
+}
+
+.action-buttons {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
 }
 
 .file-name-cell {
