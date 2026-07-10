@@ -358,7 +358,7 @@ async function handleSSOSelect(code: string) {
 .login-page--embedded :deep(.el-input__wrapper:hover) { box-shadow: 0 0 0 1px rgba(255,255,255,0.25) !important; }
 .login-page--embedded :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 2px rgba(64,158,255,0.2) !important; }
 .login-page--embedded :deep(.el-input__inner) { color: #0f172a !important; font-size: 15px !important; height: 46px !important; }
-.login-page--embedded :deep(.el-input__inner::placeholder) { color: #334155 !important; }
+.login-page--embedded :deep(.el-input__inner::placeholder) { color: rgba(255,255,255,0.5) !important; }
 
 /* ── 品牌 ── */
 .login-brand { text-align: center; margin-bottom: 32px; }
@@ -471,7 +471,7 @@ async function handleSSOSelect(code: string) {
 :deep(.el-input__wrapper:hover) { box-shadow: 0 0 0 1px #cbd5e1 !important; }
 :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important; }
 :deep(.el-input__inner) { height: 42px; font-size: 14px; color: #0f172a; }
-:deep(.el-input__inner::placeholder) { color: #94a3b8; }
+:deep(.el-input__inner::placeholder) { color: rgba(255,255,255,0.5); }
 :deep(.el-form-item) { margin-bottom: 0; }
 :deep(.el-form-item__error) { padding-top: 4px; font-size: 12px; }
 </style>

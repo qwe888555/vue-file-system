@@ -14,6 +14,23 @@ import {
 /** localStorage 缓存 key */
 const CACHE_KEY = 'chat_conversations_cache'
 const CACHE_EXPIRE = 5 * 60 * 1000 // 5 分钟
+const HISTORY_DAYS = 30 // 只显示最近 30 天的对话
+
+/** 智能摘要标题：提取核心关键词，控制在 10 字以内完整显示 */
+function summaryTitle(text: string): string {
+  const t = text.trim()
+  if (!t) return '新对话'
+  // 去除开头常见前缀
+  let s = t.replace(/^(请问|我想问一下|你好|帮我|请教一下|我想|如何|怎么|怎样|哪里|什么是|哪个)\s*/g, '')
+  // 去除末尾标点
+  s = s.replace(/[？?。，,！!]$/g, '')
+  // 提取关键部分：取前 8 个字，适应侧边栏宽度
+  if (s.length <= 8) return s
+  // 尝试按标点/连词拆分，取前半段
+  const split = s.split(/[，,、；;]/, 1)[0]
+  if (split.length <= 8) return split
+  return split.slice(0, 8) + '…'
+}
 
 interface CacheData {
   conversations: Conversation[]
@@ -39,9 +56,17 @@ export function useChat() {
   })
 
   const filteredConversations = computed(() => {
+    // 按时间过滤：只显示最近 HISTORY_DAYS 天
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - HISTORY_DAYS)
+    const list = conversations.value.filter(c => {
+      const d = c.updatedAt || c.createdAt
+      return !d || new Date(d) >= cutoff
+    })
+    // 按关键词搜索
     const kw = searchKeyword.value.trim().toLowerCase()
-    if (!kw) return conversations.value
-    return conversations.value.filter(c => c.title.toLowerCase().includes(kw))
+    if (!kw) return list
+    return list.filter(c => c.title.toLowerCase().includes(kw))
   })
 
   const loading = ref(false)
@@ -158,7 +183,7 @@ export function useChat() {
 
     // 第一条用户消息自动生成标题并同步到后端
     if (messagesMap.value[id].length === 1) {
-      const title = content.slice(0, 18) + (content.length > 18 ? '…' : '')
+      const title = summaryTitle(content)
       const conv = conversations.value.find(c => c.id === id)
       if (conv) {
         conv.title = title
@@ -186,7 +211,7 @@ export function useChat() {
     // 如果标题为空，用 AI 回答作为后备标题
     const conv = conversations.value.find(c => c.id === id)
     if (conv && !conv.title && messagesMap.value[id].length === 2) {
-      const title = content.slice(0, 18) + (content.length > 18 ? '…' : '')
+      const title = summaryTitle(content)
       conv.title = title
       renameConversationApi(id, title).catch(() => {})
       saveCache()

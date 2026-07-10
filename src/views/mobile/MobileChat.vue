@@ -16,6 +16,7 @@ const inputText = ref('')
 const isStreaming = ref(false)
 const isRecording = ref(false)
 let mediaRecorder: MediaRecorder | null = null
+let lastTouchTime = 0 // 防双击
 const streamingContent = ref('')
 const streamingReferences = ref<KnowledgeFile[]>([])
 let currentSSE: ReturnType<typeof useSSE> | null = null
@@ -306,6 +307,7 @@ async function confirmVoicePreview() {
     const response = await voiceAskApi(blob, convId)
     if (!response.ok) {
       if (response.status === 401) ElMessage.warning("语音消息需要登录后使用")
+      else if (response.status === 500) ElMessage.error("语音识别服务异常，请稍后重试")
       else ElMessage.warning("语音发送失败")
       isStreaming.value = false; return
     }
@@ -435,8 +437,8 @@ onUnmounted(() => {
           :disabled="isStreaming"
           @keyup.enter="sendMessage"
         />
-        <button class="m-mic-btn" :class="{ recording: isRecording }" @click="handleSTT" title="语音转文字">🎤</button>
-        <button class="m-mic-btn" :class="{ recording: isRecording }" @click="handleVoiceMsg" title="语音消息">
+        <button class="m-mic-btn" :class="{ recording: isRecording }" @pointerdown="handleSTT" title="语音转文字">🎤</button>
+        <button class="m-mic-btn" :class="{ recording: isRecording }" @pointerdown="handleVoiceMsg" title="语音消息">
           <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
             <path d="M10 2a3 3 0 00-3 3v4a3 3 0 106 0V5a3 3 0 00-3-3zM5 9a5 5 0 0010 0h-1.5a3.5 3.5 0 01-7 0H5z"/>
             <path d="M9.25 13.5v2.75h1.5V13.5h-1.5z"/>
