@@ -42,6 +42,12 @@ const loading = ref(false)
 const createMode = ref(false)
 const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string; title: string; keywords: string; description: string; scope: 'public' | 'private' }[]>([])
 const selectedFileIndex = ref(0)
+
+// ── 文件列表区域拖拽上传状态 ──
+const isDragOver = ref(false)
+let dragCounter = 0
+// 稳定的空数组引用，避免每次渲染传新 [] 导致 el-upload 内部状态重置
+const emptyFileList = ref<never[]>([])
 const showCreateForm = ref(false)
 const showPreviewDialog = ref(false)
 const previewContent = ref('')
@@ -101,6 +107,7 @@ async function extractTextFromFile(file: File): Promise<string> {
 }
 
 async function handleFileChange(file: File) {
+  console.log('[DocList] handleFileChange 被调用, file:', file.name, file.size)
   const baseName = file.name.replace(/\.[^/.]+$/, '')
   const newFileItem = {
     file,
@@ -109,36 +116,57 @@ async function handleFileChange(file: File) {
     description: '',
     scope: 'public' as const,
   }
-  
+
   selectedFiles.value.push(newFileItem)
   selectedFileIndex.value = selectedFiles.value.length - 1
-  
+
+  // 异步调用 AI 分类（不阻塞文件添加到列表）
+  classifyFile(newFileItem, file)
+}
+
+/** 对单个文件执行 AI 分类，结果直接写回 fileItem */
+async function classifyFile(
+  fileItem: { title: string; keywords: string; description: string; scope: 'public' | 'private' },
+  file: File,
+) {
   try {
-    const content = await extractTextFromFile(file)
-    
+    console.log('[DocList] 开始提取文本:', file.name)
+    let content: string
+    try {
+      content = await extractTextFromFile(file)
+    } catch (extractErr) {
+      console.warn('[DocList] 文本提取失败，使用兜底:', extractErr)
+      content = `文件名: ${file.name}\n文件大小: ${file.size} bytes\n文件类型: ${file.name.split('.').pop() || 'unknown'}`
+    }
+    console.log('[DocList] 文本提取完成, 长度:', content?.length)
+
     const formData = new FormData()
     formData.append('file', file)
     formData.append('content', content)
     formData.append('filename', file.name)
-    
+
+    console.log('[DocList] 调用 aiClassifyApi...')
     const result = await aiClassifyApi(formData)
-    
+    console.log('[DocList] aiClassifyApi 返回:', JSON.stringify(result))
+
     if (result.title) {
-      newFileItem.title = result.title
+      fileItem.title = result.title
     }
     if (result.keywords && result.keywords.length > 0) {
-      newFileItem.keywords = result.keywords.join(', ')
+      fileItem.keywords = result.keywords.join(', ')
     }
     if (result.description) {
-      newFileItem.description = result.description
+      fileItem.description = result.description
     }
     if (result.scope) {
-      newFileItem.scope = result.scope === 'school' ? 'public' : 'private'
+      fileItem.scope = result.scope === 'school' ? 'public' : 'private'
     }
-    
+
     triggerRef(selectedFiles)
+    console.log('[DocList] AI 分类完成:', fileItem.title)
   } catch (error) {
-    console.error('AI分类失败:', error)
+    console.error('[DocList] AI分类失败:', error)
+    ElMessage.warning(`"${file.name}" AI 分类失败，请手动填写信息`)
   }
 }
 
@@ -227,6 +255,54 @@ function handleFileInputChange(event: Event) {
     })
   }
   input.value = ''
+}
+
+/** el-upload 的 change 事件回调 */
+function onUploadChange(uploadFile: any) {
+  console.log('[DocList] onUploadChange 触发, uploadFile:', uploadFile?.name, 'raw:', !!uploadFile?.raw)
+  const file = uploadFile?.raw
+  if (file instanceof File) {
+    handleFileChange(file)
+  } else if (uploadFile instanceof File) {
+    // 兜底：某些情况下 uploadFile 本身就是 File
+    handleFileChange(uploadFile)
+  } else {
+    console.warn('[DocList] onUploadChange: 无法获取 File 对象', uploadFile)
+  }
+}
+
+// ── 文件列表区域 HTML5 拖拽上传（已有文件时也能拖入新文件）──
+function onUploadContentDragEnter(e: DragEvent) {
+  e.preventDefault()
+  dragCounter++
+  isDragOver.value = true
+}
+
+function onUploadContentDragOver(e: DragEvent) {
+  e.preventDefault()
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+function onUploadContentDragLeave() {
+  dragCounter--
+  if (dragCounter <= 0) {
+    dragCounter = 0
+    isDragOver.value = false
+  }
+}
+
+function onUploadContentDrop(e: DragEvent) {
+  e.preventDefault()
+  dragCounter = 0
+  isDragOver.value = false
+  const files = e.dataTransfer?.files
+  if (files && files.length > 0) {
+    Array.from(files).forEach(file => {
+      handleFileChange(file)
+    })
+  }
 }
 
 async function handlePreviewDoc(id: number, title: string) {
@@ -886,11 +962,11 @@ function saveFiles(files: KnowledgeFile[]) {
           </div>
         </div>
 
-        <div v-if="selectedFiles.length === 0" class="upload-center-empty">
+        <div v-show="selectedFiles.length === 0" class="upload-center-empty">
           <el-upload
             :auto-upload="false"
-            :file-list="[]"
-            :on-change="(file) => { if (file.raw) handleFileChange(file.raw) }"
+            :file-list="emptyFileList"
+            @change="onUploadChange"
             drag
             multiple
             accept=".pdf,.doc,.docx,.txt,.jpg,.png,.gif,.mp3,.wav,.mp4,.avi,.mkv,.zip,.rar"
@@ -906,7 +982,22 @@ function saveFiles(files: KnowledgeFile[]) {
           </el-upload>
         </div>
 
-        <div v-else class="upload-content">
+        <div
+          v-show="selectedFiles.length > 0"
+          class="upload-content"
+          :class="{ 'drag-over': isDragOver }"
+          @dragenter="onUploadContentDragEnter"
+          @dragover="onUploadContentDragOver"
+          @dragleave="onUploadContentDragLeave"
+          @drop="onUploadContentDrop"
+        >
+          <!-- 拖拽悬停提示 -->
+          <div v-if="isDragOver" class="drag-overlay">
+            <div class="drag-overlay-content">
+              <el-icon :size="48" color="#409eff"><Upload /></el-icon>
+              <span>释放以添加文件</span>
+            </div>
+          </div>
           <div class="upload-content-left">
             <div class="file-preview-list">
               <div
@@ -1513,6 +1604,39 @@ function saveFiles(files: KnowledgeFile[]) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+/* ── 文件列表区域拖拽上传 ── */
+.upload-content {
+  position: relative;
+}
+
+.upload-content.drag-over {
+  outline: 2px dashed #409eff;
+  outline-offset: -2px;
+  background: rgba(64, 158, 255, 0.04);
+}
+
+.drag-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(64, 158, 255, 0.06);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.drag-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  color: #409eff;
+  font-weight: 500;
 }
 
 .upload-file-formats {
