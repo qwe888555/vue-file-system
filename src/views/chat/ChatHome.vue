@@ -429,7 +429,7 @@ onUnmounted(() => {
               <path d="M3 4h14v1.5H3V4zm0 5h14v1.5H3V9zm0 5h14v1.5H3v-1.5z" />
             </svg>
           </button>
-          <h1 v-if="!hasActiveConversation" class="topbar-title">智能问答</h1>
+          <h1 v-if="!hasActiveConversation" class="topbar-title">{{ isAdminUser ? '教研问答' : '智能问答' }}</h1>
           <button v-else class="topbar-btn" @click="handleBackToList" title="返回">
             <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
               <path d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"/>
