@@ -331,6 +331,9 @@ async function deleteLocalAccount(id: number) {
   await deleteAccountApi(id)
 }
 
+// ── 防抖定时器 ──
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+
 // ── 搜索/重置 ──
 function handleSearch() {
   const params: Record<string, any> = {
@@ -351,7 +354,10 @@ function handleSearch() {
     params.department_id = null
   }
 
-  tableRef.value?.triggerSearch(params)
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    tableRef.value?.triggerSearch(params)
+  }, 300)
 }
 
 function handleReset() {

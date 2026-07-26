@@ -126,7 +126,7 @@ function handleSelect(path: string) {
   padding: 0 14px;
   color: #5a6070;
   font-size: 14px;
-  font-weight: 450;
+  font-weight: 500;
   letter-spacing: 0.01em;
   transition: all 0.2s ease;
 }
