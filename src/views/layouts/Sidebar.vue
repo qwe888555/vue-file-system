@@ -4,18 +4,22 @@
 
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useUserStore } from '@/store/user'
 import { usePermissionStore } from '@/store/permission'
 import SidebarUser from '@/components/common/SidebarUser.vue'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 const permissionStore = usePermissionStore()
+
+const isAdminRole = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin' || userStore.role === 'college_admin' || userStore.role === 'dept_admin')
 
 // 按角色动态生成菜单项
 const menuItems = computed(() => {
   return permissionStore.permissionMenus.map((item) => ({
     path: item.children?.[0]?.path ?? item.path,
-    label: item.title,
+    label: item.title === '智能问答' && isAdminRole.value ? '教研问答' : item.title,
     icon: item.icon || '',
   }))
 })

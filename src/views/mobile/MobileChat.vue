@@ -477,14 +477,34 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* ── iOS Safari 默认样式重置：去掉按钮/输入框的原生外观 ── */
+.mobile-chat button,
+.mobile-chat input,
+.mobile-chat textarea {
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
+}
+/* iOS Safari SVG 图标修复：防止被 flex 压缩、确保颜色继承 */
+.mobile-chat svg {
+  flex-shrink: 0;
+  color: inherit;
+}
+
 .mobile-chat {
-  height: 100vh; display: flex; flex-direction: column;
+  height: 100vh;
+  height: -webkit-fill-available; /* iOS Safari < 15 兼容 */
+  height: 100dvh;
+  display: flex; flex-direction: column;
   background: #fff; font-family: -apple-system, 'PingFang SC', sans-serif;
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0; /* 兜底方案：直接固定四边 */
 }
 /* 顶栏 */
 .m-topbar {
   height: 48px; display: flex; align-items: center;
   padding: 0 12px; flex-shrink: 0; gap: 8px;
+  padding-top: constant(safe-area-inset-top); /* iOS 11.0 */
+  padding-top: env(safe-area-inset-top);      /* iOS 11.2+ */
 }
 .m-menu-btn {
   width: 36px; height: 36px; border: none; background: none;
@@ -495,7 +515,7 @@ onUnmounted(() => {
 .m-title { font-size: 17px; font-weight: 600; color: #1f1f1f; }
 
 /* 对话区 */
-.m-messages { flex: 1; overflow-y: auto; padding: 8px 0; }
+.m-messages { flex: 1; overflow-y: auto; padding: 8px 0; -webkit-overflow-scrolling: touch; }
 .m-msgs-inner { padding: 0 8px; display: flex; flex-direction: column; gap: 12px; }
 
 /* 欢迎页 */
@@ -508,6 +528,13 @@ onUnmounted(() => {
   display: flex; flex-wrap: wrap; gap: 8px;
   justify-content: center; max-width: 400px;
 }
+/* iOS 14.5 以下不支持 gap，用 margin 兜底 */
+@supports not (gap: 8px) {
+  .m-hot-questions > * { margin: 4px; }
+  .m-input-wrap > * + * { margin-left: 8px; }
+  .m-topbar > * + * { margin-left: 8px; }
+  .m-msgs-inner > * + * { margin-top: 12px; }
+}
 .m-q-btn {
   padding: 8px 14px; background: #f5f5f7;
   border: none; border-radius: 16px;
@@ -518,7 +545,11 @@ onUnmounted(() => {
 .m-q-btn:active { background: #e8e8ed; color: #409eff; }
 
 /* 输入栏 */
-.m-input-area { flex-shrink: 0; padding: 8px 12px 12px; }
+.m-input-area {
+  flex-shrink: 0; padding: 8px 12px 12px;
+  padding-bottom: calc(12px + constant(safe-area-inset-bottom)); /* iOS 11.0 */
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));      /* iOS 11.2+ */
+}
 .m-input-wrap {
   display: flex; align-items: center; gap: 8px;
   background: #fff; border-radius: 22px;
