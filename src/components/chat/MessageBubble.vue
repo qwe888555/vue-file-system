@@ -90,7 +90,7 @@ function handleDislike() {
 
 /* AI 气泡整体向左收窄一点 */
 .msg-row-ai {
-  margin-left: -150px;
+  margin-left: 0;
   padding-right: 60px;
 }
 .msg-row-ai .msg-content-area {

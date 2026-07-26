@@ -32,6 +32,8 @@ const isStreaming = ref(false)
 const streamingReferences = ref<KnowledgeFile[]>([])
 const streamingMessageId = ref<number | null>(null)
 let currentSSE: ReturnType<typeof useSSE> | null = null
+let stopContentWatch: (() => void) | null = null
+let stopRefsWatch: (() => void) | null = null
 
 const isLoggedIn = computed(() => !!userStore.token)
 const isAdminUser = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin' || userStore.role === 'college_admin' || userStore.role === 'dept_admin')
@@ -84,6 +86,10 @@ function cancelStreaming() {
   currentSSE?.close()
   isStreaming.value = false
   streamingContent.value = ''
+  stopContentWatch?.()
+  stopContentWatch = null
+  stopRefsWatch?.()
+  stopRefsWatch = null
 }
 const renamingId = ref<number | null>(null)
 const renameText = ref('')
@@ -160,8 +166,11 @@ async function sendMessage() {
     streamingReferences.value = []
     streamingMessageId.value = null
   })
-  watch(currentSSE.content, (val) => { streamingContent.value = val })
-  watch(currentSSE.references, (val) => { streamingReferences.value = val })
+  // 清除前一轮的 watcher，防止累积
+  stopContentWatch?.()
+  stopRefsWatch?.()
+  stopContentWatch = watch(currentSSE.content, (val) => { streamingContent.value = val })
+  stopRefsWatch = watch(currentSSE.references, (val) => { streamingReferences.value = val })
 }
 
 function handleFeedback(messageId: number, type: 'like' | 'dislike') {
@@ -338,6 +347,10 @@ onMounted(() => {
 })
 onUnmounted(() => {
   document.removeEventListener('mousedown', handleBlankClick)
+  stopContentWatch?.()
+  stopContentWatch = null
+  stopRefsWatch?.()
+  stopRefsWatch = null
 })
 </script>
 

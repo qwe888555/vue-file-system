@@ -7,7 +7,6 @@ import { ElMessage } from 'element-plus'
 import { ssoLoginUrl, ssoCallbackApi, dingtalkQrApi } from '@/api/auth'
 import { setAccessToken, setRefreshToken } from '@/api/request'
 import request from '@/api/request'
-import QRCode from 'qrcode'
 import AccountLoginForm from '@/components/login/AccountLoginForm.vue'
 import DingTalkQRLogin from '@/components/login/DingTalkQRLogin.vue'
 
@@ -27,6 +26,8 @@ const loginSuccess = ref(false)
 
 // 钉钉扫码登录（v6.0 轮询方案）
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let pollTimeout: ReturnType<typeof setTimeout> | null = null
+let navTimeout: ReturnType<typeof setTimeout> | null = null
 
 async function loadDingTalkQr() {
   qrLoading.value = true
@@ -34,13 +35,14 @@ async function loadDingTalkQr() {
   qrCodeDataUrl.value = ''
   loginSuccess.value = false
   try {
-    const redirectUri = 'https://visibly-sloppy-dairy.ngrok-free.dev/api/auth/dingtalk/redirect/'
+    const redirectUri = import.meta.env.VITE_DINGTALK_REDIRECT_URI || ''
     const res = await dingtalkQrApi(redirectUri)
     if (!res.auth_url) throw new Error('后端返回异常，请确认 Django 服务已启动')
 
     // 后端 /qr/ 接口直接返回 state，用于轮询（钉钉回调带同一个 state）
     const state = res.state || new URL(res.auth_url).searchParams.get('state')
     if (!state) throw new Error('获取 state 失败')
+    const QRCode = await import('qrcode')
     const qrData = await QRCode.toDataURL(res.auth_url, { width: 240, margin: 1, color: { dark: '#1e293b', light: '#f8fafc' } })
       .catch(() => QRCode.toString(res.auth_url, { type: 'svg', width: 240 }))
       .catch(() => null)
@@ -62,7 +64,7 @@ async function loadDingTalkQr() {
           userStore.refreshToken = statusData.refresh
           userStore.userInfo = statusData.user
           ElMessage.success('登录成功')
-          setTimeout(() => {
+          navTimeout = setTimeout(() => {
             const target = userStore.role?.includes('admin') ? '/knowledge/list' : '/chat'
             if (props.embedded) window.location.href = target
             else router.push(target)
@@ -75,7 +77,7 @@ async function loadDingTalkQr() {
     }, 1000)
 
     // 2 分钟超时停止
-    setTimeout(() => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null } }, 120000)
+    pollTimeout = setTimeout(() => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null } }, 120000)
   } catch (e: any) {
     qrError.value = e?.response?.data?.detail || e?.message || '获取二维码失败'
   } finally {
@@ -106,6 +108,8 @@ document.addEventListener('visibilitychange', handleVisibilityChange)
 
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
+  if (pollTimeout) clearTimeout(pollTimeout)
+  if (navTimeout) clearTimeout(navTimeout)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 

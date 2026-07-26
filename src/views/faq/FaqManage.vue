@@ -200,7 +200,7 @@ async function handlePublish(row: FaqItem) {
     await actionFaqDraftApi(row.id, 'publish')
     ElMessage.success('发布成功')
     await loadData()
-  } catch { /* */ }
+  } catch (e) { console.error('发布 FAQ 失败', e) }
 }
 
 async function handleReject(row: FaqItem) {
@@ -209,7 +209,7 @@ async function handleReject(row: FaqItem) {
     await actionFaqDraftApi(row.id, 'reject')
     ElMessage.success('已驳回')
     await loadData()
-  } catch { /* */ }
+  } catch (e) { console.error('驳回 FAQ 失败', e) }
 }
 
 async function handleDelete(row: FaqItem) {
@@ -218,7 +218,7 @@ async function handleDelete(row: FaqItem) {
     await deleteFaqItemApi(row.id)
     ElMessage.success('删除成功')
     await loadData()
-  } catch { /* */ }
+  } catch (e) { console.error('删除 FAQ 失败', e) }
 }
 
 function openEdit(row: FaqItem) {
@@ -246,7 +246,7 @@ async function confirmEdit() {
     ElMessage.success('保存成功')
     editVisible.value = false
     await loadData()
-  } catch { /* */ } finally {
+  } catch (e) { console.error('编辑 FAQ 失败', e) } finally {
     editLoading.value = false
   }
 }
