@@ -163,5 +163,17 @@ instance.interceptors.response.use(
   },
 )
 
+// ── AbortController 工具 ──
+// 创建可取消请求，调用时传入 signal，返回 { promise, cancel }
+export function createCancellableRequest<T>(
+  requestFn: (signal: AbortSignal) => Promise<T>,
+): { promise: Promise<T>; cancel: () => void } {
+  const controller = new AbortController()
+  return {
+    promise: requestFn(controller.signal),
+    cancel: () => controller.abort(),
+  }
+}
+
 export { getToken, getAccessToken, setAccessToken, setRefreshToken, clearToken, getRefreshToken }
 export default instance

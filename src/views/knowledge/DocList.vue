@@ -6,7 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
 import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi } from '@/api/knowledge'
-import mammoth from 'mammoth'
+import DOMPurify from 'dompurify'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 
 const searchQuery = ref('')
@@ -51,6 +51,7 @@ const emptyFileList = ref<never[]>([])
 const showCreateForm = ref(false)
 const showPreviewDialog = ref(false)
 const previewContent = ref('')
+const sanitizedPreviewContent = computed(() => DOMPurify.sanitize(previewContent.value))
 const previewFileName = ref('')
 const previewFileUrl = ref('')
 const isOfficePreview = ref(false)
@@ -92,8 +93,9 @@ function resetUploadForm() {
 
 async function extractTextFromFile(file: File): Promise<string> {
   const ext = file.name.split('.').pop()?.toLowerCase()
-  
+
   if (ext === 'docx') {
+    const mammoth = await import('mammoth')
     const arrayBuffer = await file.arrayBuffer()
     const result = await mammoth.extractRawText({ arrayBuffer })
     return result.value
@@ -192,6 +194,7 @@ async function handlePreviewFile(item: { file: File; docId?: number; previewCont
   
   if (ext === 'docx') {
     try {
+      const mammoth = await import('mammoth')
       const arrayBuffer = await item.file.arrayBuffer()
       const result = await mammoth.extractRawText({ arrayBuffer })
       previewContent.value = `<pre style="white-space: pre-wrap; word-break: break-word; max-height: 600px; overflow-y: auto;">${result.value}</pre>`
@@ -1297,9 +1300,9 @@ function saveFiles(files: KnowledgeFile[]) {
       <div class="preview-content">
         <iframe v-if="isOfficePreview" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
         <iframe v-else-if="previewFileUrl && previewFileName.endsWith('.pdf')" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
-        <img v-else-if="previewFileUrl" :src="previewFileUrl" style="max-width: 100%; max-height: 600px; object-fit: contain;" />
+        <img v-else-if="previewFileUrl" :src="previewFileUrl" loading="lazy" style="max-width: 100%; max-height: 600px; object-fit: contain;" />
         <!-- eslint-disable-next-line vue/no-v-html -->
-        <div v-else v-html="previewContent" class="preview-text"></div>
+        <div v-else v-html="sanitizedPreviewContent" class="preview-text"></div>
       </div>
       <template #footer>
         <el-button @click="showPreviewDialog = false">关闭</el-button>

@@ -26,19 +26,29 @@ export const useUserStore = defineStore('user', () => {
 
   // ── Actions ──
   async function login(params: LoginParams) {
-    const res = await loginApi(params)
-    token.value = res.access
-    refreshToken.value = res.refresh
-    userInfo.value = res.user
-    setAccessToken(res.access)
-    setRefreshToken(res.refresh)
-    return res
+    try {
+      const res = await loginApi(params)
+      token.value = res.access
+      refreshToken.value = res.refresh
+      userInfo.value = res.user
+      setAccessToken(res.access)
+      setRefreshToken(res.refresh)
+      return res
+    } catch (error) {
+      console.error('[user store] login failed:', error)
+      throw error
+    }
   }
 
   async function getUserInfo() {
-    const res = await getUserInfoApi()
-    userInfo.value = res
-    return res
+    try {
+      const res = await getUserInfoApi()
+      userInfo.value = res
+      return res
+    } catch (error) {
+      console.error('[user store] getUserInfo failed:', error)
+      return null
+    }
   }
 
   function logout() {

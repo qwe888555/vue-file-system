@@ -157,7 +157,7 @@ const logTabs = [
 .db-stats { display: flex; flex-wrap: wrap; gap: 16px; }
 .db-stat { display: flex; flex-direction: column; gap: 4px; }
 .db-stat span {
-  font-size: 12px; font-weight: 00; color: #94a3b8;
+  font-size: 12px; font-weight: 600; color: #94a3b8;
   text-transform: uppercase; letter-spacing: 0.03em;
 }
 .db-stat strong {
