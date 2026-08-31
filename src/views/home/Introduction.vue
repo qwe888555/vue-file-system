@@ -183,7 +183,7 @@ onMounted(() => {
   .page-grid { grid-template-columns: repeat(5, 1fr); gap: 4rem; align-items: start; }
 }
 .left-col { grid-column: span 3; align-self: start; }
-.right-col { grid-column: span 2; margin-top: -3rem; min-height: clamp(360px, 52.6vh, 500px); align-self: start; }
+.right-col { grid-column: span 2; margin-top: -4rem; min-height: clamp(360px, 52.6vh, 500px); align-self: start; }
 
 /* ── Hero 文字 ── */
 .hero-text {
