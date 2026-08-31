@@ -93,7 +93,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="relative min-h-[100dvh] flex flex-col overflow-hidden text-white font-sans antialiased">
+  <div class="relative h-[100dvh] flex flex-col overflow-hidden text-white font-sans antialiased">
     <!-- ═══ 背景图 + 浅色叠加 ═══ -->
     <img :src="heroBg" alt="" class="absolute inset-0 w-full h-full object-cover" />
     <div class="absolute inset-0 bg-black/35" />
@@ -104,7 +104,7 @@ onMounted(() => {
     </header>
 
     <!-- ═══ 主体 ═══ -->
-    <main class="relative z-10 flex-1 px-6 pt-4 pb-4">
+    <main class="relative z-10 flex-1 overflow-y-auto px-6 pt-4 pb-4">
       <div class="page-grid max-w-7xl mx-auto">
         <!-- 标题区 — 居中于六边形和登录上方 -->
         <div class="hero-text col-span-full">
@@ -183,19 +183,17 @@ onMounted(() => {
   .page-grid { grid-template-columns: repeat(5, 1fr); gap: 4rem; align-items: start; }
 }
 .left-col { grid-column: span 3; align-self: start; }
-.right-col { grid-column: span 2; margin-top: -3rem; min-height: 500px; align-self: start; }
+.right-col { grid-column: span 2; margin-top: -3rem; min-height: clamp(360px, 52.6vh, 500px); align-self: start; }
 
 /* ── Hero 文字 ── */
 .hero-text {
   text-align: center;
-  margin-bottom: 2.5rem;
+  margin-bottom: clamp(1rem, 4.2vh, 2.5rem);
 }
 .hero-title {
-  font-size: 3rem; font-weight: 700;
+  font-size: clamp(2rem, 6.4vh, 3.8rem); font-weight: 700;
   letter-spacing: 0.05em; line-height: 1.15;
 }
-@media (min-width: 640px) { .hero-title { font-size: 3.2rem; } }
-@media (min-width: 1024px) { .hero-title { font-size: 3.8rem; } }
 .hero-desc {
   margin: 0.6rem auto 0;
   font-size: 1.05rem;
@@ -205,7 +203,7 @@ onMounted(() => {
 .col-span-full { grid-column: 1 / -1; }
 
 /* ═══ 六边形排版 ═══ */
-.hex-wrap { padding: 4px 0; margin-top: 2rem; margin-left: -3rem; }
+.hex-wrap { padding: 4px 0; margin-top: clamp(0.5rem, 3.4vh, 2rem); margin-left: -3rem; }
 .hex-ring {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -214,7 +212,7 @@ onMounted(() => {
     ". a . b ."
     "c . CENTER . d"
     ". e . f .";
-  gap: 2.5rem 1rem;
+  gap: clamp(0.8rem, 4.2vh, 2.5rem) 1rem;
   align-items: center;
   justify-items: center;
   max-width: 100%;
@@ -223,7 +221,7 @@ onMounted(() => {
   text-align: center;
   animation: hex-rise 0.7s cubic-bezier(0.16,1,0.3,1) both;
   transition: all 0.4s cubic-bezier(0.16,1,0.3,1);
-  padding: 14px 6px;
+  padding: clamp(6px, 1.5vh, 14px) 6px;
   width: 100%;
   border-radius: 16px;
   background: radial-gradient(ellipse 50% 30% at 50% 30%, rgba(96,165,250,0.06) 0%, transparent 80%);
@@ -233,7 +231,7 @@ onMounted(() => {
 .hex-node:hover .h-lbl { color: rgba(255,255,255,0.85); }
 .h-num {
   display: block;
-  font-size: 2.1rem; font-weight: 700;
+  font-size: clamp(1.4rem, 3.5vh, 2.1rem); font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.1; color: #fff;
   animation: h-float 6s ease-in-out 0.3s infinite, glow-pulse 3s ease-in-out 0.5s infinite;
@@ -251,7 +249,7 @@ onMounted(() => {
 .hex-center {
   grid-area: CENTER;
   text-align: center;
-  padding: 28px 16px;
+  padding: clamp(10px, 2.9vh, 28px) 16px;
   animation: hex-rise 0.8s cubic-bezier(0.16,1,0.3,1) 0.1s both;
   width: 100%;
   border-radius: 20px;
@@ -262,7 +260,7 @@ onMounted(() => {
 .hex-center:hover .hc-lbl { color: rgba(255,255,255,0.85); }
 .hex-center:hover .hc-num { filter: brightness(1.15); }
 .hc-num {
-  font-size: 3.6rem; font-weight: 700;
+  font-size: clamp(2rem, 6vh, 3.6rem); font-weight: 700;
   letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
   line-height: 1; color: #fff;
   display: inline;
@@ -320,7 +318,7 @@ onMounted(() => {
 /* ═══ 登录卡片 — Glass ═══ */
 .login-card {
   border-radius: 18px;
-  min-height: 420px;
+  min-height: clamp(320px, 44vh, 420px);
   background: rgba(255,255,255,0.12);
   border: 1px solid rgba(255,255,255,0.15);
   backdrop-filter: blur(24px) saturate(180%);
