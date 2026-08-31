@@ -124,7 +124,6 @@ const loading = ref(false)
 const expandedId = ref<number | null>(null)
 const page = ref(1)
 const pageSize = ref(10)
-const total = ref(0)
 
 const tabs = [
   { value: '', label: '全部' },
@@ -164,14 +163,14 @@ async function loadData() {
 }
 
 /** 分类过滤 + 前端分页 */
+const filteredList = computed(() => {
+  if (!categoryFilter.value) return list.value
+  return list.value.filter((item) => item.category === categoryFilter.value)
+})
+const total = computed(() => filteredList.value.length)
 const displayedList = computed(() => {
-  let filtered = list.value
-  if (categoryFilter.value) {
-    filtered = filtered.filter((item) => item.category === categoryFilter.value)
-  }
-  total.value = filtered.length
   const start = (page.value - 1) * pageSize.value
-  return filtered.slice(start, start + pageSize.value)
+  return filteredList.value.slice(start, start + pageSize.value)
 })
 
 function handlePageChange(p: number) {
@@ -201,7 +200,7 @@ async function handlePublish(row: FaqItem) {
     await actionFaqDraftApi(row.id, 'publish')
     ElMessage.success('发布成功')
     await loadData()
-  } catch { /* */ }
+  } catch (e) { console.error('发布 FAQ 失败', e) }
 }
 
 async function handleReject(row: FaqItem) {
@@ -210,7 +209,7 @@ async function handleReject(row: FaqItem) {
     await actionFaqDraftApi(row.id, 'reject')
     ElMessage.success('已驳回')
     await loadData()
-  } catch { /* */ }
+  } catch (e) { console.error('驳回 FAQ 失败', e) }
 }
 
 async function handleDelete(row: FaqItem) {
@@ -219,7 +218,7 @@ async function handleDelete(row: FaqItem) {
     await deleteFaqItemApi(row.id)
     ElMessage.success('删除成功')
     await loadData()
-  } catch { /* */ }
+  } catch (e) { console.error('删除 FAQ 失败', e) }
 }
 
 function openEdit(row: FaqItem) {
@@ -247,7 +246,7 @@ async function confirmEdit() {
     ElMessage.success('保存成功')
     editVisible.value = false
     await loadData()
-  } catch { /* */ } finally {
+  } catch (e) { console.error('编辑 FAQ 失败', e) } finally {
     editLoading.value = false
   }
 }

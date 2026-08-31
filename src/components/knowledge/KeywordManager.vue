@@ -1,13 +1,15 @@
 <script setup lang="ts">
+/* eslint-disable no-console */
 import { ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getKeywordsApi, addKeywordApi, deleteKeywordApi } from '@/api/knowledge'
+import type { Keyword } from '@/types'
 
 const props = defineProps<{
   docId: number
 }>()
 
-const keywords = ref<string[]>([])
+const keywords = ref<Keyword[]>([])
 const isLoading = ref(false)
 const newKeyword = ref('')
 
@@ -29,13 +31,13 @@ async function handleAdd() {
     ElMessage.warning('请输入关键词')
     return
   }
-  if (keywords.value.includes(keyword)) {
+  if (keywords.value.some((kw) => kw.phrase === keyword)) {
     ElMessage.warning('该关键词已存在')
     return
   }
   try {
     await addKeywordApi(props.docId, keyword)
-    keywords.value.push(keyword)
+    await loadKeywords()
     newKeyword.value = ''
     ElMessage.success('添加成功')
   } catch (error) {
@@ -44,10 +46,10 @@ async function handleAdd() {
   }
 }
 
-async function handleDelete(keyword: string) {
+async function handleDelete(keyword: Keyword) {
   try {
-    await deleteKeywordApi(props.docId, keyword)
-    keywords.value = keywords.value.filter((kw) => kw !== keyword)
+    await deleteKeywordApi(keyword.id)
+    keywords.value = keywords.value.filter((kw) => kw.id !== keyword.id)
     ElMessage.success('删除成功')
   } catch (error) {
     console.error('删除关键词失败:', error)
@@ -92,13 +94,13 @@ onMounted(() => {
     <div class="keyword-list">
       <el-tag
         v-for="kw in keywords"
-        :key="kw"
+        :key="kw.id"
         size="small"
         closable
         @close="handleDelete(kw)"
         class="keyword-tag"
       >
-        {{ kw }}
+        {{ kw.phrase }}
       </el-tag>
       <div v-if="isLoading" class="loading-text">加载中...</div>
       <div v-if="!isLoading && keywords.length === 0" class="empty-text">暂无关键词</div>

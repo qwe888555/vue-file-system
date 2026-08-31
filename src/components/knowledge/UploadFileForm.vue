@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable no-console */
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { uploadTextApi, uploadFileApi } from '@/api/knowledge'

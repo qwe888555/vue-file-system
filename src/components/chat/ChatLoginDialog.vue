@@ -41,6 +41,7 @@ function handleCancel() {
 </script>
 
 <template>
+  <!-- eslint-disable vue/require-toggle-inside-transition -->
   <Transition name="panel">
     <div class="login-overlay" @click.self="handleCancel">
       <div class="login-dialog">

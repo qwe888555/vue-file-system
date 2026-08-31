@@ -1,6 +1,6 @@
 // ── 智能问答状态管理 Composable ──
 // 功能：管理对话列表/消息缓存/增删改查/刷新
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import type { Conversation, Message, KnowledgeFile } from '@/types'
 import {
   getConversationsApi,
@@ -13,6 +13,7 @@ import {
 
 /** localStorage 缓存 key */
 const CACHE_KEY = 'chat_conversations_cache'
+/** 改用 sessionStorage 以在关闭标签页后自动清除 */
 const CACHE_EXPIRE = 5 * 60 * 1000 // 5 分钟
 const HISTORY_DAYS = 30 // 只显示最近 30 天的对话
 
@@ -74,11 +75,11 @@ export function useChat() {
   // ── 缓存读写 ──
   function loadCache() {
     try {
-      const raw = localStorage.getItem(CACHE_KEY)
+      const raw = sessionStorage.getItem(CACHE_KEY)
       if (!raw) return false
       const data: CacheData = JSON.parse(raw)
       if (Date.now() - data.timestamp > CACHE_EXPIRE) {
-        localStorage.removeItem(CACHE_KEY)
+        sessionStorage.removeItem(CACHE_KEY)
         return false
       }
       conversations.value = data.conversations
@@ -94,9 +95,9 @@ export function useChat() {
         conversations: conversations.value,
         timestamp: Date.now(),
       }
-      localStorage.setItem(CACHE_KEY, JSON.stringify(data))
-    } catch {
-      // 存储满时静默失败
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify(data))
+    } catch (e) {
+      console.warn('保存对话缓存失败', e)
     }
   }
 
@@ -109,7 +110,7 @@ export function useChat() {
         conversations.value = list
         saveCache()
       }
-    } catch { /* 忽略 */ }
+    } catch (e) { console.warn('获取对话列表失败', e) }
     finally { loading.value = false }
   }
 
@@ -127,7 +128,7 @@ export function useChat() {
             conv.messageCount = detail.conversation.messageCount
           }
         }
-      } catch { /* 忽略 */ }
+      } catch (e) { console.warn('获取对话详情失败', e) }
     }
   }
 
@@ -141,11 +142,11 @@ export function useChat() {
         saveCache()
       }
       return conv
-    } catch { return null }
+    } catch (e) { console.warn('创建对话失败', e); return null }
   }
 
   async function deleteConversation(id: number) {
-    try { await deleteConversationApi(id) } catch { /* 忽略 */ }
+    try { await deleteConversationApi(id) } catch (e) { console.warn('删除对话失败', e) }
     conversations.value = conversations.value.filter(c => c.id !== id)
     if (currentConversationId.value === id) {
       currentConversationId.value = conversations.value[0]?.id ?? null
@@ -164,7 +165,7 @@ export function useChat() {
       await renameConversationApi(id, title)
       // 后端返回后只更新时间戳，不覆盖标题（本地已乐观更新）
       if (conv) saveCache()
-    } catch { /* 后端同步失败，本地已更新，不影响用户体验 */ }
+    } catch (e) { console.warn('重命名对话同步后端失败', e) }
   }
 
   /** 添加用户消息到当前对话（本地即时） */
@@ -220,7 +221,7 @@ export function useChat() {
   }
 
   async function submitFeedback(messageId: number, type: 'like' | 'dislike') {
-    try { await rateMessageApi(messageId, type) } catch { /* 忽略评分失败 */ }
+    try { await rateMessageApi(messageId, type) } catch (e) { console.warn('评分提交失败', e) }
     const id = currentConversationId.value
     if (!id) return
     const msg = messagesMap.value[id]?.find(m => m.id === messageId)

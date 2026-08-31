@@ -5,15 +5,25 @@ import type { MenuItem, UserRole } from '@/types'
 import { useUserStore } from './user'
 import { allMenus, roleMenuMap } from '@/config/permission'
 
-// ── 角色 → 按钮操作映射 ──
-const roleActions: Record<UserRole, string[]> = {
-  super_admin: ['create', 'edit', 'delete', 'reset-password', 'batch-delete', 'batch-reset'],
-  admin: ['create', 'edit', 'reset-password'],
-  admin_csic: ['create', 'edit', 'reset-password'],
-  admin_dept: ['create', 'edit', 'reset-password'],
-  college_admin: ['create', 'edit', 'reset-password'],
-  dept_admin: ['create', 'edit', 'reset-password'],
-  user: [],
+// ═══ 按钮级权限映射：action → 允许的角色列表 ═══
+const permissionActionMap: Record<string, UserRole[]> = {
+  // ── 用户管理 ──
+  create: ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+  edit: ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+  delete: ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+  'batch-delete': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+  'reset-password': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+  'batch-reset-password': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+
+  // ── 知识库管理 ──
+  'knowledge-create': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+  'knowledge-edit': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+  'knowledge-delete': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+
+  // ── FAQ 管理 ──
+  'faq-create': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+  'faq-edit': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+  'faq-delete': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
 }
 
 export const usePermissionStore = defineStore('permission', () => {
@@ -35,8 +45,15 @@ export const usePermissionStore = defineStore('permission', () => {
       }))
   }
 
-  function hasPermission(_action: string): boolean {
-    return true
+  function hasPermission(action: string): boolean {
+    const userStore = useUserStore()
+    const userRole = userStore.role
+    if (!userRole) return false
+    // 超级管理员拥有所有权限
+    if (userRole === 'super_admin') return true
+    const allowedRoles = permissionActionMap[action]
+    if (!allowedRoles) return false
+    return allowedRoles.includes(userRole)
   }
 
   function loadMenus() {

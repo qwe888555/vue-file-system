@@ -1,7 +1,6 @@
 <script setup lang="ts">
 // ── SSE 流式渲染组件 ──
-// 功能：接收 useSSE 的流式文本，实现打字机光标效果
-import { computed, onMounted, ref, nextTick } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import MarkdownViewer from './MarkdownViewer.vue'
 
 const props = defineProps<{
@@ -15,23 +14,13 @@ const emit = defineEmits<{
 
 const containerRef = ref<HTMLElement | null>(null)
 
-// 打字光标闪烁动画
 const showCursor = computed(() => props.streaming)
 
-// 流结束时发出 done 事件
 onMounted(() => {
   if (!props.streaming && props.content) {
     emit('done')
   }
 })
-
-// 内容变化时自动滚动到底
-const prevContent = ref('')
-function scrollToBottom() {
-  if (containerRef.value) {
-    containerRef.value.scrollTop = containerRef.value.scrollHeight
-  }
-}
 </script>
 
 <template>

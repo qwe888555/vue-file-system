@@ -4,6 +4,7 @@
 import { computed } from 'vue'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
+import DOMPurify from 'dompurify'
 // 引入高亮主题（可根据设计选色）
 import 'highlight.js/styles/github.css'
 
@@ -25,9 +26,10 @@ marked.setOptions({
 
 const renderedHTML = computed(() => {
   try {
-    return marked.parse(props.content) as string
+    const raw = marked.parse(props.content) as string
+    return DOMPurify.sanitize(raw)
   } catch {
-    return `<p>${props.content}</p>`
+    return `<p>${DOMPurify.sanitize(props.content)}</p>`
   }
 })
 </script>

@@ -114,8 +114,8 @@ onMounted(async () => {
     ])
     categories.value = cats
     items.value = faqs || []
-  } catch {
-    // 静默
+  } catch (e) {
+    console.error('获取 FAQ 分类失败', e)
   } finally {
     loading.value = false
   }
@@ -131,7 +131,8 @@ async function loadItems() {
       q: searchQuery.value || undefined,
     })
     items.value = res || []
-  } catch {
+  } catch (e) {
+    console.error('获取 FAQ 列表失败', e)
     items.value = []
   } finally {
     loading.value = false

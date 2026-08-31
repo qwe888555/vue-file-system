@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable no-console */
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -6,6 +7,7 @@ import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Check, Cl
 import MarkdownIt from 'markdown-it'
 import type { KnowledgeFile } from '@/types'
 import { getDocDetailApi, deleteDocApi, downloadDocApi, previewDocApi, updateDocApi, extractFreshnessApi } from '@/api/knowledge'
+import DOMPurify from 'dompurify'
 import FileInfoCard from '@/components/knowledge/FileInfoCard.vue'
 
 const route = useRoute()
@@ -13,6 +15,7 @@ const router = useRouter()
 
 const file = ref<KnowledgeFile | null>(null)
 const previewContent = ref('')
+const sanitizedPreviewContent = computed(() => DOMPurify.sanitize(previewContent.value))
 const isLoading = ref(false)
 const isEditing = ref(false)
 const editContent = ref('')
@@ -496,7 +499,7 @@ onMounted(() => {
           </div>
 
           <div v-if="previewContent" class="content-preview">
-            <div v-html="previewContent"></div>
+            <div v-html="sanitizedPreviewContent"></div>
           </div>
 
           <div v-else-if="previewType === 'text' || (['doc', 'docx'].includes(fileExtension))" class="text-preview">
@@ -507,6 +510,7 @@ onMounted(() => {
             <img
               :src="file?.fileData || 'https://via.placeholder.com/600x400?text=图片预览'"
               :alt="file?.title"
+              loading="lazy"
               class="preview-image"
             />
           </div>

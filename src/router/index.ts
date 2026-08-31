@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import type { UserRole } from '@/types'

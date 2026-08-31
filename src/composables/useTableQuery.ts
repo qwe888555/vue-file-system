@@ -41,7 +41,8 @@ export function useTableQuery<T, F extends Record<string, any>>(
       })
       tableData.value = result.list
       pagination.total = result.total
-    } catch {
+    } catch (error) {
+      console.error('[useTableQuery] search failed:', error)
       tableData.value = []
       pagination.total = 0
     } finally {

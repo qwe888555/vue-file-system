@@ -7,6 +7,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
+  <!-- eslint-disable vue/require-toggle-inside-transition -->
   <Transition name="panel">
     <div class="confirm-overlay" @click.self="emit('cancel')">
       <div class="confirm-dialog">

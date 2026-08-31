@@ -40,6 +40,12 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
+/* iOS Safari 按钮重置 */
+.vp-overlay button {
+  -webkit-appearance: none; appearance: none; font-family: inherit;
+}
+.vp-overlay svg { flex-shrink: 0; }
+
 .vp-fade-enter-active, .vp-fade-leave-active {
   transition: opacity 0.25s ease;
 }
