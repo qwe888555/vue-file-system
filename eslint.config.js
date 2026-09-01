@@ -40,7 +40,8 @@ export default [
       'vue/order-in-components': 'warn',
 
       // 通用
-      'no-console': 'error',
+      // 仅禁止 debug 用 console.log/debug，允许 warn/error（catch 块错误日志保留）
+      'no-console': ['error', { allow: ['warn', 'error'] }],
       'no-debugger': 'error',
       'prefer-const': 'error',
 
