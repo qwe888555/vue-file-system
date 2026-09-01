@@ -375,7 +375,7 @@ onUnmounted(() => {
         <div v-else class="m-welcome">
           <div class="m-welcome-icon">
             <div class="loader">
-              <svg width="100" height="100" viewBox="0 0 100 100">
+              <svg width="72" height="72" viewBox="0 0 100 100">
                 <defs>
                   <mask id="clipping">
                     <polygon points="0,0 100,0 100,100 0,100" fill="black"></polygon>
@@ -559,16 +559,16 @@ onUnmounted(() => {
 
 /* 对话区 */
 .m-messages { flex: 1; overflow-y: auto; padding: 8px 0; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-.m-msgs-inner { padding: 0 8px; display: flex; flex-direction: column; gap: 12px; }
+.m-msgs-inner { padding: 0 8px; display: flex; flex-direction: column; gap: 12px; min-height: 100%; }
 
-/* 欢迎页：顶部留 24px 即可，避免顶栏与内容之间的大段空白 */
-.m-welcome { display: flex; flex-direction: column; align-items: center; padding: 24px 20px 32px; text-align: center; }
-.m-welcome-icon { margin-bottom: 16px; }
-.m-welcome-title { font-size: var(--text-h2, 20px); font-weight: 600; color: #333; margin: 0 0 20px; }
+/* 欢迎页：撑满消息区并垂直居中，紧凑留白，一屏完整展示且无上下滚动 */
+.m-welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; padding: 12px 20px 20px; text-align: center; }
+.m-welcome-icon { margin-bottom: 12px; }
+.m-welcome-title { font-size: var(--text-h2, 20px); font-weight: 600; color: #333; margin: 0 0 14px; }
 
 /* 热点问题：允许按钮换行，长问题完整显示，杜绝横向滚动 */
 .m-hot-questions {
-  display: flex; flex-wrap: wrap; gap: 8px;
+  display: flex; flex-wrap: wrap; gap: 6px;
   justify-content: center; align-items: center;
   max-width: 400px; width: 100%;
 }
@@ -580,12 +580,12 @@ onUnmounted(() => {
   .m-msgs-inner > * + * { margin-top: 12px; }
 }
 .m-q-btn {
-  padding: 8px 14px; background: #f5f5f7;
-  border: none; border-radius: 16px;
+  padding: 6px 12px; background: #f5f5f7;
+  border: none; border-radius: 12px;
   font-size: 13px; color: #444;
   cursor: pointer; white-space: normal;
   overflow-wrap: break-word; word-break: break-word;
-  line-height: 1.5; max-width: 100%; text-align: center;
+  line-height: 1.4; max-width: 100%; text-align: center;
   flex: 0 1 auto;
   transition: background-color 0.2s, color 0.2s;
 }
@@ -776,7 +776,7 @@ onUnmounted(() => {
   --color-four: #bf4a1d80;
   --color-five: #ffbf4740;
   --time-animation: 2s;
-  --size: 0.56;
+  --size: 0.78;
   position: relative; border-radius: 50%;
   transform: scale(var(--size));
   box-shadow: 0 0 25px 0 var(--color-three), 0 20px 50px 0 var(--color-four);
@@ -785,14 +785,14 @@ onUnmounted(() => {
 }
 .loader::before {
   content: ""; position: absolute; top: 0; left: 0;
-  width: 100px; height: 100px; border-radius: 50%;
+  width: 72px; height: 72px; border-radius: 50%;
   border-top: solid 1px var(--color-one);
   border-bottom: solid 1px var(--color-two);
   background: linear-gradient(180deg, var(--color-five), var(--color-four));
   box-shadow: inset 0 10px 10px 0 var(--color-three), inset 0 -10px 10px 0 var(--color-four);
 }
 .loader .box {
-  width: 100px; height: 100px;
+  width: 72px; height: 72px;
   background: linear-gradient(180deg, var(--color-one) 30%, var(--color-two) 70%);
   mask: url(#clipping); -webkit-mask: url(#clipping);
 }
