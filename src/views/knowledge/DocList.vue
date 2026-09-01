@@ -11,6 +11,7 @@ import type { KnowledgeFile, Keyword } from '@/types'
 import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi } from '@/api/knowledge'
 import DOMPurify from 'dompurify'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
+import MarkdownViewer from '@/components/chat/MarkdownViewer.vue'
 
 const searchQuery = ref('')
 // 本地描述缓存：后端列表接口不返回 description 字段，持久化到 localStorage 防刷新丢失
@@ -59,6 +60,8 @@ const sanitizedPreviewContent = computed(() => DOMPurify.sanitize(previewContent
 const previewFileName = ref('')
 const previewFileUrl = ref('')
 const isOfficePreview = ref(false)
+const isMarkdownPreview = ref(false)
+const rawMarkdownContent = ref('')
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
 // 初始化 MarkdownIt 实例，支持代码高亮
@@ -91,6 +94,26 @@ function previewPre(text: string): string {
 }
 function previewPlaceholder(msg: string): string {
   return `<div class="preview-placeholder">${msg}</div>`
+}
+
+/**
+ * 智能检测文本是否为 Markdown 格式
+ * 用于文件无 .md 扩展名但内容是 Markdown 的场景（如"创建文件"功能生成的文档）
+ */
+function isLikelyMarkdown(text: string): boolean {
+  if (!text || text.length < 10) return false
+  const patterns = [
+    /^#{1,6}\s/m,           // 标题 # ## ###
+    /\*\*[^*]+\*\*/,        // 加粗 **text**
+    /^>\s/m,                // 引用 > 
+    /^[-*+]\s/m,            // 列表项 - * +
+    /^\|.+\|$/m,            // 表格行 | ... |
+    /```/,                   // 代码块 ```
+    /`[^`]+`/,              // 行内代码 `code`
+    /!\[[^\]]*\]\(/,        // 图片 ![alt](url)
+    /\[[^\]]+\]\(/,         // 链接 [text](url)
+  ]
+  return patterns.some((p) => p.test(text))
 }
 
 // （已移除死代码：showKeywordsDialog / keywordsDialogTitle / allKeywords —— "全部关键词"弹窗无触发入口且数据从未赋值）
@@ -350,10 +373,14 @@ async function handlePreviewDoc(id: number, title: string) {
     previewContent.value = ''
     previewFileUrl.value = ''
     isOfficePreview.value = false
+    isMarkdownPreview.value = false
+    rawMarkdownContent.value = ''
     
     const result = await previewDocApi(id)
     
     const fileExtension = title.split('.').pop()?.toLowerCase() || ''
+    // 判断是否为 Markdown：文件扩展名 / 后端 preview_type / 内容智能检测
+    const isMarkdownFile = fileExtension === 'md' || fileExtension === 'markdown' || result.preview_type === 'markdown'
     
     if (result.content && result.content.startsWith('http')) {
       // 图片和视频不支持在线预览，提示用户下载
@@ -371,12 +398,13 @@ async function handlePreviewDoc(id: number, title: string) {
         // Office 文档使用 Office Online 预览
         previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(result.content)}`
         isOfficePreview.value = true
-      } else if (fileExtension === 'md' || fileExtension === 'markdown') {
-        // Markdown 文件解析成 HTML
+      } else if (isMarkdownFile) {
+        // Markdown 文件：获取原始文本，交给 MarkdownViewer 组件渲染
         try {
           const response = await fetch(result.content)
           const text = await response.text()
-          previewContent.value = md.render(text || '无法查看文件内容')
+          isMarkdownPreview.value = true
+          rawMarkdownContent.value = text || '无法查看文件内容'
         } catch (error) {
           console.error('获取 Markdown 内容失败:', error)
           previewContent.value = previewPre('无法查看文件内容')
@@ -391,14 +419,28 @@ async function handlePreviewDoc(id: number, title: string) {
           previewContent.value = '无法查看文件详细内容'
         }
       } else {
-        previewContent.value = '无法查看文件详细内容'
+        // 无扩展名或未知格式：先获取内容，智能检测是否为 Markdown
+        try {
+          const response = await fetch(result.content)
+          const text = await response.text()
+          if (isLikelyMarkdown(text)) {
+            isMarkdownPreview.value = true
+            rawMarkdownContent.value = text
+          } else {
+            previewContent.value = previewPre(text || '无法查看文件详细内容')
+          }
+        } catch (error) {
+          console.error('获取文件内容失败:', error)
+          previewContent.value = '无法查看文件详细内容'
+        }
       }
     } else if (result.content) {
       if (result.preview_type === 'html' || result.file_type === 'pdf') {
         previewContent.value = result.content
-      } else if (fileExtension === 'md' || fileExtension === 'markdown') {
-        // Markdown 文件解析成 HTML
-        previewContent.value = md.render(result.content || '无法查看文件内容')
+      } else if (isMarkdownFile || isLikelyMarkdown(result.content)) {
+        // Markdown 内容：交给 MarkdownViewer 组件渲染
+        isMarkdownPreview.value = true
+        rawMarkdownContent.value = result.content
       } else {
         previewContent.value = previewPre(result.content)
       }
@@ -420,6 +462,8 @@ function handlePreviewClose() {
   }
   previewContent.value = ''
   isOfficePreview.value = false
+  isMarkdownPreview.value = false
+  rawMarkdownContent.value = ''
 }
 
 async function handleConfirmInfo() {
@@ -1376,6 +1420,7 @@ function saveFiles(files: KnowledgeFile[]) {
       <div class="preview-content">
         <iframe v-if="isOfficePreview" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
         <iframe v-else-if="previewFileUrl && previewFileName.endsWith('.pdf')" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
+        <MarkdownViewer v-else-if="isMarkdownPreview" :content="rawMarkdownContent" class="preview-markdown" />
         <!-- eslint-disable-next-line vue/no-v-html -->
         <div v-else v-html="sanitizedPreviewContent" class="preview-text" :class="{ 'markdown-body': previewFileName.endsWith('.md') || previewFileName.endsWith('.markdown') }"></div>
       </div>
@@ -2157,4 +2202,11 @@ function saveFiles(files: KnowledgeFile[]) {
   border: none;
 }
 
+/* Markdown 预览容器 */
+.preview-markdown {
+  font-size: 14px;
+  color: #303133;
+  background: #fff;
+  padding: 4px 0;
+}
 </style>
