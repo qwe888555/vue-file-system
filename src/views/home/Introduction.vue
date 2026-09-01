@@ -131,7 +131,6 @@ onMounted(() => {
         <!-- 标题区 -->
         <div class="hero-text">
           <h1 class="hero-title">NeuHub资源系统</h1>
-          <div class="title-rule" aria-hidden="true"></div>
           <p class="hero-desc">成都东软学院一站式智能知识库系统</p>
         </div>
 
@@ -206,15 +205,15 @@ onMounted(() => {
   --st-ink-1: #ffffff;
   --st-ink-2: rgba(255, 255, 255, 0.75);
   --st-ink-3: rgba(255, 255, 255, 0.55);
-  --st-num-xl: 3.4rem;                        /* 主导指标数字 */
-  --st-num-md: 1.7rem;                        /* 网格数字 */
+  --st-num-xl: clamp(2.4rem, 5.5vh, 3.4rem);  /* 主导指标数字 */
+  --st-num-md: clamp(1.3rem, 2.8vh, 1.7rem);  /* 网格数字 */
   --st-num-sm: 1.1rem;                        /* 单位字号 */
   --st-label: 0.8rem;
   --st-caption: 0.75rem;
   --st-text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);  /* 照片上文字可读 */
 
   position: relative;
-  min-height: 100dvh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -255,10 +254,10 @@ onMounted(() => {
 .page-grid {
   width: 100%; max-width: 72rem; margin: 0 auto;
   display: grid; grid-template-columns: 1fr;
-  gap: 1.5rem; align-items: start;
+  gap: 1rem; align-items: start;
 }
 @media (min-width: 1024px) {
-  .page-grid { grid-template-columns: repeat(5, 1fr); gap: 3.5rem; align-items: center; }
+  .page-grid { grid-template-columns: repeat(5, 1fr); gap: clamp(1.5rem, 3.5vh, 2.5rem); align-items: center; }
 }
 .left-col { grid-column: span 3; }
 .right-col { grid-column: span 2; align-self: center; }
@@ -267,7 +266,7 @@ onMounted(() => {
 .hero-text {
   grid-column: 1 / -1;
   text-align: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: clamp(0.5rem, 1.5vh, 1rem);
 }
 .hero-title {
   margin: 0;
@@ -278,15 +277,8 @@ onMounted(() => {
 }
 @media (min-width: 640px) { .hero-title { font-size: 2.8rem; } }
 @media (min-width: 1024px) { .hero-title { font-size: 3rem; } }
-/* 标题下白线 —— 与纯白排版统一，避免蓝撞蓝 */
-.title-rule {
-  width: 52px; height: 2px;
-  margin: 14px auto 0;
-  border-radius: 1px;
-  background: rgba(255, 255, 255, 0.9);
-}
 .hero-desc {
-  margin: 14px auto 0;
+  margin: 15px auto 0;
   font-size: 1rem;
   color: rgba(255, 255, 255, 0.82);
   letter-spacing: 0.04em;
@@ -302,7 +294,7 @@ onMounted(() => {
 
 .stats-head {
   display: flex; align-items: baseline; justify-content: space-between;
-  margin-bottom: 42px;
+  margin-bottom: clamp(20px, 4vh, 42px);
 }
 .stats-title {
   margin: 0;
@@ -328,7 +320,7 @@ onMounted(() => {
 /* ── 主导指标：存储总量 ── */
 .stat-feature {
   display: flex; align-items: flex-end; gap: 16px;
-  margin-bottom: 46px;
+  margin-bottom: clamp(22px, 4.5vh, 46px);
 }
 .stat-feature-main { display: flex; flex-direction: column; gap: 10px; }
 .stat-feature-label {
@@ -362,7 +354,7 @@ onMounted(() => {
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 36px 12px;
+  gap: clamp(20px, 3.6vh, 36px) 12px;
 }
 .stat-cell {
   text-align: center;
@@ -406,7 +398,8 @@ onMounted(() => {
    扫码视图填入同一高度，账号/扫码两模式外框恒定不变 */
 .login-card {
   border-radius: var(--st-radius-lg);
-  min-height: 580px;
+  min-height: min(580px, calc(100dvh - 300px));
+  overflow-y: auto;
   background: #fff;
   padding: 28px 26px;
   box-shadow: var(--st-shadow-container);

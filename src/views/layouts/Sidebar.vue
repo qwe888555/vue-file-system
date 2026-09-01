@@ -5,7 +5,14 @@
 import { computed } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Folder, ChatLineSquare, ChatDotSquare, Setting, Document } from '@element-plus/icons-vue'
+import {
+  Folder,
+  ChatLineSquare,
+  ChatDotSquare,
+  Setting,
+  Document,
+  OfficeBuilding,
+} from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
 import { usePermissionStore } from '@/store/permission'
 import { isAdminRole } from '@/config/roles'
@@ -25,6 +32,7 @@ const iconMap: Record<string, Component> = {
   ChatDotSquare,
   Setting,
   Document,
+  OfficeBuilding,
 }
 
 // 按角色动态生成菜单项
@@ -45,7 +53,6 @@ const activeMenu = computed(() => {
 function handleSelect(path: string) {
   router.push(path)
 }
-
 </script>
 
 <template>
@@ -59,16 +66,8 @@ function handleSelect(path: string) {
     <div class="sidebar-divider" />
 
     <!-- 菜单 -->
-    <el-menu
-      :default-active="activeMenu"
-      @select="handleSelect"
-      class="sidebar-menu"
-    >
-      <el-menu-item
-        v-for="item in menuItems"
-        :key="item.path"
-        :index="item.path"
-      >
+    <el-menu :default-active="activeMenu" @select="handleSelect" class="sidebar-menu">
+      <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
         <el-icon class="menu-icon">
           <component :is="item.icon" />
         </el-icon>
@@ -179,22 +178,48 @@ function handleSelect(path: string) {
 
 /* ── 个人中心 ── */
 /* ── 底部用户区域（含上拉菜单）── */
-.sidebar-user-area { position: relative; }
+.sidebar-user-area {
+  position: relative;
+}
 .user-popup {
-  position: absolute; bottom: calc(100% + 4px); left: 8px; right: 8px;
-  background: #fff; border-radius: 10px;
-  box-shadow: 0 -2px 16px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.06);
-  overflow: hidden; z-index: 20;
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 8px;
+  right: 8px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow:
+    0 -2px 16px rgba(0, 0, 0, 0.08),
+    0 4px 12px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  z-index: 20;
 }
 .user-popup-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 12px 16px; cursor: pointer; font-size: 14px; color: #1a2332;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #1a2332;
   transition: background 0.15s;
 }
-.user-popup-item:hover { background: #f0f4fe; color: var(--color-primary-deep, #2563eb); }
-.user-popup-item:first-child { border-bottom: 1px solid #f0f0f0; }
-.menu-up-enter-active, .menu-up-leave-active { transition: all 0.2s ease; }
-.menu-up-enter-from, .menu-up-leave-to { opacity: 0; transform: translateY(8px); }
+.user-popup-item:hover {
+  background: #f0f4fe;
+  color: var(--color-primary-deep, #2563eb);
+}
+.user-popup-item:first-child {
+  border-bottom: 1px solid #f0f0f0;
+}
+.menu-up-enter-active,
+.menu-up-leave-active {
+  transition: all 0.2s ease;
+}
+.menu-up-enter-from,
+.menu-up-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
 
 /* ── 底部用户（与智能问答保持一致）── */
 .sidebar-user {
@@ -206,15 +231,47 @@ function handleSelect(path: string) {
   cursor: pointer;
   transition: background 0.15s;
 }
-.sidebar-user:hover { background: #f0f4fe; }
-.su-avatar {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: rgba(64, 158, 255, 0.15);
-  display: flex; align-items: center; justify-content: center;
-  color: #409eff; flex-shrink: 0; font-size: 15px; font-weight: 600;
+.sidebar-user:hover {
+  background: #f0f4fe;
 }
-.su-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.su-name { font-size: 13px; font-weight: 600; color: #1f1f1f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.su-role { font-size: 11px; color: var(--color-text-secondary, #64748b); }
-.su-status { font-size: 11px; color: #67c23a; background: #f0f9eb; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
+.su-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(64, 158, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #409eff;
+  flex-shrink: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.su-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.su-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f1f1f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.su-role {
+  font-size: 11px;
+  color: var(--color-text-secondary, #64748b);
+}
+.su-status {
+  font-size: 11px;
+  color: #67c23a;
+  background: #f0f9eb;
+  padding: 2px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
 </style>

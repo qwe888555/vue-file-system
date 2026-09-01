@@ -4,12 +4,12 @@ import type { UserRole, MenuItem } from '@/types'
 
 export const roleMenuMap: Record<UserRole, string[]> = {
   user: ['/chat', '/faq'],
-  admin: ['/chat', '/faq-manage', '/knowledge', '/admin'],
-  admin_csic: ['/chat', '/faq-manage', '/knowledge', '/admin'],
-  admin_dept: ['/chat', '/faq-manage', '/knowledge'],
-  college_admin: ['/chat', '/faq-manage', '/knowledge', '/admin'],
-  dept_admin: ['/chat', '/faq-manage', '/knowledge'],
-  super_admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/logs'],
+  admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/departments'],
+  admin_csic: ['/chat', '/faq-manage', '/knowledge', '/admin', '/departments'],
+  admin_dept: ['/chat', '/faq-manage', '/knowledge', '/departments'],
+  college_admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/departments'],
+  dept_admin: ['/chat', '/faq-manage', '/knowledge', '/departments'],
+  super_admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/logs', '/departments'],
 }
 
 export const allMenus: MenuItem[] = [
@@ -55,6 +55,12 @@ export const allMenus: MenuItem[] = [
         meta: { roles: ['super_admin', 'admin', 'admin_csic'] },
       },
     ],
+  },
+  {
+    path: '/departments',
+    name: 'DepartmentManage',
+    title: '部门管理',
+    icon: 'OfficeBuilding',
   },
   {
     path: '/logs',
