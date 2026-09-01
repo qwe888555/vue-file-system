@@ -1,37 +1,44 @@
 import { test, expect } from '@playwright/test'
 
 test.describe('异常页面', () => {
-  test('404 页面显示', async ({ page, isMobile }) => {
-    if (isMobile) {
-      // 移动端可能重定向，尝试直接访问
+  test.describe('桌面端', () => {
+    test('404 页面渲染状态码与描述', async ({ page, isMobile }) => {
+      test.skip(isMobile)
       await page.goto('/404')
-      await page.waitForTimeout(1000)
-      const text404 = page.locator('text=404').or(page.locator('text=页面不存在'))
-      const visible = await text404.first().isVisible().catch(() => false)
-      if (!visible) {
-        // 移动端可能被重定向到聊天
-        expect(page.url()).toContain('/mobile')
-      }
-      return
-    }
-    await page.goto('/this-page-does-not-exist')
-    await page.waitForTimeout(1000)
-    const notFound = page.locator('text=404').or(page.locator('text=页面不存在'))
-    const visible = await notFound.first().isVisible().catch(() => false)
-    if (!visible) {
-      // 可能被全局路由捕获，检查是否在 404 页面
-      await expect(page.locator('body')).toBeVisible()
-    }
+      await expect(page.locator('.error-page')).toBeVisible({ timeout: 15000 })
+      await expect(page.locator('.error-code')).toHaveText('404')
+      await expect(page.locator('.error-desc')).toHaveText('抱歉，您访问的页面不存在')
+    })
+
+    test('任意未知路径重定向到 404', async ({ page, isMobile }) => {
+      test.skip(isMobile)
+      await page.goto('/this-page-does-not-exist')
+      await expect(page).toHaveURL('/404', { timeout: 15000 })
+      await expect(page.locator('.error-code')).toHaveText('404')
+    })
+
+    test('403 页面渲染状态码与描述', async ({ page, isMobile }) => {
+      test.skip(isMobile)
+      await page.goto('/403')
+      await expect(page.locator('.error-page')).toBeVisible({ timeout: 15000 })
+      await expect(page.locator('.error-code')).toHaveText('403')
+      await expect(page.locator('.error-desc')).toHaveText('抱歉，您没有权限访问该页面')
+    })
+
+    test('404 页"回到首页"按钮导航到首页', async ({ page, isMobile }) => {
+      test.skip(isMobile)
+      await page.goto('/404')
+      await page.locator('button:has-text("回到首页")').click()
+      await expect(page).toHaveURL('/')
+      await expect(page.getByRole('heading', { name: 'NeuHub资源系统' })).toBeVisible()
+    })
   })
 
-  test('403 页面可访问', async ({ page, isMobile }) => {
-    if (isMobile) return
-    await page.goto('/403')
-    await page.waitForTimeout(1000)
-    const forbidden = page.locator('text=403').or(page.locator('text=无权限'))
-    const visible = await forbidden.first().isVisible().catch(() => false)
-    if (visible) {
-      await expect(forbidden.first()).toBeVisible()
-    }
+  test.describe('移动端', () => {
+    test('游客访问 /404 被移动端守卫重定向到聊天', async ({ page, isMobile }) => {
+      test.skip(!isMobile)
+      await page.goto('/404')
+      await expect(page).toHaveURL('/mobile/chat', { timeout: 15000 })
+    })
   })
 })

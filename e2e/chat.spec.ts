@@ -1,85 +1,102 @@
 import { test, expect } from '@playwright/test'
+import { ssoLogin } from './helpers'
 
 test.describe('智能问答', () => {
-  test.describe('电脑端', () => {
-    test('未登录用户重定向到首页', async ({ page, isMobile }) => {
-      if (isMobile) return
+  test.describe('桌面端', () => {
+    test('已登录用户进入问答页：侧边栏 + 欢迎语', async ({ page, isMobile }) => {
+      test.skip(isMobile)
+      await ssoLogin(page, 'admin')
       await page.goto('/chat')
-      await expect(page).toHaveURL('/')
+      await expect(page.locator('.chat-app')).toBeVisible({ timeout: 15000 })
+      await expect(page.locator('.sidebar-new-chat')).toBeVisible()
+      await expect(page.locator('.welcome-title')).toContainText('你好')
+      // 管理员看到"教研问答"入口标题
+      await expect(page.locator('.topbar-title')).toHaveText('教研问答')
     })
 
-    test('已登录用户能看到侧边栏', async ({ page, isMobile }) => {
-      if (isMobile) return
-      await page.addInitScript(() => {
-        localStorage.setItem('access_token', 'mock_token')
-        localStorage.setItem('user', JSON.stringify({
-          id: 1, username: 'admin', role: 'admin',
-          first_name: '测试', last_name: '管理员',
-        }))
-      })
+    test('热点问题加载并展示', async ({ page, isMobile }) => {
+      test.skip(isMobile)
+      await ssoLogin(page, 'admin')
       await page.goto('/chat')
-      await page.waitForTimeout(1500)
-      const sidebar = page.locator('.chat-sidebar')
-      const visible = await sidebar.isVisible().catch(() => false)
-      if (visible) {
-        await expect(sidebar).toBeVisible()
-      }
-      await page.evaluate(() => localStorage.clear())
+      const qq = page.locator('.qq-btn')
+      await expect(qq.first()).toBeVisible({ timeout: 20000 })
+      expect(await qq.count()).toBeGreaterThan(0)
+    })
+
+    test('提问 → SSE 流式回复', async ({ page, isMobile }) => {
+      test.skip(isMobile)
+      await ssoLogin(page, 'admin')
+      await page.goto('/chat')
+      await expect(page.locator('.input-field')).toBeVisible({ timeout: 15000 })
+      await page.locator('.input-field').fill('什么是知识库')
+      await page.locator('.send-fab').click()
+      // 助手消息出现，内容为 Mock LLM 回复
+      const aiBubble = page.locator('.msg-row-ai .msg-bubble')
+      await expect(aiBubble.first()).toContainText(/Mock LLM Response|知识库|回答|抱歉/, { timeout: 30000 })
+    })
+
+    test('提问后侧边栏出现新会话', async ({ page, isMobile }) => {
+      test.skip(isMobile)
+      await ssoLogin(page, 'admin')
+      await page.goto('/chat')
+      await page.locator('.input-field').fill('测试会话创建')
+      await page.locator('.send-fab').click()
+      await expect(page.locator('.conv-item').first()).toBeVisible({ timeout: 20000 })
+    })
+
+    test('新建对话按钮可用', async ({ page, isMobile }) => {
+      test.skip(isMobile)
+      await ssoLogin(page, 'admin')
+      await page.goto('/chat')
+      await page.locator('.sidebar-new-chat').click()
+      await expect(page.locator('.welcome-title')).toBeVisible({ timeout: 10000 })
     })
   })
 
   test.describe('移动端', () => {
     test('欢迎页显示', async ({ page, isMobile }) => {
-      if (!isMobile) return
+      test.skip(!isMobile)
       await page.goto('/mobile/chat')
-      await expect(page.locator('text=有什么可以帮助你的？')).toBeVisible()
+      await expect(page.locator('.m-welcome-title')).toHaveText('有什么可以帮助你的？')
     })
 
-    test('输入框可输入文本', async ({ page, isMobile }) => {
-      if (!isMobile) return
+    test('输入框可用 + 发送按钮状态切换', async ({ page, isMobile }) => {
+      test.skip(!isMobile)
       await page.goto('/mobile/chat')
-      const input = page.locator('input[placeholder*="输入你的问题"]')
+      const input = page.locator('.m-input')
       await expect(input).toBeVisible()
-      await input.fill('如何重置密码？')
-      await expect(input).toHaveValue('如何重置密码？')
-    })
-
-    test('发送按钮随输入切换状态', async ({ page, isMobile }) => {
-      if (!isMobile) return
-      await page.goto('/mobile/chat')
-      const input = page.locator('input[placeholder*="输入你的问题"]')
-      const sendBtn = page.locator('button.m-send-btn')
-      await expect(sendBtn).toBeDisabled()
+      await expect(page.locator('.m-send-btn')).toBeDisabled()
       await input.fill('测试问题')
-      await expect(sendBtn).toBeEnabled()
+      await expect(page.locator('.m-send-btn')).toBeEnabled()
       await input.clear()
-      await expect(sendBtn).toBeDisabled()
+      await expect(page.locator('.m-send-btn')).toBeDisabled()
     })
 
-    test('话筒按钮存在', async ({ page, isMobile }) => {
-      if (!isMobile) return
+    test('登录后提问收到回复', async ({ page, isMobile }) => {
+      test.skip(!isMobile)
+      await ssoLogin(page, 'student')
       await page.goto('/mobile/chat')
-      await expect(page.locator('button.m-mic-btn')).toBeVisible()
-    })
-
-    test('热点问题展示', async ({ page, isMobile }) => {
-      if (!isMobile) return
-      await page.goto('/mobile/chat')
-      await page.waitForTimeout(2000)
-      const qs = page.locator('.m-q-btn')
-      const count = await qs.count()
-      if (count > 0) {
-        await expect(qs.first()).toBeVisible()
-      }
+      await page.locator('.m-input').fill('移动端提问：知识库是什么')
+      await page.locator('.m-send-btn').click()
+      const aiBubble = page.locator('.msg-row-ai .msg-bubble')
+      await expect(aiBubble.first()).toContainText(/Mock LLM Response|回答|抱歉/, { timeout: 30000 })
     })
 
     test('历史面板开关', async ({ page, isMobile }) => {
-      if (!isMobile) return
+      test.skip(!isMobile)
+      await ssoLogin(page, 'student')
       await page.goto('/mobile/chat')
-      await page.locator('button.m-menu-btn').click()
-      await expect(page.locator('text=历史对话')).toBeVisible()
-      await page.locator('button.m-panel-close').click()
-      await expect(page.locator('text=历史对话')).not.toBeVisible()
+      await page.locator('.m-menu-btn').click()
+      await expect(page.locator('.m-panel-title')).toHaveText('历史对话')
+      await page.locator('.m-panel-close').click()
+      await expect(page.locator('.m-panel-title')).not.toBeVisible()
+    })
+
+    test('游客模式面板显示去登录', async ({ page, isMobile }) => {
+      test.skip(!isMobile)
+      await page.goto('/mobile/chat')
+      await page.locator('.m-menu-btn').click()
+      await expect(page.locator('.m-panel-login-tip')).toHaveText('去登录')
     })
   })
 })
