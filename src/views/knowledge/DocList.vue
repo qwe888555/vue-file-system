@@ -165,7 +165,30 @@ async function extractTextFromFile(file: File): Promise<string> {
   }
 }
 
+/** 根据文件类型获取大小限制（MB），返回 0 表示无限制 */
+function getFileSizeLimit(ext: string): number {
+  const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp']
+  const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv']
+  const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma']
+  const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz']
+
+  if (imageExts.includes(ext)) return 10 // 图片 10MB
+  if (videoExts.includes(ext)) return 500 // 视频 500MB
+  if (audioExts.includes(ext)) return 50 // 音频 50MB
+  if (archiveExts.includes(ext)) return 50 // 压缩包 50MB
+  return 50 // 文档/其他 50MB
+}
+
 async function handleFileChange(file: File) {
+  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  const sizeLimit = getFileSizeLimit(ext)
+  const fileSizeMB = file.size / (1024 * 1024)
+
+  if (sizeLimit > 0 && fileSizeMB > sizeLimit) {
+    ElMessage.warning(`"${file.name}" 文件过大（${fileSizeMB.toFixed(1)}MB），${ext ? ext.toUpperCase() : '该类型'}文件限制 ${sizeLimit}MB 以内，无法上传`)
+    return
+  }
+
   const baseName = file.name.replace(/\.[^/.]+$/, '')
   const newFileItem = {
     file,
@@ -189,20 +212,37 @@ async function classifyFile(
   file: File,
 ) {
   try {
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    // 音视频/压缩包等二进制文件无法提取文本，只发 metadata 给 AI 分类，避免上传大文件超时
+    const isBinaryNoText = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma',
+      'mp4', 'avi', 'mkv', 'mov', 'webm', 'flv', 'wmv',
+      'zip', 'rar', '7z', 'tar', 'gz'].includes(ext)
+
     let content: string
-    try {
-      content = await extractTextFromFile(file)
-    } catch (extractErr) {
-      console.warn('[DocList] 文本提取失败，使用兜底:', extractErr)
-      content = `文件名: ${file.name}\n文件大小: ${file.size} bytes\n文件类型: ${file.name.split('.').pop() || 'unknown'}`
+    if (isBinaryNoText) {
+      // 音视频/压缩包只发基本信息，不上传文件本身
+      content = `文件名: ${file.name}\n文件大小: ${(file.size / 1024 / 1024).toFixed(2)} MB\n文件类型: ${ext}`
+    } else {
+      try {
+        content = await extractTextFromFile(file)
+      } catch (extractErr) {
+        console.warn('[DocList] 文本提取失败，使用兜底:', extractErr)
+        content = `文件名: ${file.name}\n文件大小: ${(file.size / 1024 / 1024).toFixed(2)} MB\n文件类型: ${ext}`
+      }
     }
 
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('content', content)
-    formData.append('filename', file.name)
-
-    const result = await aiClassifyApi(formData)
+    let result: { title: string; keywords: string[]; description: string; scope: string }
+    if (isBinaryNoText) {
+      // 音视频/压缩包走 JSON 分支，只发 content 字符串
+      result = await aiClassifyApi({ content })
+    } else {
+      // 文档类走 FormData 分支，上传文件
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('content', content)
+      formData.append('filename', file.name)
+      result = await aiClassifyApi(formData)
+    }
 
     if (result.title) {
       fileItem.title = result.title
@@ -1070,7 +1110,7 @@ function saveFiles(files: KnowledgeFile[]) {
             @change="onUploadChange"
             drag
             multiple
-            accept=".pdf,.doc,.docx,.txt,.jpg,.png,.gif,.mp3,.wav,.mp4,.avi,.mkv,.zip,.rar"
+            accept=".pdf,.doc,.docx,.txt,.md,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
             class="upload-dragger"
           >
             <el-icon :size="300" color="#c0c4cc"><Upload /></el-icon>
@@ -1152,7 +1192,7 @@ function saveFiles(files: KnowledgeFile[]) {
                 ref="fileInputRef"
                 type="file"
                 multiple
-                accept=".pdf,.doc,.docx,.txt,.jpg,.png,.gif,.mp3,.wav,.mp4,.avi,.mkv,.zip,.rar"
+                accept=".pdf,.doc,.docx,.txt,.md,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
                 style="display: none"
                 @change="handleFileInputChange"
               />

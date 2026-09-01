@@ -67,6 +67,8 @@ export function uploadFileApi(data: FormData): Promise<KnowledgeFile> {
       delete headers['Content-Type']
       return data
     },
+    // 大文件上传不限制超时（0 = 无超时），避免音视频等大文件上传被中断
+    timeout: 0,
   })
 }
 
@@ -257,8 +259,13 @@ export function aiClassifyApi(data: FormData | { content: string }): Promise<{
         delete headers['Content-Type']
         return data
       },
+      // AI 分类可能耗时较长（文档提取+AI推理），给 2 分钟超时
+      timeout: 120000,
     })
   } else {
-    return request.post('/knowledge/upload/ai-classify/', data)
+    return request.post('/knowledge/upload/ai-classify/', data, {
+      // JSON 分类只发文本，但 AI 推理仍可能耗时，给 2 分钟超时
+      timeout: 120000,
+    })
   }
 }
