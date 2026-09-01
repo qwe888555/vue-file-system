@@ -26,7 +26,7 @@ dist-ssr
 # Claude Code config (skills are installed per-project)
 .claude/
 
-# ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½ï¿½ï¿½ï¿½á½»ï¿½ï¿½
+# »·¾³±äÁ¿£¨º¬Ãô¸ÐÐÅÏ¢£¬²»Ìá½»£©
 .env.production
 .env.local
 test-results/
