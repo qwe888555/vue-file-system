@@ -270,21 +270,23 @@ onMounted(() => {
 }
 .hero-title {
   margin: 0;
-  font-size: 2.5rem; font-weight: 700;
-  letter-spacing: 0.05em; line-height: 1.2;
+  /* 更大、更重、更紧——大气主标题：桌面最大 4.5rem，窄屏随视口收紧 */
+  font-size: clamp(2.4rem, 5.5vw, 4.5rem);
+  font-weight: 800;
+  letter-spacing: 0.03em; line-height: 1.12;
   color: #fff;
-  text-shadow: 0 2px 12px rgba(4, 14, 32, 0.35);
+  text-shadow:
+    0 2px 10px rgba(4, 14, 32, 0.45),
+    0 14px 44px rgba(4, 14, 32, 0.35);
 }
-@media (min-width: 640px) { .hero-title { font-size: 2.8rem; } }
-@media (min-width: 1024px) { .hero-title { font-size: 3rem; } }
 .hero-desc {
-  margin: 15px auto 0;
-  font-size: 1rem;
-  color: rgba(255, 255, 255, 0.82);
-  letter-spacing: 0.04em;
-  line-height: 1.6;
-  max-width: 28rem;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  margin: 18px auto 0;
+  font-size: clamp(1rem, 1.5vw, 1.3rem);
+  color: rgba(255, 255, 255, 0.86);
+  letter-spacing: 0.05em;
+  line-height: 1.7;
+  max-width: 30rem;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
 }
 
 /* ═══ 平台数据概览 — 纯排版，无容器 ═══ */
@@ -421,7 +423,6 @@ onMounted(() => {
 
 @media (max-width: 640px) {
   .main-area { padding: 4px 16px 20px; }
-  .hero-title { font-size: 2.2rem; }
   .login-card { padding: 22px 18px; }
 }
 </style>
