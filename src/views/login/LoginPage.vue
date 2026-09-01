@@ -7,6 +7,7 @@ import { ElMessage } from 'element-plus'
 import { ssoLoginUrl, ssoCallbackApi, dingtalkQrApi } from '@/api/auth'
 import { setAccessToken, setRefreshToken } from '@/api/request'
 import request from '@/api/request'
+import { isAdminRole } from '@/config/roles'
 import AccountLoginForm from '@/components/login/AccountLoginForm.vue'
 import DingTalkQRLogin from '@/components/login/DingTalkQRLogin.vue'
 
@@ -65,14 +66,13 @@ async function loadDingTalkQr() {
           userStore.userInfo = statusData.user
           ElMessage.success('登录成功')
           navTimeout = setTimeout(() => {
-            const target = userStore.role?.includes('admin') ? '/knowledge/list' : '/chat'
+            const target = isAdminRole(userStore.role) ? '/knowledge/list' : '/chat'
             if (props.embedded) window.location.href = target
             else router.push(target)
           }, 600)
         }
       } catch (e: any) {
-        // eslint-disable-next-line no-console
-        console.log('status error:', e?.message || e)
+        console.error('登录状态检查失败:', e?.message || e)
       }
     }, 1000)
 
@@ -136,9 +136,9 @@ onMounted(async () => {
       try { await userStore.getUserInfo() } catch {}
     }
     const role = userStore.role
-    const welcomeRole = role === 'super_admin' ? '超级管理员' : role === 'admin' || role === 'college_admin' || role === 'dept_admin' ? '普通管理员' : '普通用户'
+    const welcomeRole = role === 'super_admin' ? '超级管理员' : isAdminRole(role) ? '普通管理员' : '普通用户'
     ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
-    router.push(role === 'super_admin' || role === 'admin' || role === 'college_admin' || role === 'dept_admin' ? '/knowledge/list' : '/chat')
+    router.push(isAdminRole(role) ? '/knowledge/list' : '/chat')
   } catch (e: any) {
     ElMessage.error(e?.message || 'SSO 登录失败')
   } finally {
@@ -159,9 +159,9 @@ async function handleLogin(username: string, password: string) {
       try { await userStore.getUserInfo() } catch {}
     }
     const role = userStore.role
-    const welcomeRole = role === 'super_admin' ? '超级管理员' : role === 'admin' || role === 'college_admin' || role === 'dept_admin' ? '普通管理员' : '普通用户'
+    const welcomeRole = role === 'super_admin' ? '超级管理员' : isAdminRole(role) ? '普通管理员' : '普通用户'
     ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
-    router.push(role === 'super_admin' || role === 'admin' || role === 'college_admin' || role === 'dept_admin' ? '/knowledge/list' : '/chat')
+    router.push(isAdminRole(role) ? '/knowledge/list' : '/chat')
   } catch (e: any) {
     errorMsg.value = e?.response?.data?.detail || e?.message || '登录失败，请检查账号密码'
   } finally {
@@ -213,9 +213,9 @@ async function handleSSOSelect(code: string) {
       try { await userStore.getUserInfo() } catch {}
     }
     const role = userStore.role
-    const welcomeRole = role === 'super_admin' ? '超级管理员' : role === 'admin' || role === 'college_admin' || role === 'dept_admin' ? '普通管理员' : '普通用户'
+    const welcomeRole = role === 'super_admin' ? '超级管理员' : isAdminRole(role) ? '普通管理员' : '普通用户'
     ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
-    router.push(role === 'super_admin' || role === 'admin' || role === 'college_admin' || role === 'dept_admin' ? '/knowledge/list' : '/chat')
+    router.push(isAdminRole(role) ? '/knowledge/list' : '/chat')
   } catch {
     ElMessage.error('SSO 登录失败')
   } finally {
@@ -284,36 +284,11 @@ async function handleSSOSelect(code: string) {
   display: flex; align-items: center; justify-content: center;
   font-size: 15px; transition: all 0.2s;
 }
+.login-close::before { content: ""; position: absolute; inset: -7px; }
 .login-close:hover { background: #e2e8f0; color: #0f172a; }
 
-/* ── 嵌入式亮色适配 ── */
-.login-page--embedded .login-title { color: #fff; }
-.login-page--embedded .login-sub { color: rgba(255,255,255,0.7); }
-.login-page--embedded .field-lbl { color: rgba(255,255,255,0.9); font-weight: 700; }
-.login-page--embedded .login-tabs { background: rgba(0,0,0,0.06); }
-.login-page--embedded .tab-btn { color: rgba(255,255,255,0.5); }
-.login-page--embedded .tab-btn.active { background: rgba(255,255,255,0.2); color: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-.login-page--embedded .tab-btn:hover:not(.active) { color: rgba(255,255,255,0.9); }
-.login-page--embedded .sso-divider .sso-line { background: #e2e8f0; }
-.login-page--embedded .sso-txt { color: rgba(255,255,255,0.5); }
-.login-page--embedded .sso-btn {
-  border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.7);
-}
-.login-page--embedded .sso-btn:hover:not(:disabled) { border-color: #60a5fa; color: #60a5fa; background: rgba(96,165,250,0.1); }
-.login-page--embedded .err-msg { background: rgba(239,68,68,0.12); color: #fca5a5; }
-
-/* Element Plus 输入框 — 半透明玻璃质感 */
-.login-page--embedded :deep(.el-input__wrapper) {
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.15) !important;
-  background: rgba(255,255,255,0.1) !important;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  padding: 4px 16px !important;
-}
-.login-page--embedded :deep(.el-input__wrapper:hover) { box-shadow: 0 0 0 1px rgba(255,255,255,0.25) !important; }
-.login-page--embedded :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 2px rgba(64,158,255,0.2) !important; }
-.login-page--embedded :deep(.el-input__inner) { color: #0f172a !important; font-size: 15px !important; height: 46px !important; }
-.login-page--embedded :deep(.el-input__inner::placeholder) { color: rgba(255,255,255,0.5) !important; }
+/* ── 嵌入式：复用基础浅色样式（承载于首页纯白登录卡上） ──
+   首页登录卡已改为纯白实体卡，故不再需要深色玻璃适配。 */
 
 /* ── 品牌 ── */
 .login-brand { text-align: center; margin-bottom: 32px; }
@@ -329,12 +304,12 @@ async function handleSSOSelect(code: string) {
 .login-form { display: flex; flex-direction: column; gap: 22px; }
 .field-grp { display: flex; flex-direction: column; gap: 6px; }
 .field-lbl { font-size: 16px; font-weight: 600; color: #0f172a; }
-.err-msg { color: #ef4444; font-size: 14px; margin: 0; padding: 8px 12px; background: #fef2f2; border-radius: 8px; }
+.err-msg { color: #dc2626; font-size: 14px; margin: 0; padding: 8px 12px; background: #fef2f2; border-radius: 8px; }
 
 .login-btn {
   width: 100%; height: 48px; border: none; border-radius: 10px;
   font-size: 16px; font-weight: 600;
-  background: linear-gradient(135deg, #409eff, #3b82f6);
+  background: linear-gradient(135deg, var(--color-primary, #409eff), var(--color-primary-dark, #337ecc));
   color: #fff; cursor: pointer;
   transition: all 0.25s;
 }
@@ -348,7 +323,7 @@ async function handleSSOSelect(code: string) {
 /* SSO */
 .sso-divider { display: flex; align-items: center; gap: 14px; margin: 22px 0; }
 .sso-line { flex: 1; height: 1px; background: #e2e8f0; }
-.sso-txt { font-size: 14px; color: #94a3b8; white-space: nowrap; }
+.sso-txt { font-size: 14px; color: var(--color-text-secondary, #64748b); white-space: nowrap; }
 
 .sso-btn {
   width: 100%; height: 46px; border: 1px solid #e2e8f0; border-radius: 10px;
@@ -363,12 +338,12 @@ async function handleSSOSelect(code: string) {
 /* ── 登录方式切换 ── */
 .login-tabs {
   display: flex; gap: 4px; margin-bottom: 28px;
-  background: rgba(255,255,255,0.06); border-radius: 12px; padding: 4px;
+  background: rgba(0,0,0,0.05); border-radius: 12px; padding: 4px;
 }
 .tab-btn {
   flex: 1; height: 44px; border: none; border-radius: 9px;
   font-size: 16px; font-weight: 700; cursor: pointer;
-  background: transparent; color: rgba(255,255,255,0.35); transition: all 0.25s;
+  background: transparent; color: #475569; transition: all 0.25s;
   letter-spacing: 0.02em;
 }
 .tab-btn.active {
@@ -376,7 +351,7 @@ async function handleSSOSelect(code: string) {
   color: #1e293b;
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
-.tab-btn:hover:not(.active) { color: rgba(255,255,255,0.8); }
+.tab-btn:hover:not(.active) { color: #1e293b; }
 
 /* ── 扫码登录 ── */
 .qrcode-wrap {
@@ -387,17 +362,17 @@ async function handleSSOSelect(code: string) {
   border: 1px solid rgba(255,255,255,0.12); padding: 8px; background: rgba(255,255,255,0.06);
 }
 .qrcode-hint {
-  text-align: center; font-size: 14px; color: rgba(255,255,255,0.4); margin: 6px 0 0;
+  text-align: center; font-size: 14px; color: #475569; margin: 6px 0 0;
 }
 .qrcode-actions {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
 }
 .qrcode-refresh {
   display: inline-flex; align-items: center; gap: 4px;
-  font-size: 12px; color: rgba(255,255,255,0.35); background: none; border: none;
+  font-size: 12px; color: #475569; background: none; border: none;
   cursor: pointer; transition: all 0.2s; padding: 4px 10px; border-radius: 6px;
 }
-.qrcode-refresh:hover { color: #409eff; background: rgba(64,158,255,0.1); }
+.qrcode-refresh:hover { color: var(--color-primary, #409eff); background: rgba(64,158,255,0.1); }
 .qrcode-refresh svg { transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 .qrcode-refresh:hover svg { transform: rotate(180deg); }
 .qrcode-placeholder {
@@ -413,7 +388,7 @@ async function handleSSOSelect(code: string) {
   padding: 12px 16px; border-radius: 10px; background: #f8fafc;
   cursor: pointer; transition: all 0.2s; border: 1px solid transparent;
 }
-.sso-acct:hover { border-color: #2563eb; background: #f0f4fe; }
+.sso-acct:hover { border-color: var(--color-primary-deep, #2563eb); background: #f0f4fe; }
 .sso-acct-name { font-size: 14px; font-weight: 500; color: #0f172a; }
 .sso-acct-role { font-size: 12px; color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 4px; }
 
@@ -426,7 +401,7 @@ async function handleSSOSelect(code: string) {
 :deep(.el-input__wrapper:hover) { box-shadow: 0 0 0 1px #cbd5e1 !important; }
 :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important; }
 :deep(.el-input__inner) { height: 42px; font-size: 14px; color: #0f172a; }
-:deep(.el-input__inner::placeholder) { color: rgba(255,255,255,0.5); }
+:deep(.el-input__inner::placeholder) { color: #6b7280; }
 :deep(.el-form-item) { margin-bottom: 0; }
 :deep(.el-form-item__error) { padding-top: 4px; font-size: 12px; }
 </style>
