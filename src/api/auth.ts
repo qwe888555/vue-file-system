@@ -30,10 +30,11 @@ export function changePasswordApi(data: { old_password: string; new_password: st
 
 /** SSO 登录接口地址 */
 export function ssoLoginUrl(): string {
-  const base = import.meta.env.VITE_SSO_BASE_URL || import.meta.env.VITE_API_URL || ''
+  const base = import.meta.env.VITE_SSO_BASE_URL || import.meta.env.VITE_API_URL || '/api'
   // VITE_API_URL 已包含 /api 前缀，无需再拼
   // 开发环境：/api/auth/sso/login/ → Vite 代理 → 后端
-  // 生产环境：http://后端/auth/sso/login/ → 直连后端
+  // 生产环境同域代理版（VITE_API_URL 留空）：兜底 /api 走 Nginx 反代；否则会请求
+  // /auth/sso/login/（缺 /api 前缀）被 Nginx 兜底成 index.html，导致拿不到 mock_codes
   return `${base}/auth/sso/login/`
 }
 
