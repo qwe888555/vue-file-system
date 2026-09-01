@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ref, computed, onMounted, triggerRef, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete, WarningFilled } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete, WarningFilled, Loading } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
 import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi } from '@/api/knowledge'
 import DOMPurify from 'dompurify'
@@ -41,7 +41,7 @@ const loading = ref(false)
 const listError = ref('')
 
 const createMode = ref(false)
-const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string; title: string; keywords: string; description: string; scope: 'public' | 'private' }[]>([])
+const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string; title: string; keywords: string; description: string; scope: 'public' | 'private'; isAnalyzing: boolean }[]>([])
 const selectedFileIndex = ref(0)
 
 // ── 文件列表区域拖拽上传状态 ──
@@ -130,6 +130,7 @@ async function handleFileChange(file: File) {
     keywords: '',
     description: '',
     scope: 'public' as const,
+    isAnalyzing: true,
   }
 
   selectedFiles.value.push(newFileItem)
@@ -141,7 +142,7 @@ async function handleFileChange(file: File) {
 
 /** 对单个文件执行 AI 分类，结果直接写回 fileItem */
 async function classifyFile(
-  fileItem: { title: string; keywords: string; description: string; scope: 'public' | 'private' },
+  fileItem: { title: string; keywords: string; description: string; scope: 'public' | 'private'; isAnalyzing: boolean },
   file: File,
 ) {
   try {
@@ -173,10 +174,15 @@ async function classifyFile(
       fileItem.scope = result.scope === 'school' ? 'public' : 'private'
     }
 
+    // AI 解析完成，更新状态
+    fileItem.isAnalyzing = false
     triggerRef(selectedFiles)
   } catch (error) {
     console.error('[DocList] AI分类失败:', error)
     ElMessage.warning(`"${file.name}" AI 分类失败，请手动填写信息`)
+    // AI 解析失败，也更新状态
+    fileItem.isAnalyzing = false
+    triggerRef(selectedFiles)
   }
 }
 
@@ -1069,12 +1075,17 @@ function saveFiles(files: KnowledgeFile[]) {
           </div>
 
           <div class="upload-content-right" v-if="currentFileForm">
+            <div v-if="currentFileForm.isAnalyzing" class="analyzing-tip">
+              <el-icon class="is-loading" :size="16"><Loading /></el-icon>
+              <span>AI 正在解析文件，请稍候...</span>
+            </div>
             <div class="form-item">
               <label class="form-label">文件名</label>
               <el-input
                 v-model="currentFileForm.title"
                 placeholder="请输入文件名"
                 class="form-input"
+                :disabled="currentFileForm.isAnalyzing"
               />
             </div>
             <div class="form-item">
@@ -1083,6 +1094,7 @@ function saveFiles(files: KnowledgeFile[]) {
                 v-model="currentFileForm.keywords"
                 placeholder="关键词，用逗号或空格分隔"
                 class="form-input"
+                :disabled="currentFileForm.isAnalyzing"
               />
             </div>
             <div class="form-item">
@@ -1100,10 +1112,11 @@ function saveFiles(files: KnowledgeFile[]) {
                 :rows="3"
                 placeholder="文件描述..."
                 class="form-textarea"
+                :disabled="currentFileForm.isAnalyzing"
               />
             </div>
             <div class="form-submit">
-              <el-button type="primary" @click="handleUploadSubmit">确认上传</el-button>
+              <el-button type="primary" @click="handleUploadSubmit" :disabled="currentFileForm.isAnalyzing">确认上传</el-button>
             </div>
           </div>
         </div>
@@ -1437,6 +1450,19 @@ function saveFiles(files: KnowledgeFile[]) {
   padding: 20px;
   background: #fff;
   overflow-y: auto;
+}
+
+.analyzing-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: #f0f9ff;
+  border: 1px solid #b3d8ff;
+  border-radius: 6px;
+  color: #409eff;
+  font-size: 14px;
+  margin-bottom: 16px;
 }
 
 .file-preview-list {
