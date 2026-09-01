@@ -1243,11 +1243,19 @@ function saveFiles(files: KnowledgeFile[]) {
       </div>
 
       <el-alert
-        title="提示：图片和视频文件请下载后使用相应软件查看，暂不支持在线预览"
+        title="图片和视频文件请下载后使用相应软件查看，暂不支持在线预览"
         type="info"
         :closable="false"
         show-icon
         class="preview-hint"
+      />
+
+      <el-alert
+        title="如需修改文档内容，请先下载文件，本地修改后再重新上传"
+        type="info"
+        :closable="false"
+        show-icon
+        class="edit-hint"
       />
       
       <div class="search-section">
@@ -1258,14 +1266,6 @@ function saveFiles(files: KnowledgeFile[]) {
           class="search-input"
         />
       </div>
-
-      <el-alert
-        title="如需修改文档内容，请先下载文件，本地修改后再重新上传"
-        type="info"
-        :closable="false"
-        show-icon
-        class="edit-hint"
-      />
 
       <div v-if="filteredFiles.length === 0 && !loading">
         <div v-if="listError" class="empty-state">
