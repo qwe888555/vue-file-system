@@ -142,10 +142,33 @@ export interface Department {
   children: Department[]
 }
 
-export function getDepartmentsApi(params?: {
+/**
+ * 获取部门列表（树形）
+ * 后端返回扁平数组且二级部门既嵌在父级 children 中又平铺在数组里，
+ * 此处归一化为「仅一级部门 + children」的干净树，避免前端重复渲染二级部门。
+ */
+export async function getDepartmentsApi(params?: {
   college_id?: number
-}): Promise<{ count: number; results: Department[] }> {
-  return request.get('/admin/departments/', { params })
+}): Promise<Department[]> {
+  const res: any = await request.get('/admin/departments/', { params })
+  // 兼容三种返回：扁平数组（文档 v1.0）/ { results } 分页 / { data } 包装
+  const flat: Department[] = Array.isArray(res)
+    ? res
+    : (res?.results || res?.data || [])
+  const byId = new Map<number, Department>()
+  for (const d of flat) {
+    byId.set(d.id, { ...d, children: [] })
+  }
+  const roots: Department[] = []
+  for (const d of byId.values()) {
+    if (d.parent != null && byId.has(d.parent)) {
+      byId.get(d.parent)!.children.push(d)
+    } else {
+      roots.push(d)
+    }
+  }
+  // 后端已按 sort_order ASC, id ASC 返回；归一化不改变同级顺序
+  return roots
 }
 
 /** 新建部门 */

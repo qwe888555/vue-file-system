@@ -16,14 +16,20 @@
       <template #search>
         <div class="role-pills">
           <span class="role-label">账号角色：</span>
-          <span class="role-pill" :class="{ active: roleFilter === '__all__' }" @click="roleFilter = '__all__'">全部</span>
+          <span
+            class="role-pill"
+            :class="{ active: roleFilter === '__all__' }"
+            @click="roleFilter = '__all__'"
+            >全部</span
+          >
           <span
             v-for="opt in roleOptions"
             :key="opt.value"
             class="role-pill"
             :class="{ active: roleFilter === opt.value }"
             @click="roleFilter = opt.value"
-          >{{ opt.label }}</span>
+            >{{ opt.label }}</span
+          >
         </div>
         <div class="search-row">
           <el-input
@@ -34,19 +40,9 @@
             @input="handleSearch"
             @clear="handleSearch"
           />
-          <el-select
-            v-model="collegeFilter"
-            placeholder="全部所属单位"
-            clearable
-            class="fi sl"
-          >
+          <el-select v-model="collegeFilter" placeholder="全部所属单位" clearable class="fi sl">
             <el-option label="全部所属单位" value="__all__" />
-            <el-option
-              v-for="opt in orgOptions"
-              :key="opt.id"
-              :label="opt.name"
-              :value="opt.id"
-            />
+            <el-option v-for="opt in orgOptions" :key="opt.id" :label="opt.name" :value="opt.id" />
           </el-select>
           <el-button class="fi-btn" @click="handleReset">重置</el-button>
         </div>
@@ -59,25 +55,34 @@
 
       <!-- 角色列：中文标签 -->
       <template #role="{ row }">
-        <el-tag
-          :type="ROLE_CONFIG[row.role]?.tagType ?? 'info'"
-          size="small"
-        >
+        <el-tag :type="ROLE_CONFIG[row.role]?.tagType ?? 'info'" size="small">
           {{ getRoleLabel(row.role) }}
         </el-tag>
       </template>
 
       <!-- 操作列前置：编辑 -->
       <template #actions-prepend="{ row }">
-        <el-button v-permission="'edit'" type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+        <el-button v-permission="'edit'" type="primary" size="small" @click="handleEdit(row)"
+          >编辑</el-button
+        >
       </template>
 
       <!-- 批量操作 -->
       <template #batch-actions="{ selection }">
-        <el-button v-permission="'batch-delete'" type="danger" size="small" @click="handleBatchDelete(selection)">
+        <el-button
+          v-permission="'batch-delete'"
+          type="danger"
+          size="small"
+          @click="handleBatchDelete(selection)"
+        >
           批量删除
         </el-button>
-        <el-button v-permission="'batch-reset-password'" type="warning" size="small" @click="handleBatchReset(selection)">
+        <el-button
+          v-permission="'batch-reset-password'"
+          type="warning"
+          size="small"
+          @click="handleBatchReset(selection)"
+        >
           批量修改密码
         </el-button>
       </template>
@@ -104,10 +109,7 @@
       destroy-on-close
     >
       <el-form label-width="0">
-        <el-form-item
-          label=""
-          :rules="passwordRulesRequired"
-        >
+        <el-form-item label="" :rules="passwordRulesRequired">
           <el-input
             v-model="batchResetPassword"
             type="password"
@@ -152,7 +154,10 @@ import type { Department } from '@/api/admin'
 // ── 学院列表（给 UserEdit 使用）+ 合并下拉选项（给筛选使用） ──
 const colleges = ref<College[]>([])
 const departments = ref<Department[]>([])
-interface OrgOption { id: number | string; name: string }
+interface OrgOption {
+  id: number | string
+  name: string
+}
 const orgOptions = ref<OrgOption[]>([])
 
 onMounted(async () => {
@@ -164,8 +169,8 @@ onMounted(async () => {
 
     // 超级管理员才加载部门数据
     if (isSuperAdmin.value) {
-      const deptRes = await getDepartmentsApi()
-      departments.value = deptRes.results || []
+      // getDepartmentsApi 已归一化为干净树（一级 + children）
+      departments.value = await getDepartmentsApi()
       allOptions = [...allOptions, ...flattenDepts(departments.value)]
     }
 
@@ -263,21 +268,22 @@ async function getLocalAccounts(params: {
   }
 
   // __admin__ → 不传 role 给后端，拿到全量后前端过滤
-  const apiRole = params.role === '__admin__' ? undefined : (params.role || undefined)
+  const apiRole = params.role === '__admin__' ? undefined : params.role || undefined
 
   const res = await getAccountsApi({
-    pageSize: 0,         // 0 = 全部数据，分页前端做
+    pageSize: 0, // 0 = 全部数据，分页前端做
     role: apiRole,
-    college: collegeId ?? undefined,                    // 学院筛选
-    department_id: params.department_id ?? undefined,    // 部门筛选
-    search: params.keyword || undefined,                 // 关键字搜索
+    college: collegeId ?? undefined, // 学院筛选
+    department_id: params.department_id ?? undefined, // 部门筛选
+    search: params.keyword || undefined, // 关键字搜索
   })
 
   const list = res.results
   // 管理员筛选（college_admin + dept_admin）——前端做
-  const filtered = params.role === '__admin__'
-    ? list.filter((a) => a.role === 'college_admin' || a.role === 'dept_admin')
-    : list
+  const filtered =
+    params.role === '__admin__'
+      ? list.filter((a) => a.role === 'college_admin' || a.role === 'dept_admin')
+      : list
 
   const start = (params.page - 1) * params.pageSize
   const sliced = filtered.slice(start, start + params.pageSize)
@@ -376,11 +382,7 @@ watch([roleFilter, collegeFilter], () => {
 // ── 编辑按钮 ──
 function handleEdit(row: any) {
   // 把后端 college/department 映射为 prefixed ID 供下拉框匹配
-  const orgId = row.college
-    ? `col_${row.college}`
-    : row.department
-      ? `dept_${row.department}`
-      : ''
+  const orgId = row.college ? `col_${row.college}` : row.department ? `dept_${row.department}` : ''
   tableRef.value?.handleEdit({
     ...row,
     college_id: orgId,
@@ -438,13 +440,16 @@ function handleBatchReset(selection: any[]) {
 async function confirmBatchReset() {
   const pw = batchResetPassword.value
   if (!pw || pw.length < 8) {
-    ElMessage.warning('密码长度至少 8 位'); return
+    ElMessage.warning('密码长度至少 8 位')
+    return
   }
   if (/^\d+$/.test(pw)) {
-    ElMessage.warning('密码不能全是数字'); return
+    ElMessage.warning('密码不能全是数字')
+    return
   }
   if (/^(password|12345678|qwerty123|admin123|iloveyou)$/i.test(pw)) {
-    ElMessage.warning('密码过于常见，请更换'); return
+    ElMessage.warning('密码过于常见，请更换')
+    return
   }
   try {
     await batchResetPasswordApi({
@@ -513,7 +518,7 @@ async function confirmBatchReset() {
   background: #fff;
   color: var(--color-primary-deep, #2563eb);
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 /* ── 控件统一样式（匹配日志页） ── */
@@ -526,10 +531,12 @@ async function confirmBatchReset() {
   box-shadow: 0 0 0 1px #cbd5e1 !important;
 }
 :deep(.fi .el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15) !important;
 }
 :deep(.fi .el-input__inner) {
-  height: 34px; font-size: 13px; color: #0f172a;
+  height: 34px;
+  font-size: 13px;
+  color: #0f172a;
 }
 :deep(.fi .el-select__wrapper) {
   border-radius: 4px !important;
@@ -540,15 +547,21 @@ async function confirmBatchReset() {
   box-shadow: 0 0 0 1px #cbd5e1 !important;
 }
 :deep(.fi .el-select__wrapper.is-focus) {
-  box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15) !important;
 }
-:deep(.kw) { width: 200px; }
-:deep(.sl) { width: 160px; }
+:deep(.kw) {
+  width: 200px;
+}
+:deep(.sl) {
+  width: 160px;
+}
 
 /* ── 按钮统一样式（匹配日志页） ── */
 :deep(.fi-btn) {
-  border-radius: 4px !important; font-weight: 500 !important;
-  padding: 7px 16px !important; height: 32px !important;
+  border-radius: 4px !important;
+  font-weight: 500 !important;
+  padding: 7px 16px !important;
+  height: 32px !important;
 }
 
 :deep(.table-pagination) {
