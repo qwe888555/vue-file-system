@@ -3,9 +3,12 @@
 // 功能：Logo + 菜单导航（按角色动态过滤）+ 底部用户信息
 
 import { computed } from 'vue'
+import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Folder, ChatLineSquare, ChatDotSquare, Setting, Document } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
 import { usePermissionStore } from '@/store/permission'
+import { isAdminRole } from '@/config/roles'
 import SidebarUser from '@/components/common/SidebarUser.vue'
 
 const route = useRoute()
@@ -13,14 +16,23 @@ const router = useRouter()
 const userStore = useUserStore()
 const permissionStore = usePermissionStore()
 
-const isAdminRole = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin' || userStore.role === 'college_admin' || userStore.role === 'dept_admin')
+const isAdmin = computed(() => isAdminRole(userStore.role))
+
+// 菜单图标字符串 → 组件映射（Element Plus 图标未全局注册，须显式导入）
+const iconMap: Record<string, Component> = {
+  Folder,
+  ChatLineSquare,
+  ChatDotSquare,
+  Setting,
+  Document,
+}
 
 // 按角色动态生成菜单项
 const menuItems = computed(() => {
   return permissionStore.permissionMenus.map((item) => ({
     path: item.children?.[0]?.path ?? item.path,
-    label: item.title === '智能问答' && isAdminRole.value ? '教研问答' : item.title,
-    icon: item.icon || '',
+    label: item.title === '智能问答' && isAdmin.value ? '教研问答' : item.title,
+    icon: iconMap[item.icon] || Folder,
   }))
 })
 
@@ -73,7 +85,7 @@ function handleSelect(path: string) {
   width: 222px;
   height: 100%;
   background: #fff;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', Roboto, sans-serif;
+  font-family: var(--font-sans);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -96,7 +108,7 @@ function handleSelect(path: string) {
 .sidebar-logo-text {
   font-size: 22px;
   font-weight: 700;
-  color: #2b5fd9;
+  color: var(--color-primary-deep, #2563eb);
   letter-spacing: 2px;
   line-height: 1.2;
 }
@@ -157,12 +169,12 @@ function handleSelect(path: string) {
 
 .sidebar-menu .el-menu-item.is-active {
   background: linear-gradient(135deg, #eef3fe 0%, #e6edfe 100%);
-  color: #2b5fd9;
+  color: var(--color-primary-deep, #2563eb);
   font-weight: 550;
 }
 
 .sidebar-menu .el-menu-item.is-active .menu-icon {
-  color: #2b5fd9;
+  color: var(--color-primary-deep, #2563eb);
 }
 
 /* ── 个人中心 ── */
@@ -179,7 +191,7 @@ function handleSelect(path: string) {
   padding: 12px 16px; cursor: pointer; font-size: 14px; color: #1a2332;
   transition: background 0.15s;
 }
-.user-popup-item:hover { background: #f0f4fe; color: #2b5fd9; }
+.user-popup-item:hover { background: #f0f4fe; color: var(--color-primary-deep, #2563eb); }
 .user-popup-item:first-child { border-bottom: 1px solid #f0f0f0; }
 .menu-up-enter-active, .menu-up-leave-active { transition: all 0.2s ease; }
 .menu-up-enter-from, .menu-up-leave-to { opacity: 0; transform: translateY(8px); }
@@ -203,6 +215,6 @@ function handleSelect(path: string) {
 }
 .su-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .su-name { font-size: 13px; font-weight: 600; color: #1f1f1f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.su-role { font-size: 11px; color: #8e8e93; }
+.su-role { font-size: 11px; color: var(--color-text-secondary, #64748b); }
 .su-status { font-size: 11px; color: #67c23a; background: #f0f9eb; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
 </style>

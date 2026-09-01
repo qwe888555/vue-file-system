@@ -213,10 +213,12 @@ async function handleChangePassword() {
 }
 .pc-header h3 { margin: 0; font-size: 18px; color: #1a2332; }
 .pc-close {
+  position: relative;
   width: 28px; height: 28px; border: none; border-radius: 50%;
   background: #f0f2f5; cursor: pointer; font-size: 14px; color: #8e95a6;
   display: flex; align-items: center; justify-content: center;
 }
+.pc-close::before { content: ""; position: absolute; inset: -8px; }
 .pc-close:hover { background: #e4e7ed; color: #1a2332; }
 .pc-tabs {
   display: flex; gap: 0; margin: 16px 24px 0;
@@ -224,10 +226,10 @@ async function handleChangePassword() {
 }
 .pc-tabs button {
   flex: 1; padding: 10px 0; border: none; background: none;
-  font-size: 14px; color: #8e8e93; cursor: pointer;
+  font-size: 14px; color: var(--color-text-secondary, #64748b); cursor: pointer;
   border-bottom: 2px solid transparent; transition: all 0.15s;
 }
-.pc-tabs button.active { color: #2b5fd9; border-bottom-color: #2b5fd9; font-weight: 600; }
+.pc-tabs button.active { color: var(--color-primary-deep, #2563eb); border-bottom-color: var(--color-primary-deep, #2563eb); font-weight: 600; }
 .pc-form { padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 16px; }
 .pc-row { display: flex; gap: 12px; }
 .pc-row .pc-field { flex: 1; }
@@ -237,14 +239,14 @@ async function handleChangePassword() {
   height: 40px; padding: 0 12px; border: 1px solid #e4e9f0; border-radius: 8px;
   font-size: 14px; color: #1a2332; outline: none; transition: border 0.15s;
 }
-.pc-input:focus { border-color: #2b5fd9; }
+.pc-input:focus { border-color: var(--color-primary-deep, #2563eb); }
 .pc-input:disabled { background: #f8fafc; color: #b0b8c8; }
 .input-error { border-color: #e74c3c !important; }
 .field-error { font-size: 12px; color: #e74c3c; margin-top: 2px; }
-.optional { font-size: 11px; color: #b0b8c8; font-weight: 400; }
+.optional { font-size: 11px; color: var(--color-text-secondary, #64748b); font-weight: 400; }
 .pc-submit {
   height: 42px; border: none; border-radius: 10px;
-  background: #2b5fd9; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+  background: var(--color-primary-deep, #2563eb); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
   transition: background 0.15s;
 }
 .pc-submit:hover { background: #1e4bb8; }

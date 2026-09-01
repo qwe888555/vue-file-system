@@ -111,7 +111,7 @@ const logTabs = [
 }
 .log-tabs button:hover { color: #334155; }
 .log-tabs button.active {
-  background: #fff; color: #2563eb; font-weight: 600;
+  background: #fff; color: var(--color-primary-deep, #2563eb); font-weight: 600;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
@@ -128,7 +128,7 @@ const logTabs = [
   box-shadow: none !important; transition: all 0.2s ease;
 }
 .db-period :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-  background: #fff !important; color: #2564ebc2 !important; font-weight: 600;
+  background: #fff !important; color: rgba(64, 158, 255, 0.76) !important; font-weight: 600;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
 }
 .db-period :deep(.el-radio-button:not(:first-child) .el-radio-button__inner) {
@@ -150,20 +150,20 @@ const logTabs = [
 }
 .db-block h4 {
   margin: 0 0 16px; font-size: 13px; font-weight: 600;
-  color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;
+  color: #64748b; letter-spacing: 0.05em;
 }
 
 /* ── 统计数据 ── */
 .db-stats { display: flex; flex-wrap: wrap; gap: 16px; }
 .db-stat { display: flex; flex-direction: column; gap: 4px; }
 .db-stat span {
-  font-size: 12px; font-weight: 600; color: #94a3b8;
-  text-transform: uppercase; letter-spacing: 0.03em;
+  font-size: 12px; font-weight: 600; color: var(--color-text-secondary, #64748b);
+  letter-spacing: 0.03em;
 }
 .db-stat strong {
   font-size: 18px; font-weight: 700; color: #0f172a;
   letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
 }
 .db-error { color: #ef4444; font-size: 13px; padding: 8px 0; }
-.db-empty { color: #94a3b8; padding: 60px 0; text-align: center; font-size: 14px; }
+.db-empty { color: var(--color-text-secondary, #64748b); padding: 60px 0; text-align: center; font-size: 14px; }
 </style>
