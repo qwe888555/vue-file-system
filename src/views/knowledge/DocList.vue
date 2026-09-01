@@ -8,7 +8,7 @@ import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi, fixMojibake } from '@/api/knowledge'
 import DOMPurify from 'dompurify'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 import MarkdownViewer from '@/components/chat/MarkdownViewer.vue'
@@ -402,7 +402,7 @@ async function handlePreviewDoc(id: number, title: string) {
         // Markdown 文件：获取原始文本，交给 MarkdownViewer 组件渲染
         try {
           const response = await fetch(result.content)
-          const text = await response.text()
+          const text = fixMojibake(await response.text())
           isMarkdownPreview.value = true
           rawMarkdownContent.value = text || '无法查看文件内容'
         } catch (error) {
@@ -412,7 +412,7 @@ async function handlePreviewDoc(id: number, title: string) {
       } else if (fileExtension === 'txt') {
         try {
           const response = await fetch(result.content)
-          const text = await response.text()
+          const text = fixMojibake(await response.text())
           previewContent.value = previewPre(text || '无法查看文件详细内容')
         } catch (error) {
           console.error('获取文本内容失败:', error)
@@ -422,7 +422,7 @@ async function handlePreviewDoc(id: number, title: string) {
         // 无扩展名或未知格式：先获取内容，智能检测是否为 Markdown
         try {
           const response = await fetch(result.content)
-          const text = await response.text()
+          const text = fixMojibake(await response.text())
           if (isLikelyMarkdown(text)) {
             isMarkdownPreview.value = true
             rawMarkdownContent.value = text
