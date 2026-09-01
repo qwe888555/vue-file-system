@@ -15,27 +15,30 @@ const knowledgeRoutes: RouteRecordRaw[] = [
         meta: { title: '文档列表' },
       },
       {
-        path: 'upload',
-        name: 'DocUpload',
-        component: () => import('@/views/knowledge/DocUpload.vue'),
-        meta: { title: '上传文档' },
-      },
-      {
-        path: 'browse',
-        name: 'Browse',
-        component: () => import('@/views/knowledge/Browse.vue'),
-        meta: { title: '分类浏览' },
-      },
-      {
         path: 'detail/:id',
         name: 'DocDetail',
         component: () => import('@/views/knowledge/DocDetail.vue'),
         meta: { title: '文档详情', hidden: true },
       },
+      // ── 空壳路由重定向：功能已内联到列表/详情页 ──
+      // 上传 / 分类浏览 → 文档列表（DocList 内已有上传与分类筛选）
+      // 编辑 → 文档详情（DocDetail 内已有内联编辑）
+      {
+        path: 'upload',
+        name: 'DocUpload',
+        redirect: '/knowledge/list',
+        meta: { title: '上传文档' },
+      },
+      {
+        path: 'browse',
+        name: 'Browse',
+        redirect: '/knowledge/list',
+        meta: { title: '分类浏览' },
+      },
       {
         path: 'edit/:id',
         name: 'DocEdit',
-        component: () => import('@/views/knowledge/DocEdit.vue'),
+        redirect: (to) => ({ name: 'DocDetail', params: { id: to.params.id } }),
         meta: { title: '编辑文档', hidden: true },
       },
     ],

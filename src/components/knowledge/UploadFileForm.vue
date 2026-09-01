@@ -94,14 +94,13 @@ async function handleSubmit() {
     }
 
     try {
-      const result = await uploadTextApi({
+      await uploadTextApi({
         title: form.value.title,
         content: form.value.content,
         description: form.value.description || undefined,
         keywords: keywords.length > 0 ? keywords : undefined,
         scope: form.value.scope === 'public' ? 'school' : 'college',
       })
-      console.log('创建文件结果:', result)
       ElMessage.success('创建成功')
       emit('submit', {
         ...form.value,
@@ -130,8 +129,7 @@ async function handleSubmit() {
         formData.append('keywords', JSON.stringify(keywords))
       }
 
-      const result = await uploadFileApi(formData)
-      console.log('文件上传结果:', result)
+      await uploadFileApi(formData)
       ElMessage.success('上传成功')
       emit('submit', {
         ...form.value,
