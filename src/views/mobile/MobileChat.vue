@@ -561,15 +561,16 @@ onUnmounted(() => {
 .m-messages { flex: 1; overflow-y: auto; padding: 8px 0; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .m-msgs-inner { padding: 0 8px; display: flex; flex-direction: column; gap: 12px; }
 
-/* 欢迎页 */
-.m-welcome { display: flex; flex-direction: column; align-items: center; padding: 60px 20px 30px; text-align: center; }
+/* 欢迎页：顶部留 24px 即可，避免顶栏与内容之间的大段空白 */
+.m-welcome { display: flex; flex-direction: column; align-items: center; padding: 24px 20px 32px; text-align: center; }
 .m-welcome-icon { margin-bottom: 16px; }
 .m-welcome-title { font-size: var(--text-h2, 20px); font-weight: 600; color: #333; margin: 0 0 20px; }
 
-/* 热点问题 */
+/* 热点问题：允许按钮换行，长问题完整显示，杜绝横向滚动 */
 .m-hot-questions {
   display: flex; flex-wrap: wrap; gap: 8px;
-  justify-content: center; max-width: 400px;
+  justify-content: center; align-items: center;
+  max-width: 400px; width: 100%;
 }
 /* iOS 14.5 以下不支持 gap，用 margin 兜底 */
 @supports not (gap: 8px) {
@@ -582,7 +583,10 @@ onUnmounted(() => {
   padding: 8px 14px; background: #f5f5f7;
   border: none; border-radius: 16px;
   font-size: 13px; color: #444;
-  cursor: pointer; white-space: nowrap;
+  cursor: pointer; white-space: normal;
+  overflow-wrap: break-word; word-break: break-word;
+  line-height: 1.5; max-width: 100%; text-align: center;
+  flex: 0 1 auto;
   transition: background-color 0.2s, color 0.2s;
 }
 .m-q-btn:active { background: #e8e8ed; color: #409eff; }
