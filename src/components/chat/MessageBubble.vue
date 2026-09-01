@@ -7,6 +7,9 @@ import MarkdownViewer from './MarkdownViewer.vue'
 import SseRenderer from './SseRenderer.vue'
 import ReferencesPopover from './ReferencesPopover.vue'
 import { previewDocApi } from '@/api/knowledge'
+import { useUserStore } from '@/store/user'
+
+const userStore = useUserStore()
 
 const props = defineProps<{
   message: Message
@@ -118,6 +121,52 @@ function closePreview() {
   }
   showPreview.value = false
 }
+
+/** 下载知识库文档 */
+async function handleDocDownload(docId: number, title: string) {
+  const fileName = title || `文档${docId}`
+  try {
+    const token = userStore.token
+    const response = await fetch(`/api/knowledge/docs/${docId}/download/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) throw new Error(`下载失败 (${response.status})`)
+
+    const contentType = response.headers.get('Content-Type') || ''
+    if (contentType.includes('application/json')) {
+      const json = await response.json()
+      const fileUrl = json.url || json.file_url || json.fileUrl || json.download_url
+      if (!fileUrl) throw new Error('未获取到下载地址')
+      try {
+        const ossRes = await fetch(fileUrl)
+        if (ossRes.ok) {
+          downloadBlob(await ossRes.blob(), fileName)
+          return
+        }
+      } catch {
+        // CORS 不通，回退到新窗口打开
+      }
+      window.open(fileUrl, '_blank')
+      return
+    }
+    downloadBlob(await response.blob(), fileName)
+    ElMessage.success('下载已开始')
+  } catch (error: any) {
+    console.error('下载文件失败:', error)
+    ElMessage.error(error.message || '下载文件失败')
+  }
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 100)
+}
 </script>
 
 <template>
@@ -136,9 +185,9 @@ function closePreview() {
         :class="{ 'msg-bubble-user': isUser, 'msg-bubble-ai': !isUser }"
       >
         <!-- SSE 流式 -->
-        <SseRenderer v-if="isStreaming" :content="streamContent || ''" :streaming="true" @doc-link-click="handleDocLinkClick" />
+        <SseRenderer v-if="isStreaming" :content="streamContent || ''" :streaming="true" @doc-link-click="handleDocLinkClick" @doc-download="handleDocDownload" />
         <!-- Markdown 静态 -->
-        <MarkdownViewer v-else :content="message.content" @doc-link-click="handleDocLinkClick" />
+        <MarkdownViewer v-else :content="message.content" @doc-link-click="handleDocLinkClick" @doc-download="handleDocDownload" />
       </div>
 
       <!-- 引用 -->
