@@ -11,9 +11,8 @@ import {
   rateMessageApi,
 } from '@/api/chat'
 
-/** localStorage 缓存 key */
+/** 会话缓存 key（sessionStorage；登出时 store/user.ts 会同步清除该键） */
 const CACHE_KEY = 'chat_conversations_cache'
-/** 改用 sessionStorage 以在关闭标签页后自动清除 */
 const CACHE_EXPIRE = 5 * 60 * 1000 // 5 分钟
 const HISTORY_DAYS = 30 // 只显示最近 30 天的对话
 

@@ -2,18 +2,19 @@
 // ── 引用文件弹窗组件 ──
 // 功能：展示 AI 回复引用的知识库文件，根据角色权限区分可访问性
 import { ref, computed } from 'vue'
-import type { KnowledgeFile } from '@/types'
+import type { KnowledgeFile, UserRole } from '@/types'
+import { isAdminRole } from '@/config/roles'
 
 const props = defineProps<{
   references: KnowledgeFile[]
-  userRole?: 'user' | 'admin' | 'superadmin'
+  userRole?: UserRole
 }>()
 
 const visible = ref(false)
 
-// 权限判断：user 角色只能查看公开文件
+// 权限判断：管理员角色可见全部引用，普通 user 仅可见公开（status=1）文件
 const accessibleFiles = computed(() => {
-  if (!props.userRole || props.userRole === 'admin' || props.userRole === 'superadmin') {
+  if (!props.userRole || isAdminRole(props.userRole)) {
     return props.references
   }
   // user 角色仅显示状态为 1（已发布/公开）的文件

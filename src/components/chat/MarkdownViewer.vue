@@ -3,24 +3,63 @@
 // 功能：将 Markdown 文本渲染为 HTML，支持代码高亮
 import { computed } from 'vue'
 import { marked } from 'marked'
-import hljs from 'highlight.js'
+import hljs from 'highlight.js/lib/core'
 import DOMPurify from 'dompurify'
-// 引入高亮主题（可根据设计选色）
+// 高亮主题（可根据设计选色）
 import 'highlight.js/styles/github.css'
+
+// ── 按需注册常用语言 ──
+// 全量 highlight.js（~900kB）只注册常用语言后降至 ~60kB；未注册语言自动降级为纯文本
+import javascript from 'highlight.js/lib/languages/javascript'
+import typescript from 'highlight.js/lib/languages/typescript'
+import json from 'highlight.js/lib/languages/json'
+import xml from 'highlight.js/lib/languages/xml'
+import css from 'highlight.js/lib/languages/css'
+import python from 'highlight.js/lib/languages/python'
+import java from 'highlight.js/lib/languages/java'
+import c from 'highlight.js/lib/languages/c'
+import cpp from 'highlight.js/lib/languages/cpp'
+import csharp from 'highlight.js/lib/languages/csharp'
+import go from 'highlight.js/lib/languages/go'
+import rust from 'highlight.js/lib/languages/rust'
+import bash from 'highlight.js/lib/languages/bash'
+import sql from 'highlight.js/lib/languages/sql'
+import yaml from 'highlight.js/lib/languages/yaml'
+import markdown from 'highlight.js/lib/languages/markdown'
+import diff from 'highlight.js/lib/languages/diff'
+
+hljs.registerLanguage('javascript', javascript)
+hljs.registerLanguage('typescript', typescript)
+hljs.registerLanguage('json', json)
+hljs.registerLanguage('xml', xml)
+hljs.registerLanguage('css', css)
+hljs.registerLanguage('python', python)
+hljs.registerLanguage('java', java)
+hljs.registerLanguage('c', c)
+hljs.registerLanguage('cpp', cpp)
+hljs.registerLanguage('csharp', csharp)
+hljs.registerLanguage('go', go)
+hljs.registerLanguage('rust', rust)
+hljs.registerLanguage('bash', bash)
+hljs.registerLanguage('sql', sql)
+hljs.registerLanguage('yaml', yaml)
+hljs.registerLanguage('markdown', markdown)
+hljs.registerLanguage('diff', diff)
 
 const props = defineProps<{
   content: string
 }>()
 
-// 配置 marked
-marked.setOptions({
+// 配置 marked（marked v18 已移除 setOptions({highlight})，改用 renderer 扩展实现代码高亮）
+marked.use({
   breaks: true,
   gfm: true,
-  highlight(code: string, lang: string) {
-    if (lang && hljs.getLanguage(lang)) {
-      return hljs.highlight(code, { language: lang }).value
-    }
-    return hljs.highlightAuto(code).value
+  renderer: {
+    code({ text, lang }: { text: string; lang?: string }) {
+      const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
+      const html = hljs.highlight(text, { language }).value
+      return `<pre><code class="hljs language-${language}">${html}</code></pre>`
+    },
   },
 })
 

@@ -32,6 +32,10 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
 
   let abortController: AbortController | null = null
   let closed = false
+  // 是否已收到 references_detail（真实引用）。references 占位事件不得覆盖真实数据
+  let refDetailReceived = false
+  // 收到 error 事件后停止继续读取，避免连接未关闭时读循环挂起
+  let stopReading = false
 
   async function connect() {
     abortController = new AbortController()
@@ -61,10 +65,11 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
 
       while (true) {
         const { done: streamDone, value } = await reader.read()
-        if (closed || streamDone) break
+        if (closed || stopReading || streamDone) break
 
         buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
+        // 兼容 \n 与 \r\n 两种行分隔（含跨 chunk 的 \r\n）
+        const lines = buffer.split(/\r?\n/)
         buffer = lines.pop() || '' // 保留不完整的行
 
         let currentEvent = ''
@@ -108,8 +113,8 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
         case 'references': {
           const ref = JSON.parse(dataStr)
           // 后端返回 { count, summary }，前端的 references 是 KnowledgeFile[]
-          // 有引用时从 summary 构造一个占位
-          if (ref.count > 0) {
+          // 有引用时从 summary 构造一个占位；若已收到 references_detail（真实数据），跳过占位
+          if (ref.count > 0 && !refDetailReceived) {
             references.value = [{ id: 0, title: ref.summary || '参考来源', summary: ref.summary, status: 1 } as KnowledgeFile]
           }
           break
@@ -121,11 +126,13 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
           const parsed = JSON.parse(dataStr)
           error.value = parsed.message || 'SSE 返回错误'
           streaming.value = false
+          stopReading = true // 终止读循环；finally 中会置 done 并触发 onDone
           break
         }
         case 'references_detail': {
           const refDetail = JSON.parse(dataStr)
           if (Array.isArray(refDetail) && refDetail.length > 0) {
+            refDetailReceived = true // 真实引用已就绪，后续占位事件不再覆盖
             references.value = refDetail.map((r: any) => ({
               id: r.doc_id || 0,
               title: r.doc_title || '',

@@ -95,6 +95,7 @@ function handleCancel() {
   font-weight: 700; color: var(--color-text, #303133);
 }
 .dialog-close {
+  position: relative;
   background: transparent; border: none;
   color: var(--color-text-secondary, #909399);
   font-size: 20px; cursor: pointer;
@@ -102,6 +103,7 @@ function handleCancel() {
   display: flex; align-items: center; justify-content: center;
   border-radius: 50%; transition: all 0.2s ease;
 }
+.dialog-close::before { content: ""; position: absolute; inset: -8px; }
 .dialog-close:hover {
   background: var(--color-bg, #f5f7fa);
   color: var(--color-text, #303133);
@@ -142,6 +144,6 @@ function handleCancel() {
   font-size: var(--font-size-base, 14px); font-weight: 600;
   cursor: pointer; transition: all 0.2s ease; letter-spacing: 4px;
 }
-.login-submit-btn:hover:not(:disabled) { background: var(--color-primary-dark, #3a8ee6); }
+.login-submit-btn:hover:not(:disabled) { background: var(--color-primary-dark, #337ecc); }
 .login-submit-btn:disabled { background: var(--color-border, #e4e7ed); cursor: not-allowed; }
 </style>
