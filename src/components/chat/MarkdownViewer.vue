@@ -50,6 +50,10 @@ const props = defineProps<{
   content: string
 }>()
 
+const emit = defineEmits<{
+  docLinkClick: [docId: number, title: string]
+}>()
+
 // 配置 marked（marked v18 已移除 setOptions({highlight})，改用 renderer 扩展实现代码高亮）
 marked.use({
   breaks: true,
@@ -71,10 +75,29 @@ const renderedHTML = computed(() => {
     return `<p>${DOMPurify.sanitize(props.content)}</p>`
   }
 })
+
+/**
+ * 拦截链接点击：知识库文档链接改为触发预览事件，不直接下载
+ */
+function handleClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  const link = target.closest('a')
+  if (!link) return
+
+  const href = link.getAttribute('href') || ''
+  // 匹配知识库文档链接：/api/knowledge/docs/{id}/download/ 或 /preview/
+  const match = href.match(/\/api\/knowledge\/docs\/(\d+)\//)
+  if (match) {
+    e.preventDefault()
+    const docId = parseInt(match[1], 10)
+    const title = link.textContent || `文档${docId}`
+    emit('docLinkClick', docId, title)
+  }
+}
 </script>
 
 <template>
-  <div class="markdown-body" v-html="renderedHTML" />
+  <div class="markdown-body" v-html="renderedHTML" @click="handleClick" />
 </template>
 
 <style scoped>
