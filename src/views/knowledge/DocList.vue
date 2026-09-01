@@ -173,10 +173,24 @@ function getFileSizeLimit(ext: string): number {
   const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz']
 
   if (imageExts.includes(ext)) return 10 // 图片 10MB
-  if (videoExts.includes(ext)) return 500 // 视频 500MB
+  if (videoExts.includes(ext)) return 50 // 视频 50MB（受服务器超时限制）
   if (audioExts.includes(ext)) return 50 // 音频 50MB
-  if (archiveExts.includes(ext)) return 50 // 压缩包 50MB
-  return 50 // 文档/其他 50MB
+  if (archiveExts.includes(ext)) return 20 // 压缩包 20MB（受服务器 nginx 超时限制）
+  return 20 // 文档/其他 20MB
+}
+
+/** 获取文件类型的中文描述 */
+function getExtTypeName(ext: string): string {
+  const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv']
+  const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma']
+  const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp']
+  const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz']
+
+  if (videoExts.includes(ext)) return '视频'
+  if (audioExts.includes(ext)) return '音频'
+  if (imageExts.includes(ext)) return '图片'
+  if (archiveExts.includes(ext)) return '压缩包'
+  return '文件'
 }
 
 async function handleFileChange(file: File) {
@@ -185,7 +199,12 @@ async function handleFileChange(file: File) {
   const fileSizeMB = file.size / (1024 * 1024)
 
   if (sizeLimit > 0 && fileSizeMB > sizeLimit) {
-    ElMessage.warning(`"${file.name}" 文件过大（${fileSizeMB.toFixed(1)}MB），${ext ? ext.toUpperCase() : '该类型'}文件限制 ${sizeLimit}MB 以内，无法上传`)
+    const typeName = getExtTypeName(ext)
+    // 视频/音频超限时，额外提示可以压缩成压缩包上传
+    const isMedia = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv',
+      'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma'].includes(ext)
+    const tip = isMedia ? `，建议压缩后打包成 ZIP/RAR 压缩包上传（压缩包限制 20MB）` : ''
+    ElMessage.warning(`"${file.name}" 文件过大（${fileSizeMB.toFixed(1)}MB），${typeName}文件限制 ${sizeLimit}MB 以内${tip}`)
     return
   }
 
@@ -1118,7 +1137,7 @@ function saveFiles(files: KnowledgeFile[]) {
               将文件拖到此处，或<em>点击上传</em>
             </div>
             <div class="upload-file-formats">
-              支持 PDF、Word、TXT、图片、音视频等格式
+              支持 PDF、Word、TXT、图片、音视频、压缩包等格式（图片≤10MB，音视频≤50MB，压缩包/文档≤20MB，超大文件请压缩后上传）
             </div>
           </el-upload>
         </div>
