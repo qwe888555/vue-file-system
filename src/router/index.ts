@@ -9,6 +9,7 @@ import chatRoutes from './chat'
 import faqRoutes from './faq'
 import knowledgeRoutes from './knowledge'
 import adminRoutes from './account'
+import departmentRoutes from './department'
 import logRoutes from './log'
 import mobileRoutes from './mobile'
 import { useUserStore } from '@/store/user'
@@ -20,6 +21,7 @@ const routes: RouteRecordRaw[] = [
   ...faqRoutes,
   ...knowledgeRoutes,
   ...adminRoutes,
+  ...departmentRoutes,
   ...logRoutes,
   ...mobileRoutes,
 ]
