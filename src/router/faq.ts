@@ -5,7 +5,8 @@ const faqRoutes: RouteRecordRaw[] = [
     path: '/faq',
     name: 'Faq',
     component: () => import('@/views/layouts/Layout.vue'),
-    meta: { title: '常见问题', icon: 'ChatDotSquare' },
+    // 公开知识库：游客可直接浏览已发布 FAQ（后端列表接口已 AllowAny）
+    meta: { title: '常见问题', icon: 'ChatDotSquare', public: true },
     children: [
       {
         path: '',
@@ -18,7 +19,7 @@ const faqRoutes: RouteRecordRaw[] = [
     path: '/faq-manage',
     name: 'FaqManage',
     component: () => import('@/views/layouts/Layout.vue'),
-    meta: { title: 'FAQ 管理', icon: 'ChatDotSquare', roles: ['super_admin', 'admin', 'college_admin', 'dept_admin'] },
+    meta: { title: 'FAQ 管理', icon: 'ChatDotSquare', roles: ['super_admin', 'admin', 'admin_csic', 'admin_dept', 'college_admin', 'dept_admin'] },
     children: [
       {
         path: '',

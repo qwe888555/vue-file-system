@@ -38,7 +38,11 @@ export const usePermissionStore = defineStore('permission', () => {
   function filterMenus(items: MenuItem[], role: UserRole): MenuItem[] {
     const allowedPaths = roleMenuMap[role] || []
     return items
-      .filter((item) => allowedPaths.some((p) => item.path === p || item.path.startsWith(p + '/')))
+      .filter((item) => {
+        // 菜单项声明了 meta.roles 时，需显式校验角色（如「所属单位」仅平台管理员可见）
+        if (item.meta?.roles && !item.meta.roles.includes(role)) return false
+        return allowedPaths.some((p) => item.path === p || item.path.startsWith(p + '/'))
+      })
       .map((item) => ({
         ...item,
         children: item.children ? filterMenus(item.children, role) : undefined,

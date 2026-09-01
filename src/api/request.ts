@@ -100,6 +100,12 @@ instance.interceptors.response.use(
 
     // 401 → 尝试刷新 Token
     if (error.response?.status === 401 && !originalRequest._retry) {
+      // 刷新接口自身返回 401：不进入刷新流程。
+      // 否则刷新请求在 isRefreshing=true 时会把自己 push 进 pendingQueue，
+      // 返回一个永不 resolve 的 Promise，外层 catch 永远不执行 → 全部请求挂死。
+      if (originalRequest.url?.includes('/auth/refresh/')) {
+        return Promise.reject(error)
+      }
       const refreshToken = getRefreshToken()
       if (!refreshToken) {
         clearTokens()

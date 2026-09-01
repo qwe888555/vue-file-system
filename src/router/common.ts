@@ -6,19 +6,19 @@ const authRoutes: RouteRecordRaw[] = [
     path: '/',
     name: 'Home',
     component: () => import('@/views/home/Introduction.vue'),
-    meta: { title: 'NeuHub 资源系统', hidden: true },
+    meta: { title: 'NeuHub 资源系统', hidden: true, public: true },
   },
   {
     path: '/403',
     name: 'Forbidden',
     component: () => import('@/components/common/Error403.vue'),
-    meta: { title: '无权限访问', hidden: true },
+    meta: { title: '无权限访问', hidden: true, public: true },
   },
   {
     path: '/404',
     name: 'NotFound',
     component: () => import('@/components/common/Error404.vue'),
-    meta: { title: '页面不存在', hidden: true },
+    meta: { title: '页面不存在', hidden: true, public: true },
   },
   {
     path: '/:pathMatch(.*)*',
