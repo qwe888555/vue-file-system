@@ -32,7 +32,7 @@ async function handleAdd() {
     return
   }
   if (keywords.value.some((kw) => kw.phrase === keyword)) {
-    ElMessage.warning('该关键词已存在')
+    ElMessage.info('该关键词已存在')
     return
   }
   try {

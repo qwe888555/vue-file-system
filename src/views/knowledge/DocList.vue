@@ -4,6 +4,9 @@
 import { ref, computed, onMounted, triggerRef, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete, WarningFilled, Loading } from '@element-plus/icons-vue'
+import MarkdownIt from 'markdown-it'
+import hljs from 'highlight.js'
+import 'highlight.js/styles/github.css'
 import type { KnowledgeFile, Keyword } from '@/types'
 import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi } from '@/api/knowledge'
 import DOMPurify from 'dompurify'
@@ -57,6 +60,23 @@ const previewFileName = ref('')
 const previewFileUrl = ref('')
 const isOfficePreview = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+
+// 初始化 MarkdownIt 实例，支持代码高亮
+const md = new MarkdownIt({
+  html: true,
+  linkify: true,
+  typographer: true,
+  highlight: (str, lang) => {
+    if (lang && hljs.getLanguage(lang)) {
+      try {
+        return hljs.highlight(str, { language: lang }).value
+      } catch (error) {
+        // 忽略高亮错误
+      }
+    }
+    return ''
+  },
+})
 
 // 预览文本 HTML 转义（DOMPurify 会再兜底净化）
 function escapeHtml(s: string): string {
@@ -239,14 +259,17 @@ async function handlePreviewFile(item: { file: File; docId?: number; previewCont
       showPreviewDialog.value = true
     }
   } else if (['jpg', 'jpeg', 'png', 'gif'].includes(ext || '')) {
+    previewContent.value = previewPlaceholder('图片文件请下载后使用图片查看器打开查看')
+    showPreviewDialog.value = true
+  } else if (['md', 'markdown'].includes(ext || '')) {
     const reader = new FileReader()
     reader.onload = (e) => {
       const content = e.target?.result as string
-      previewContent.value = `<img class="preview-img" src="${content}" alt="预览图片" />`
+      previewContent.value = md.render(content || '无法查看文件内容')
       showPreviewDialog.value = true
     }
-    reader.readAsDataURL(item.file)
-  } else if (['txt', 'md', 'json', 'xml', 'csv'].includes(ext || '')) {
+    reader.readAsText(item.file)
+  } else if (['txt', 'json', 'xml', 'csv'].includes(ext || '')) {
     const reader = new FileReader()
     reader.onload = (e) => {
       const content = e.target?.result as string
@@ -333,16 +356,31 @@ async function handlePreviewDoc(id: number, title: string) {
     const fileExtension = title.split('.').pop()?.toLowerCase() || ''
     
     if (result.content && result.content.startsWith('http')) {
-      if (fileExtension === 'pdf') {
-        previewFileUrl.value = result.content
-      } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExtension)) {
+      // 图片和视频不支持在线预览，提示用户下载
+      if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExtension)) {
+        previewContent.value = previewPlaceholder('图片文件暂不支持在线预览，请下载后使用图片查看器打开')
+      } else if (['mp3', 'wav', 'ogg', 'mp4', 'avi', 'mkv', 'mov'].includes(fileExtension)) {
+        previewContent.value = previewPlaceholder('视频/音频文件暂不支持在线预览，请下载后使用相应播放器打开')
+      } else if (fileExtension === 'pdf') {
         previewFileUrl.value = result.content
       } else if (result.preview_type === 'url' && result.file_type === 'document') {
+        // Office 文档使用 Office Online 预览
         previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(result.content)}`
         isOfficePreview.value = true
       } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'wps', 'et', 'dps'].includes(fileExtension)) {
+        // Office 文档使用 Office Online 预览
         previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(result.content)}`
         isOfficePreview.value = true
+      } else if (fileExtension === 'md' || fileExtension === 'markdown') {
+        // Markdown 文件解析成 HTML
+        try {
+          const response = await fetch(result.content)
+          const text = await response.text()
+          previewContent.value = md.render(text || '无法查看文件内容')
+        } catch (error) {
+          console.error('获取 Markdown 内容失败:', error)
+          previewContent.value = previewPre('无法查看文件内容')
+        }
       } else if (fileExtension === 'txt') {
         try {
           const response = await fetch(result.content)
@@ -358,6 +396,9 @@ async function handlePreviewDoc(id: number, title: string) {
     } else if (result.content) {
       if (result.preview_type === 'html' || result.file_type === 'pdf') {
         previewContent.value = result.content
+      } else if (fileExtension === 'md' || fileExtension === 'markdown') {
+        // Markdown 文件解析成 HTML
+        previewContent.value = md.render(result.content || '无法查看文件内容')
       } else {
         previewContent.value = previewPre(result.content)
       }
@@ -1200,6 +1241,14 @@ function saveFiles(files: KnowledgeFile[]) {
           <span class="file-count">{{ displayTotalFiles }}</span>
         </h3>
       </div>
+
+      <el-alert
+        title="提示：图片和视频文件请下载后使用相应软件查看，暂不支持在线预览"
+        type="info"
+        :closable="false"
+        show-icon
+        class="preview-hint"
+      />
       
       <div class="search-section">
         <el-input
@@ -1327,9 +1376,8 @@ function saveFiles(files: KnowledgeFile[]) {
       <div class="preview-content">
         <iframe v-if="isOfficePreview" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
         <iframe v-else-if="previewFileUrl && previewFileName.endsWith('.pdf')" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
-        <img v-else-if="previewFileUrl" class="preview-img" :src="previewFileUrl" loading="lazy" alt="预览图片" />
         <!-- eslint-disable-next-line vue/no-v-html -->
-        <div v-else v-html="sanitizedPreviewContent" class="preview-text"></div>
+        <div v-else v-html="sanitizedPreviewContent" class="preview-text" :class="{ 'markdown-body': previewFileName.endsWith('.md') || previewFileName.endsWith('.markdown') }"></div>
       </div>
       <template #footer>
         <el-button @click="showPreviewDialog = false">关闭</el-button>
@@ -1960,9 +2008,119 @@ function saveFiles(files: KnowledgeFile[]) {
   color: #66b1ff;
 }
 
+.preview-hint {
+  margin-bottom: var(--spacing-md);
+}
+
 .preview-content {
   max-height: 600px;
   overflow-y: auto;
+}
+
+/* Markdown 渲染样式 */
+.preview-text.markdown-body {
+  line-height: 1.7;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  padding: 0;
+}
+
+.preview-text.markdown-body :deep(h1),
+.preview-text.markdown-body :deep(h2),
+.preview-text.markdown-body :deep(h3),
+.preview-text.markdown-body :deep(h4) {
+  margin: 1em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.3;
+  padding-left: 0;
+}
+
+.preview-text.markdown-body :deep(h1) { font-size: 1.4em; }
+.preview-text.markdown-body :deep(h2) { font-size: 1.25em; }
+.preview-text.markdown-body :deep(h3) { font-size: 1.1em; }
+
+.preview-text.markdown-body :deep(p) {
+  margin: 0.5em 0;
+  padding-left: 0;
+}
+
+.preview-text.markdown-body :deep(ul),
+.preview-text.markdown-body :deep(ol) {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.preview-text.markdown-body :deep(li) {
+  margin: 0.25em 0;
+}
+
+.preview-text.markdown-body :deep(blockquote) {
+  margin: 0.5em 0;
+  padding: 0.25em 1em;
+  border-left: 3px solid var(--color-primary, #409eff);
+  color: var(--color-text-secondary, #606266);
+  background: rgba(64, 158, 255, 0.04);
+  border-radius: 0 4px 4px 0;
+}
+
+.preview-text.markdown-body :deep(code) {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.9em;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 3px;
+}
+
+.preview-text.markdown-body :deep(pre) {
+  margin: 0.5em 0;
+  padding: 1em;
+  background: #f6f8fa;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.preview-text.markdown-body :deep(pre code) {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+}
+
+.preview-text.markdown-body :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+}
+
+.preview-text.markdown-body :deep(th),
+.preview-text.markdown-body :deep(td) {
+  border: 1px solid var(--color-border, #e4e7ed);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.preview-text.markdown-body :deep(th) {
+  background: var(--color-bg, #f5f7fa);
+  font-weight: 600;
+}
+
+.preview-text.markdown-body :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--color-border, #e4e7ed);
+  margin: 1em 0;
+}
+
+.preview-text.markdown-body :deep(a) {
+  color: var(--color-primary, #409eff);
+  text-decoration: none;
+}
+
+.preview-text.markdown-body :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.preview-text.markdown-body :deep(img) {
+  max-width: 100%;
+  border-radius: 4px;
 }
 
 .preview-text {
