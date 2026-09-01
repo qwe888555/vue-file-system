@@ -132,7 +132,7 @@ function handleDislike() {
 }
 
 .msg-bubble-user {
-  background: linear-gradient(135deg, #409eff, #3a8ee6);
+  background: linear-gradient(135deg, var(--color-primary, #409eff), var(--color-primary-dark, #337ecc));
   color: #fff;
   border-radius: 20px;
   border-bottom-right-radius: 4px;
@@ -173,11 +173,21 @@ function handleDislike() {
 
 /* 点赞：浅灰圆角底板 */
 .fb-like {
+  position: relative;
   width: 44px;
   height: 34px;
   background: #f7f7f7;
   border-radius: 17px;
 }
+.fb-like::before { content: ""; position: absolute; inset: -5px 0; }
+
+/* 点踩：纯图标，无底板 */
+.fb-dislike {
+  position: relative;
+  width: 34px;
+  height: 34px;
+}
+.fb-dislike::before { content: ""; position: absolute; inset: -5px; }
 
 .fb-like:hover { color: #409eff; background: #eef4ff; }
 .fb-like.active { color: #409eff; background: #e8f0fe; }

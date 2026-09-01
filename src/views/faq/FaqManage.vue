@@ -45,8 +45,9 @@
             </div>
           </div>
           <div class="fm-card-actions">
-            <el-button v-if="item.status === 'draft'" size="small" @click.stop="openEdit(item)">编辑</el-button>
-            <el-button v-if="item.status === 'draft'" type="primary" size="small" @click.stop="handlePublish(item)">发布</el-button>
+            <!-- 草稿/已驳回均可编辑重提；已发布保持只读（后端暂不支持下架） -->
+            <el-button v-if="item.status === 'draft' || item.status === 'rejected'" size="small" @click.stop="openEdit(item)">编辑</el-button>
+            <el-button v-if="item.status === 'draft' || item.status === 'rejected'" type="primary" size="small" @click.stop="handlePublish(item)">发布</el-button>
             <el-button v-if="item.status === 'draft'" type="warning" size="small" @click.stop="handleReject(item)">驳回</el-button>
             <el-button type="danger" size="small" @click.stop="handleDelete(item)">删除</el-button>
           </div>
@@ -82,11 +83,11 @@
 
 	    <!-- 编辑弹窗 -->
     <el-dialog v-model="editVisible" title="编辑 FAQ" width="560px" destroy-on-close>
-      <el-form :model="editForm" label-width="80px">
-        <el-form-item label="问题" required>
+      <el-form ref="formRef" :model="editForm" :rules="editRules" label-width="80px">
+        <el-form-item label="问题" prop="question">
           <el-input v-model="editForm.question" />
         </el-form-item>
-        <el-form-item label="答案" required>
+        <el-form-item label="答案" prop="answer">
           <el-input v-model="editForm.answer" type="textarea" :rows="5" />
         </el-form-item>
         <el-form-item label="分类">
@@ -138,6 +139,15 @@ const editLoading = ref(false)
 const editForm = ref({ question: '', answer: '', category: null as number | null, tags: [] as string[] })
 const editingId = ref<number | null>(null)
 const existingTags = ref<string[]>([])
+const formRef = ref()
+const editRules = {
+  question: [{ required: true, message: '请输入问题', trigger: 'blur' }],
+  answer: [{ required: true, message: '请输入答案', trigger: 'blur' }],
+}
+
+// 请求序号守卫：Tab/搜索/分类切换与初次加载并发时，慢的旧请求不得覆盖新请求结果
+// （FaqList/MobileFaq 已有同类防护，FaqManage 补齐）
+let searchSeq = 0
 
 onMounted(async () => {
   try {
@@ -147,6 +157,7 @@ onMounted(async () => {
 })
 
 async function loadData() {
+  const seq = ++searchSeq
   loading.value = true
   try {
     const data = await getFaqItemsApi({
@@ -154,11 +165,11 @@ async function loadData() {
       q: keyword.value || undefined,
       category: categoryFilter.value || undefined,
     })
-    list.value = data || []
+    if (seq === searchSeq) list.value = data || []
   } catch {
-    list.value = []
+    if (seq === searchSeq) list.value = []
   } finally {
-    loading.value = false
+    if (seq === searchSeq) loading.value = false
   }
 }
 
@@ -235,6 +246,12 @@ function openEdit(row: FaqItem) {
 
 async function confirmEdit() {
   if (!editingId.value) return
+  // 提交前校验必填项，不通过则中断
+  try {
+    await formRef.value?.validate()
+  } catch {
+    return
+  }
   editLoading.value = true
   try {
     await updateFaqDraftApi(editingId.value, {
@@ -259,7 +276,7 @@ async function confirmEdit() {
 /* ── 头部（匹配日志页 log-title） ── */
 .fm-header { margin-bottom: 24px; }
 .fm-title { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0; letter-spacing: -0.02em; }
-.fm-desc { font-size: 13px; color: #94a3b8; margin: 4px 0 0; }
+.fm-desc { font-size: 13px; color: var(--color-text-secondary, #64748b); margin: 4px 0 0; }
 
 /* ── 工具栏 ── */
 .fm-toolbar { display: flex; gap: 10px; margin-bottom: 20px; }
@@ -277,7 +294,7 @@ async function confirmEdit() {
 }
 .fm-tab:hover { color: #334155; }
 .fm-tab.active {
-  background: #fff; color: #2563eb; font-weight: 600;
+  background: #fff; color: var(--color-primary-deep, #2563eb); font-weight: 600;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
@@ -330,7 +347,7 @@ async function confirmEdit() {
 .fm-card-info { flex: 1; min-width: 0; cursor: pointer; }
 .fm-card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .fm-card-q { font-size: 14.5px; font-weight: 500; color: #1a2332; line-height: 1.4; }
-.fm-card-meta { font-size: 12px; color: #b0b8c8; margin-top: 4px; display: flex; gap: 6px; }
+.fm-card-meta { font-size: 12px; color: var(--color-text-secondary, #64748b); margin-top: 4px; display: flex; gap: 6px; }
 .fm-card-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 
 /* ── 展开详情 ── */
@@ -357,10 +374,10 @@ async function confirmEdit() {
   padding: 3px 10px; border-radius: 12px; font-size: 11px;
   color: #6b7280; background: #f0f2f5; transition: all 0.2s; cursor: default;
 }
-.fm-tag:hover { background: #e4e9f0; color: #2b5fd9; }
-.fm-time { font-size: 12px; color: #c8cdd6; margin-top: 10px; }
+.fm-tag:hover { background: #e4e9f0; color: var(--color-primary-deep, #2563eb); }
+.fm-time { font-size: 12px; color: var(--color-text-secondary, #64748b); margin-top: 10px; }
 
-.fm-empty { text-align: center; padding: 60px 0; color: #94a3b8; font-size: 14px; }
+.fm-empty { text-align: center; padding: 60px 0; color: var(--color-text-secondary, #64748b); font-size: 14px; }
 
 /* ── 分页（居中） ── */
 .faq-pagination { display: flex; justify-content: center; margin-top: 20px; }

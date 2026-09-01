@@ -5,7 +5,7 @@ import request from '@/api/request'
 import logodark from '@/assets/images/logo2.jpg'
 import heroBg from '@/assets/images/hero3.jpg'
 
-/* Dashboard 聚合接口 v1.7 — AllowAny + totals + period=all */
+/* Dashboard 聚合接口 v1.7 — AllowAny（首页数据概览对所有人开放）+ totals + period=all */
 interface DashboardBlock {
   total?: number; total_size?: number; error?: string
   [key: string]: unknown
@@ -20,22 +20,39 @@ interface DashboardResponse {
   }
 }
 
+/* ── 7 项统计指标：字段不可删减 ── */
 const stats = ref([
-  { key: 'users_total',   label: '用户总数', value: 0, suffix: '' },
-  { key: 'total_storage', label: '存储总量', value: 0, suffix: 'GB' },
-  { key: 'upload_total',  label: '资料总数', value: 0, suffix: '' },
-  { key: 'query_total',   label: '查询总数', value: 0, suffix: '' },
-  { key: 'sensitive',     label: '敏感拦截', value: 0, suffix: '' },
-  { key: 'login_total',   label: '登录次数', value: 0, suffix: '' },
-  { key: 'operation',     label: '访问次数', value: 0, suffix: '' },
+  { key: 'users_total',   label: '用户总数', caption: '注册师生账号',       value: 0, suffix: '' },
+  { key: 'total_storage', label: '存储总量', caption: '文档与附件占用空间', value: 0, suffix: 'GB' },
+  { key: 'upload_total',  label: '资料总数', caption: '知识库收录文档',     value: 0, suffix: '' },
+  { key: 'query_total',   label: '查询总数', caption: 'AI 问答累计次数',    value: 0, suffix: '' },
+  { key: 'sensitive',     label: '敏感拦截', caption: '命中敏感词拦截',     value: 0, suffix: '' },
+  { key: 'login_total',   label: '登录次数', caption: '平台累计登录',       value: 0, suffix: '' },
+  { key: 'operation',     label: '访问次数', caption: '页面访问 PV',        value: 0, suffix: '' },
 ])
 
-// ── 数字滚动动画 ──
+/** 统计区间（官方口径标注） */
+const statPeriodLabel = ref('全部')
+function periodLabel(p?: string): string {
+  switch (p) {
+    case 'today': return '今日'
+    case '7d': return '近 7 天'
+    case '30d': return '近 30 天'
+    case 'all': return '全部'
+    default: return p || '全部'
+  }
+}
+
+// ── 数字滚动动画（尊重 prefers-reduced-motion） ──
 const displayVals = ref<number[]>([])
 let animFrame = 0
 
 function animateNumbers(targets: number[]) {
   cancelAnimationFrame(animFrame)
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    displayVals.value = targets
+    return
+  }
   const from = displayVals.value.length ? displayVals.value : targets.map(() => 0)
   const start = performance.now()
   const dur = 1000
@@ -50,9 +67,6 @@ function animateNumbers(targets: number[]) {
   }
   requestAnimationFrame(tick)
 }
-
-
-
 
 function fmtSize(b: number) {
   if (!b) return { v: 0, s: 'GB' }
@@ -72,9 +86,15 @@ function applyStatsVals(users: number, sizeBytes: number, upload: number, query:
   animateNumbers([users, f.v, upload, query, sensitive, login, operation])
 }
 
+/** 统计数据状态：loading 加载中 / ready 已就绪 / error 获取失败 */
+const statsState = ref<'loading' | 'ready' | 'error'>('loading')
+
 async function fetchStats() {
+  // 首页「平台数据概览」对所有人开放（含游客）：后端 dashboard 接口已改为 AllowAny，
+  // 不再做管理员角色限制；请求失败时才显示错误态
   try {
     const dash = await request.get('/admin/logs/dashboard/', { params: { period: 'all' } }) as DashboardResponse
+    statPeriodLabel.value = periodLabel(dash?.period)
     const t = dash?.totals && ok(dash.totals) ? dash.totals : null
     const b = dash?.blocks
     const up = b && ok(b.upload) ? b.upload : null
@@ -83,77 +103,78 @@ async function fetchStats() {
     const lg = b && ok(b.login) ? b.login : null
     const op = b && ok(b.operation) ? b.operation : null
     applyStatsVals(t?.users ?? 0, t?.upload_total_size ?? 0, up?.total ?? 0, qy?.total ?? 0, sn?.total ?? 0, lg?.total ?? 0, op?.total ?? 0)
-  } catch { /* 接口不可用时保留默认值 0 */ }
+    statsState.value = 'ready'
+  } catch {
+    statsState.value = 'error'
+  }
 }
 
 onMounted(() => {
   fetchStats()
 })
-
 </script>
 
 <template>
-  <div class="relative h-[100dvh] flex flex-col overflow-hidden text-white font-sans antialiased">
-    <!-- ═══ 背景图 + 浅色叠加 ═══ -->
-    <img :src="heroBg" alt="" class="absolute inset-0 w-full h-full object-cover" />
-    <div class="absolute inset-0 bg-black/35" />
+  <div class="page-root">
+    <!-- ═══ 背景图 + 原始黑色压层 ═══ -->
+    <img :src="heroBg" alt="" class="bg-img" />
+    <div class="bg-overlay" />
 
     <!-- ═══ Logo ═══ -->
-    <header class="relative z-10 pt-3 px-6 flex items-center gap-3">
-      <img :src="logodark" alt="成都东软学院" class="h-12 w-auto rounded-md" />
+    <header class="header-bar">
+      <img :src="logodark" alt="成都东软学院" class="header-logo" />
     </header>
 
     <!-- ═══ 主体 ═══ -->
-    <main class="relative z-10 flex-1 overflow-y-auto px-6 pt-4 pb-4">
-      <div class="page-grid max-w-7xl mx-auto">
-        <!-- 标题区 — 居中于六边形和登录上方 -->
-        <div class="hero-text col-span-full">
-          <h1 class="hero-title">
-            NeuHub资源系统<br class="sm:hidden" />
-          </h1>
+    <main class="main-area">
+      <div class="page-grid">
+        <!-- 标题区 -->
+        <div class="hero-text">
+          <h1 class="hero-title">NeuHub资源系统</h1>
+          <div class="title-rule" aria-hidden="true"></div>
           <p class="hero-desc">成都东软学院一站式智能知识库系统</p>
         </div>
 
-        <!-- 左：六边形数据 -->
+        <!-- 左：平台数据概览（纯排版，中小屏自动隐藏） -->
         <div class="left-col">
-          <!-- 六边形排版 -->
-          <div class="hex-wrap">
-            <div class="hex-ring">
-              <!-- 上层 -->
-              <div class="hex-node" style="grid-area:a">
-                <span class="h-num">{{ (displayVals[0] ?? 0).toLocaleString() }}</span>
-                <span class="h-lbl">{{ stats[0].label }}</span>
-              </div>
-              <div class="hex-node" style="grid-area:b">
-                <span class="h-num">{{ (displayVals[2] ?? 0).toLocaleString() }}</span>
-                <span class="h-lbl">{{ stats[2].label }}</span>
-              </div>
-              <!-- 中层 -->
-              <div class="hex-node" style="grid-area:c">
-                <span class="h-num">{{ (displayVals[3] ?? 0).toLocaleString() }}</span>
-                <span class="h-lbl">{{ stats[3].label }}</span>
-              </div>
-              <div class="hex-center">
-                <span class="hc-num">{{ (displayVals[1] ?? 0).toLocaleString() }}</span>
-                <span class="hc-suf">{{ stats[1].suffix }}</span>
-                <span class="hc-lbl">{{ stats[1].label }}</span>
-              </div>
-              <div class="hex-node" style="grid-area:d">
-                <span class="h-num">{{ (displayVals[4] ?? 0).toLocaleString() }}</span>
-                <span class="h-lbl">{{ stats[4].label }}</span>
-              </div>
-              <!-- 下层 -->
-              <div class="hex-node" style="grid-area:e">
-                <span class="h-num">{{ (displayVals[5] ?? 0).toLocaleString() }}</span>
-                <span class="h-lbl">{{ stats[5].label }}</span>
-              </div>
-              <div class="hex-node" style="grid-area:f">
-                <span class="h-num">{{ (displayVals[6] ?? 0).toLocaleString() }}</span>
-                <span class="h-lbl">{{ stats[6].label }}</span>
-              </div>
+          <section class="stats-panel" aria-label="平台数据概览">
+            <div class="stats-head">
+              <h2 class="stats-title">
+                <span class="title-tick" aria-hidden="true"></span>平台数据概览
+              </h2>
+              <span v-if="statsState === 'ready'" class="stats-meta">统计区间：{{ statPeriodLabel }} · 平台数据</span>
             </div>
-          </div>
 
+            <template v-if="statsState === 'ready'">
+              <!-- 主导指标：存储总量 -->
+              <div class="stat-feature">
+                <div class="stat-feature-main">
+                  <span class="stat-feature-label">{{ stats[1].label }}</span>
+                  <div class="stat-feature-value">
+                    <span class="sf-num">{{ (displayVals[1] ?? 0).toLocaleString() }}</span>
+                    <span class="sf-unit">{{ stats[1].suffix }}</span>
+                  </div>
+                </div>
+                <span class="stat-feature-caption">{{ stats[1].caption }}</span>
+              </div>
+
+              <!-- 次级指标网格 -->
+              <div class="stat-grid">
+                <div v-for="i in [0, 2, 3, 4, 5, 6]" :key="stats[i].key" class="stat-cell">
+                  <span class="stat-cell-num">
+                    {{ (displayVals[i] ?? 0).toLocaleString() }}
+                    <span v-if="stats[i].suffix" class="stat-cell-unit">{{ stats[i].suffix }}</span>
+                  </span>
+                  <span class="stat-cell-label">{{ stats[i].label }}</span>
+                </div>
+              </div>
+            </template>
+
+            <!-- 加载失败：明确提示，不静默显示 0 -->
+            <div v-else-if="statsState === 'error'" class="stats-empty">
+              <span class="stats-empty-text">统计数据加载失败，请稍后重试</span>
+            </div>
+          </section>
         </div>
 
         <!-- 右：登录 -->
@@ -169,174 +190,245 @@ onMounted(() => {
 
 <style scoped>
 /* ═══════════════════════════════════════════
-   taste-skill: 非对称数据仪表盘
-   超大 hero 数字 + 卡片网格 + 玻璃质感
+   首页 — 高校知识库 · 无面板纯排版
+   关键视觉决策：
+   - 背景保留原图黑色压层（rgba(0,0,0,0.35)）
+   - 数据区无容器、无卡片、无边框：纯白排版直接落在压暗照片上，
+     用文字投影保证可读；蓝撞蓝问题彻底消除
+   - 层级完全由字号驱动：主导 3.4rem → 网格 1.7rem → 标签 0.8rem
+   - 数字全部 tabular-nums，宽度稳定不跳动
    ═══════════════════════════════════════════ */
+
+.page-root {
+  /* ── 组件设计 Token（纯排版体系） ── */
+  --st-radius-lg: 14px;                       /* 登录卡圆角 */
+  --st-shadow-container: 0 24px 64px rgba(2, 10, 26, 0.45);  /* 登录卡投影 */
+  --st-ink-1: #ffffff;
+  --st-ink-2: rgba(255, 255, 255, 0.75);
+  --st-ink-3: rgba(255, 255, 255, 0.55);
+  --st-num-xl: 3.4rem;                        /* 主导指标数字 */
+  --st-num-md: 1.7rem;                        /* 网格数字 */
+  --st-num-sm: 1.1rem;                        /* 单位字号 */
+  --st-label: 0.8rem;
+  --st-caption: 0.75rem;
+  --st-text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);  /* 照片上文字可读 */
+
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #fff;
+  font-family: var(--font-sans, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif);
+  -webkit-font-smoothing: antialiased;
+  background-color: #081a36; /* 图片加载失败的兜底色 */
+}
+.bg-img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+/* 原始黑色压层：保证整页白色内容可读 */
+.bg-overlay {
+  position: absolute; inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.header-bar {
+  position: relative; z-index: 10;
+  display: flex; align-items: center;
+  padding: 14px 28px;
+}
+.header-logo {
+  height: 44px; width: auto;
+  border-radius: 6px;
+}
+
+.main-area {
+  position: relative; z-index: 10;
+  flex: 1;
+  padding: 6px 28px 28px;
+  display: flex; align-items: center;
+}
 
 /* ── 页面栅格 ── */
 .page-grid {
-  width: 100%;
+  width: 100%; max-width: 72rem; margin: 0 auto;
   display: grid; grid-template-columns: 1fr;
   gap: 1.5rem; align-items: start;
 }
 @media (min-width: 1024px) {
-  .page-grid { grid-template-columns: repeat(5, 1fr); gap: 4rem; align-items: start; }
+  .page-grid { grid-template-columns: repeat(5, 1fr); gap: 3.5rem; align-items: center; }
 }
-.left-col { grid-column: span 3; align-self: start; }
-.right-col { grid-column: span 2; margin-top: -4rem; min-height: clamp(360px, 52.6vh, 500px); align-self: start; }
+.left-col { grid-column: span 3; }
+.right-col { grid-column: span 2; align-self: center; }
 
 /* ── Hero 文字 ── */
 .hero-text {
+  grid-column: 1 / -1;
   text-align: center;
-  margin-bottom: clamp(1rem, 4.2vh, 2.5rem);
+  margin-bottom: 1.5rem;
 }
 .hero-title {
-  font-size: clamp(2rem, 6.4vh, 3.8rem); font-weight: 700;
-  letter-spacing: 0.05em; line-height: 1.15;
+  margin: 0;
+  font-size: 2.5rem; font-weight: 700;
+  letter-spacing: 0.05em; line-height: 1.2;
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(4, 14, 32, 0.35);
+}
+@media (min-width: 640px) { .hero-title { font-size: 2.8rem; } }
+@media (min-width: 1024px) { .hero-title { font-size: 3rem; } }
+/* 标题下白线 —— 与纯白排版统一，避免蓝撞蓝 */
+.title-rule {
+  width: 52px; height: 2px;
+  margin: 14px auto 0;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.9);
 }
 .hero-desc {
-  margin: 0.6rem auto 0;
-  font-size: 1.05rem;
-  color: rgba(255,255,255,0.6);
-  line-height: 1.6; max-width: 28rem;
+  margin: 14px auto 0;
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.82);
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  max-width: 28rem;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
 }
-.col-span-full { grid-column: 1 / -1; }
 
-/* ═══ 六边形排版 ═══ */
-.hex-wrap { padding: 4px 0; margin-top: clamp(0.5rem, 3.4vh, 2rem); margin-left: -3rem; }
-.hex-ring {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  grid-template-rows: auto auto auto;
-  grid-template-areas:
-    ". a . b ."
-    "c . CENTER . d"
-    ". e . f .";
-  gap: clamp(0.8rem, 4.2vh, 2.5rem) 1rem;
-  align-items: center;
-  justify-items: center;
-  max-width: 100%;
-}
-.hex-node {
-  text-align: center;
-  animation: hex-rise 0.7s cubic-bezier(0.16,1,0.3,1) both;
-  transition: all 0.4s cubic-bezier(0.16,1,0.3,1);
-  padding: clamp(6px, 1.5vh, 14px) 6px;
+/* ═══ 平台数据概览 — 纯排版，无容器 ═══ */
+.stats-panel {
   width: 100%;
-  border-radius: 16px;
-  background: radial-gradient(ellipse 50% 30% at 50% 30%, rgba(96,165,250,0.06) 0%, transparent 80%);
 }
-.hex-node:hover { background: radial-gradient(ellipse 70% 50% at 50% 30%, rgba(96,165,250,0.2) 0%, transparent 80%); }
-.hex-node:hover { transform: translateY(-3px) scale(1.02); }
-.hex-node:hover .h-lbl { color: rgba(255,255,255,0.85); }
-.h-num {
-  display: block;
-  font-size: clamp(1.4rem, 3.5vh, 2.1rem); font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1; color: #fff;
-  animation: h-float 6s ease-in-out 0.3s infinite, glow-pulse 3s ease-in-out 0.5s infinite;
+
+.stats-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 42px;
 }
-.h-lbl {
-  display: block;
+.stats-title {
+  margin: 0;
+  display: flex; align-items: center;
+  font-size: 1.1rem; font-weight: 600;
+  color: var(--st-ink-1); letter-spacing: 0.08em;
+  text-shadow: var(--st-text-shadow);
+}
+/* 标题前白色刻度 —— 公文/政务标识，纯白体系 */
+.title-tick {
+  width: 4px; height: 16px;
+  margin-right: 10px;
+  border-radius: 2px;
+  background: #fff; opacity: 0.9;
+}
+.stats-meta {
+  font-size: var(--st-caption);
+  color: var(--st-ink-2);
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* ── 主导指标：存储总量 ── */
+.stat-feature {
+  display: flex; align-items: flex-end; gap: 16px;
+  margin-bottom: 46px;
+}
+.stat-feature-main { display: flex; flex-direction: column; gap: 10px; }
+.stat-feature-label {
   font-size: 0.9rem; font-weight: 500;
-  color: rgba(255,255,255,0.45);
-  margin-top: 2px;
-  white-space: nowrap;
-  transition: color 0.3s;
+  color: var(--st-ink-2); letter-spacing: 0.08em;
+  text-shadow: var(--st-text-shadow);
+}
+.stat-feature-value { display: inline-flex; align-items: baseline; }
+.sf-num {
+  font-size: var(--st-num-xl); font-weight: 700; line-height: 1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--st-ink-1);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+}
+.sf-unit {
+  font-size: var(--st-num-sm); font-weight: 600;
+  color: var(--st-ink-2);
+  margin-left: 6px;
+}
+.stat-feature-caption {
+  margin-left: auto;
+  align-self: flex-end;
+  font-size: var(--st-caption);
+  color: var(--st-ink-3);
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 
-/* 中心大数字 */
-.hex-center {
-  grid-area: CENTER;
+/* ── 次级指标网格 ── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 36px 12px;
+}
+.stat-cell {
   text-align: center;
-  padding: clamp(10px, 2.9vh, 28px) 16px;
-  animation: hex-rise 0.8s cubic-bezier(0.16,1,0.3,1) 0.1s both;
-  width: 100%;
-  border-radius: 20px;
-  background: radial-gradient(ellipse 60% 40% at 50% 30%, rgba(96,165,250,0.1) 0%, transparent 80%);
-  transition: all 0.4s cubic-bezier(0.16,1,0.3,1);
+  min-width: 0;
 }
-.hex-center:hover { background: radial-gradient(ellipse 80% 60% at 50% 30%, rgba(96,165,250,0.25) 0%, transparent 80%); transform: scale(1.02); }
-.hex-center:hover .hc-lbl { color: rgba(255,255,255,0.85); }
-.hex-center:hover .hc-num { filter: brightness(1.15); }
-.hc-num {
-  font-size: clamp(2rem, 6vh, 3.6rem); font-weight: 700;
-  letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
-  line-height: 1; color: #fff;
-  display: inline;
-  animation: h-float 7s ease-in-out 0.3s infinite, glow-pulse 4s ease-in-out 0.5s infinite;
-}
-.hc-suf {
-  font-size: 1.3rem; font-weight: 600;
-  color: rgba(255,255,255,0.45);
-  margin-left: 4px;
-  display: inline;
-}
-.hc-lbl {
+.stat-cell-num {
   display: block;
-  font-size: 1.2rem; font-weight: 500;
-  color: rgba(255,255,255,0.4);
-  margin-top: 6px;
-  transition: color 0.3s;
+  font-size: var(--st-num-md); font-weight: 700; line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--st-ink-1);
+  text-shadow: var(--st-text-shadow);
+}
+.stat-cell-unit {
+  font-size: 0.85rem; font-weight: 600;
+  color: var(--st-ink-2);
+  margin-left: 4px;
+}
+.stat-cell-label {
+  display: block;
+  margin-top: 9px;
+  font-size: var(--st-label);
+  color: var(--st-ink-2);
+  letter-spacing: 0.06em;
+  text-shadow: var(--st-text-shadow);
 }
 
-@keyframes hex-rise {
-  0% { opacity: 0; transform: translateY(24px) scale(0.92); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
+/* 无权限/失败的空态 */
+.stats-empty {
+  padding: 40px 0;
+  text-align: center;
 }
-@keyframes h-float {
-  0%, 100% { transform: translateY(0); }
-  33% { transform: translateY(-5px); }
-  66% { transform: translateY(2px); }
-}
-@keyframes glow-pulse {
-  0%, 100% { filter: brightness(1); }
-  50% { filter: brightness(1.12); }
+.stats-empty-text {
+  font-size: var(--st-label);
+  color: var(--st-ink-2);
+  letter-spacing: 0.04em;
+  text-shadow: var(--st-text-shadow);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .s1-hero, .s1-cell { animation: none !important; opacity: 1 !important; }
-  .s1-hero-num, .s1-num { animation: none !important; }
-  .s1-cell:hover { transform: none !important; }
-}
-
-@keyframes g322-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes g322-num-in {
-  from { opacity: 0; transform: scale(0.8); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .g322-cell { animation: none !important; }
-  .g322-num { animation: none !important; }
-  .g322-cell:hover { filter: none; }
-}
-
-/* ═══ 登录卡片 — Glass ═══ */
+/* ═══ 登录卡 — 纯白实体卡 · 标准登录样式 ═══
+   最小高度 ≥ 账号表单自然高度（约 555px），内容区纵向撑满：
+   扫码视图填入同一高度，账号/扫码两模式外框恒定不变 */
 .login-card {
-  border-radius: 18px;
-  min-height: clamp(320px, 44vh, 420px);
-  background: rgba(255,255,255,0.12);
-  border: 1px solid rgba(255,255,255,0.15);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  /* 兜底：不支持 backdrop-filter 时用更实底色 */
-  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-    background: rgba(255,255,255,0.25);
-  }
-  padding: 18px 16px;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.2),
-    0 8px 32px rgba(0,0,0,0.08);
-  transition: box-shadow 0.3s, transform 0.3s;
+  border-radius: var(--st-radius-lg);
+  min-height: 580px;
+  background: #fff;
+  padding: 28px 26px;
+  box-shadow: var(--st-shadow-container);
+  display: flex;
+  flex-direction: column;
 }
-.login-card:hover {
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.25),
-    0 12px 40px rgba(0,0,0,0.12);
-  transform: translateY(-2px);
+/* 内容区撑满卡片：扫码视图在剩余高度中垂直居中，外框不因切换而变 */
+.login-card :deep(.login-card-w) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 窄屏：隐藏统计模块，仅保留登录弹窗 ── */
+@media (max-width: 1023.98px) {
+  .left-col { display: none; }
+  .right-col { grid-column: 1; justify-self: center; width: 100%; max-width: 460px; }
+}
+
+@media (max-width: 640px) {
+  .main-area { padding: 4px 16px 20px; }
+  .hero-title { font-size: 2.2rem; }
+  .login-card { padding: 22px 18px; }
 }
 </style>

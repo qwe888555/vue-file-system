@@ -3,7 +3,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Check, Close } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Check, Close, ArrowLeft, Edit, Download, Delete, View, Loading } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import type { KnowledgeFile } from '@/types'
 import { getDocDetailApi, deleteDocApi, downloadDocApi, previewDocApi, updateDocApi, extractFreshnessApi } from '@/api/knowledge'
@@ -19,6 +19,8 @@ const sanitizedPreviewContent = computed(() => DOMPurify.sanitize(previewContent
 const isLoading = ref(false)
 const isEditing = ref(false)
 const editContent = ref('')
+// 原始内容（preview 接口返回的未渲染 Markdown/文本），编辑时写回此值，避免误存渲染后的 HTML
+const rawContent = ref('')
 
 const md = new MarkdownIt({
   html: true,
@@ -43,7 +45,7 @@ const fileTypeColors: Record<string, string> = {
   image: '#67c23a',
   audio: '#909399',
   video: '#e6a23c',
-  archive: '#9b59b6',
+  archive: 'var(--color-type-archive, #9b59b6)',
   txt: '#409eff',
   md: '#409eff',
 }
@@ -212,11 +214,12 @@ async function loadFileContent() {
   
   try {
     const result = await previewDocApi(file.value.id)
-    console.log('预览接口响应:', result)
-    
+    // 记录原始内容（未渲染），供编辑回写
+    rawContent.value = result.content || ''
+
     if (result.content) {
       const contentType = result.content_type || ''
-      
+
       if (contentType.includes('markdown') || ['md', 'markdown'].includes(fileExtension.value)) {
         previewContent.value = md.render(result.content)
       } else if (contentType.includes('text') || ['txt', 'html'].includes(fileExtension.value)) {
@@ -231,7 +234,8 @@ async function loadFileContent() {
     }
   } catch (error) {
     console.error('获取文件预览失败:', error)
-    
+
+    rawContent.value = file.value?.content || ''
     if (file.value.content) {
       if (['md', 'markdown'].includes(fileExtension.value)) {
         previewContent.value = md.render(file.value.content)
@@ -252,46 +256,38 @@ function goBack() {
 
 async function handleDownload() {
   if (!file.value) return
-  
+
   try {
-    const { data: blob, headers } = await downloadDocApi(file.value.id)
-    
+    // downloadDocApi 返回 Blob 本身（拦截器已解包 response.data），不能按 {data, headers} 解构
+    const blob = await downloadDocApi(file.value.id)
+
+    // 文件名取自文档元数据（标题通常已含扩展名），无需解析 content-disposition
     let fileName = file.value.title || 'download'
-    
-    const contentDisposition = headers['content-disposition'] || headers['Content-Disposition']
-    if (contentDisposition) {
-      const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
-      if (match && match[1]) {
-        fileName = match[1].replace(/['"]/g, '')
-      }
-    }
-    
-    const contentType = headers['content-type'] || headers['Content-Type']
+
     const extMap: Record<string, string> = {
-      'application/pdf': '.pdf',
-      'application/msword': '.doc',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
-      'application/vnd.ms-excel': '.xls',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
-      'application/vnd.ms-powerpoint': '.ppt',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
-      'text/plain': '.txt',
-      'text/html': '.html',
-      'image/jpeg': '.jpg',
-      'image/png': '.png',
-      'image/gif': '.gif',
-      'application/json': '.json',
-      'application/zip': '.zip',
-      'application/rar': '.rar',
+      pdf: '.pdf',
+      doc: '.doc',
+      docx: '.docx',
+      xls: '.xls',
+      xlsx: '.xlsx',
+      ppt: '.ppt',
+      pptx: '.pptx',
+      txt: '.txt',
+      html: '.html',
+      jpg: '.jpg',
+      jpeg: '.jpeg',
+      png: '.png',
+      gif: '.gif',
+      json: '.json',
+      zip: '.zip',
+      rar: '.rar',
     }
-    
-    if (contentType && extMap[contentType]) {
-      const ext = extMap[contentType]
-      if (!fileName.toLowerCase().endsWith(ext)) {
-        fileName += ext
-      }
+
+    const fileExt = getFileExtension(file.value.title)
+    if (!fileExt && file.value.fileType && extMap[file.value.fileType]) {
+      fileName += extMap[file.value.fileType]
     }
-    
+
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -308,7 +304,8 @@ async function handleDownload() {
 }
 
 function startEdit() {
-  editContent.value = file.value?.content || previewContent.value || ''
+  // 优先用原始内容（preview 接口返回的 Markdown），绝不用渲染后的 previewContent（HTML）
+  editContent.value = rawContent.value || file.value?.content || ''
   isEditing.value = true
 }
 
@@ -462,7 +459,7 @@ onMounted(() => {
       <div class="preview-card">
         <div class="preview-header">
           <h4 class="preview-title">
-            <el-icon><Eye /></el-icon>
+            <el-icon><View /></el-icon>
             文件预览
           </h4>
           <div v-if="!isEditing" class="preview-actions">
@@ -498,11 +495,13 @@ onMounted(() => {
             />
           </div>
 
-          <div v-if="previewContent" class="content-preview">
+          <!-- 仅 Markdown 渲染为 HTML（已过 DOMPurify 净化）；纯文本/JSON/Word 走 <pre> 保留换行 -->
+          <div v-if="previewType === 'markdown' && previewContent" class="content-preview markdown-preview">
+            <!-- eslint-disable-next-line vue/no-v-html -- 内容经 DOMPurify.sanitize 净化，安全 -->
             <div v-html="sanitizedPreviewContent"></div>
           </div>
 
-          <div v-else-if="previewType === 'text' || (['doc', 'docx'].includes(fileExtension))" class="text-preview">
+          <div v-else-if="previewType === 'text' || previewType === 'json' || (['doc', 'docx'].includes(fileExtension))" class="text-preview">
             <pre>{{ previewContent || '文件内容为空' }}</pre>
           </div>
 
@@ -809,20 +808,26 @@ onMounted(() => {
 }
 
 .markdown-preview :deep(code) {
-  background: #f0f0f0;
+  background: rgba(0, 0, 0, 0.06);
   padding: 2px 6px;
   border-radius: 4px;
-  font-family: monospace;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 13px;
 }
 
 .markdown-preview :deep(pre) {
-  background: #1e1e1e;
-  color: #d4d4d4;
+  background: #f6f8fa;
+  color: #1f2937;
   padding: 16px;
-  border-radius: 8px;
+  border-radius: 6px;
   overflow-x: auto;
   margin: 12px 0;
+}
+
+.markdown-preview :deep(pre code) {
+  background: none;
+  padding: 0;
+  font-size: 0.9em;
 }
 
 .markdown-preview :deep(a) {

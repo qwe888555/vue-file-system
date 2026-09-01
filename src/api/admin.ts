@@ -108,6 +108,28 @@ export function getCollegesApi(): Promise<{ count: number; results: College[] }>
   return request.get('/admin/colleges/')
 }
 
+/** 新建学院 */
+export function createCollegeApi(data: {
+  name: string
+  code?: string
+  sort_order?: number
+}): Promise<College> {
+  return request.post('/admin/colleges/', data)
+}
+
+/** 编辑学院 */
+export function updateCollegeApi(
+  id: number,
+  data: { name?: string; code?: string; sort_order?: number },
+): Promise<College> {
+  return request.put(`/admin/colleges/${id}/`, data)
+}
+
+/** 删除学院 */
+export function deleteCollegeApi(id: number): Promise<{ detail: string }> {
+  return request.delete(`/admin/colleges/${id}/`)
+}
+
 // ══════════════════════════════════════
 //  部门管理 — /api/admin/departments/
 // ══════════════════════════════════════
@@ -124,6 +146,28 @@ export function getDepartmentsApi(params?: {
   college_id?: number
 }): Promise<{ count: number; results: Department[] }> {
   return request.get('/admin/departments/', { params })
+}
+
+/** 新建部门 */
+export function createDepartmentApi(data: {
+  name: string
+  parent?: number | null
+  sort_order?: number
+}): Promise<Department> {
+  return request.post('/admin/departments/', data)
+}
+
+/** 编辑部门 */
+export function updateDepartmentApi(
+  id: number,
+  data: { name?: string; parent?: number | null; sort_order?: number },
+): Promise<Department> {
+  return request.put(`/admin/departments/${id}/`, data)
+}
+
+/** 删除部门 */
+export function deleteDepartmentApi(id: number): Promise<{ detail: string }> {
+  return request.delete(`/admin/departments/${id}/`)
 }
 
 // ══════════════════════════════════════

@@ -20,8 +20,6 @@ export const allMenus: MenuItem[] = [
     icon: 'Folder',
     children: [
       { path: '/knowledge/list', name: 'DocList', title: '文档列表' },
-      { path: '/knowledge/upload', name: 'DocUpload', title: '上传文档' },
-      { path: '/knowledge/browse', name: 'Browse', title: '分类浏览' },
     ],
   },
   {
@@ -49,6 +47,13 @@ export const allMenus: MenuItem[] = [
     icon: 'Setting',
     children: [
       { path: '/admin/users', name: 'UserManage', title: '用户账号' },
+      {
+        path: '/admin/orgs',
+        name: 'OrgManage',
+        title: '所属单位',
+        // 平台级组织架构维护权限：学院/部门仅平台管理员可操作
+        meta: { roles: ['super_admin', 'admin', 'admin_csic'] },
+      },
     ],
   },
   {

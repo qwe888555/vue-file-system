@@ -3,13 +3,18 @@
 import { computed } from 'vue'
 import { useUserStore } from '@/store/user'
 
+const props = defineProps<{
+  show: boolean
+}>()
+
 const emit = defineEmits<{
   close: []
   logout: []
 }>()
 
 const userStore = useUserStore()
-const displayName = computed(() => userStore.username || '用户')
+// store 暴露的是 displayName 计算属性，而非 username 字段
+const displayName = computed(() => userStore.displayName || '用户')
 const roleLabel = computed(() => {
   const r = userStore.role
   if (r === 'superadmin') return '超级管理员'

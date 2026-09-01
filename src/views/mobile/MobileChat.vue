@@ -2,6 +2,7 @@
 // ── 手机端智能问答（豆包风格）──
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
@@ -17,6 +18,10 @@ const isRecording = ref(false)
 let mediaRecorder: MediaRecorder | null = null
 const streamingContent = ref('')
 let currentSSE: ReturnType<typeof useSSE> | null = null
+// 当前流的 content watcher（仅监听最新流，发送新消息前解除旧的，防止累积）
+let stopContentWatch: (() => void) | null = null
+// 流序号：会话切换/新请求时自增，使在途 SSE 回调失效（防止回复写入错误会话）
+let streamSeq = 0
 
 // 热点问题
 const hotQuestions = ref<Array<{ question: string; count: number }>>([])
@@ -111,12 +116,21 @@ const isLoggedIn = computed(() => !!userStore.token)
 async function sendMessage() {
   const text = inputText.value.trim()
   if (!text || isStreaming.value) return
+
+  // 游客必须登录后才能提问（避免静默失败无反馈）
+  if (!isLoggedIn.value) {
+    ElMessage.warning('请先登录后再提问')
+    router.push('/mobile/login')
+    return
+  }
+
   currentSSE?.close()
   if (!chat.currentConversationId.value) {
     const conv = await chat.createConversation()
     if (!conv) return
   }
   const convId = chat.currentConversationId.value!
+  const mySeq = ++streamSeq
   chat.appendUserMessage(text)
   inputText.value = ''
 
@@ -124,12 +138,19 @@ async function sendMessage() {
   streamingContent.value = ''
 
   currentSSE = useSSE(convId, text, () => {
+    // 过期回调：期间已切换会话或发起新请求，丢弃本次回复
+    if (mySeq !== streamSeq) return
     isStreaming.value = false
     const realId = currentSSE?.messageId?.value
     chat.appendAssistantMessage(streamingContent.value, undefined, realId || undefined)
     streamingContent.value = ''
   })
-  watch(currentSSE.content, (val) => { streamingContent.value = val })
+  // 解除前一轮 watcher，防止累积；仅最新流的 token 写入 streamingContent
+  stopContentWatch?.()
+  stopContentWatch = watch(currentSSE.content, (val) => {
+    if (mySeq !== streamSeq) return
+    streamingContent.value = val
+  })
 }
 
 function handleFeedback(messageId: number, type: 'like' | 'dislike') {
@@ -138,11 +159,20 @@ function handleFeedback(messageId: number, type: 'like' | 'dislike') {
 
 function handleSelectHistory(id: number) {
   showHistory.value = false
+  // 使在途 SSE 回调失效，避免旧回复写入新选中的会话
+  streamSeq++
+  currentSSE?.close()
+  isStreaming.value = false
+  streamingContent.value = ''
   chat.selectConversation(id)
 }
 
 function handleNewChat() {
   showHistory.value = false
+  streamSeq++
+  currentSSE?.close()
+  isStreaming.value = false
+  streamingContent.value = ''
   chat.currentConversationId.value = null
 }
 
@@ -277,17 +307,31 @@ onMounted(async () => {
   }
   loadHotQuestions()
   if (isLoggedIn.value) {
-    localStorage.removeItem('chat_conversations_cache')
+    sessionStorage.removeItem('chat_conversations_cache')
     chat.init()
     chat.fetchConversations()
   } else {
     // 未登录时清除缓存，避免看到上一账号的历史记录
-    localStorage.removeItem('chat_conversations_cache')
+    sessionStorage.removeItem('chat_conversations_cache')
     chat.conversations.value = []
   }
 })
 onUnmounted(() => {
   document.removeEventListener('click', onDocClick)
+  // 离开页面时中止在途 SSE、停止录音，释放麦克风等资源（与桌面端 ChatHome 一致）
+  streamSeq++
+  stopContentWatch?.()
+  stopContentWatch = null
+  currentSSE?.close()
+  if (speechRecognition) {
+    try { speechRecognition.stop() } catch { /* 已停止 */ }
+    speechRecognition = null
+  }
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    try { mediaRecorder.stop() } catch { /* 已停止 */ }
+  }
+  mediaRecorder = null
+  isRecording.value = false
 })
 </script>
 
@@ -492,12 +536,10 @@ onUnmounted(() => {
 }
 
 .mobile-chat {
-  height: 100vh;
-  height: -webkit-fill-available; /* iOS Safari < 15 兼容 */
-  height: 100dvh;
+  flex: 1; min-height: 0;
   display: flex; flex-direction: column;
-  background: #fff; font-family: -apple-system, 'PingFang SC', sans-serif;
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0; /* 兜底方案：直接固定四边 */
+  background: #fff; font-family: var(--font-sans);
+  touch-action: manipulation; /* 消除 300ms 点击延迟 */
 }
 /* 顶栏 */
 .m-topbar {
@@ -507,21 +549,22 @@ onUnmounted(() => {
   padding-top: env(safe-area-inset-top);      /* iOS 11.2+ */
 }
 .m-menu-btn {
-  width: 36px; height: 36px; border: none; background: none;
+  width: 44px; height: 44px; border: none; background: none;
   color: #333; cursor: pointer; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
+  margin-left: -6px; /* 视觉上与左边缘对齐 */
 }
 .m-menu-btn:active { background: #f0f0f0; }
 .m-title { font-size: 17px; font-weight: 600; color: #1f1f1f; }
 
 /* 对话区 */
-.m-messages { flex: 1; overflow-y: auto; padding: 8px 0; -webkit-overflow-scrolling: touch; }
+.m-messages { flex: 1; overflow-y: auto; padding: 8px 0; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .m-msgs-inner { padding: 0 8px; display: flex; flex-direction: column; gap: 12px; }
 
 /* 欢迎页 */
 .m-welcome { display: flex; flex-direction: column; align-items: center; padding: 60px 20px 30px; text-align: center; }
 .m-welcome-icon { margin-bottom: 16px; }
-.m-welcome-title { font-size: 18px; font-weight: 400; color: #333; margin: 0 0 20px; }
+.m-welcome-title { font-size: var(--text-h2, 20px); font-weight: 600; color: #333; margin: 0 0 20px; }
 
 /* 热点问题 */
 .m-hot-questions {
@@ -540,36 +583,135 @@ onUnmounted(() => {
   border: none; border-radius: 16px;
   font-size: 13px; color: #444;
   cursor: pointer; white-space: nowrap;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s;
 }
 .m-q-btn:active { background: #e8e8ed; color: #409eff; }
 
 /* 输入栏 */
 .m-input-area {
   flex-shrink: 0; padding: 8px 12px 12px;
-  padding-bottom: calc(12px + constant(safe-area-inset-bottom)); /* iOS 11.0 */
-  padding-bottom: calc(12px + env(safe-area-inset-bottom));      /* iOS 11.2+ */
 }
 .m-input-wrap {
-  display: flex; align-items: center; gap: 8px;
-  background: #fff; border-radius: 22px;
-  padding: 4px 4px 4px 16px;
+  display: flex; align-items: center; gap: 4px;
+  background: #fff; border-radius: 24px;
+  padding: 3px 3px 3px 16px;
   border: 2px solid #d0d5dd;
 }
-.m-input { flex: 1; border: none; background: none; outline: none; font-size: 15px; padding: 8px 0; color: #1f1f1f; }
-.m-input::placeholder { color: #aaa; }
+.m-input { flex: 1; border: none; background: none; outline: none; font-size: 16px; padding: 9px 0; color: #1f1f1f; }
+.m-input::placeholder { color: var(--color-text-placeholder, #6b7280); }
 .m-mic-btn {
-  width: 32px; height: 32px; border-radius: 50%;
-  border: none; background: transparent; color: #8e9ebd;
+  width: 44px; height: 44px; border-radius: 50%;
+  border: none; background: transparent; color: var(--color-text-secondary, #64748b);
   display: flex; align-items: center; justify-content: center; cursor: pointer;
-  transition: all 0.2s; flex-shrink: 0; padding: 0; font-size: 15px; line-height: 1;
+  transition: background-color 0.2s, color 0.2s; flex-shrink: 0; padding: 0; font-size: 15px; line-height: 1;
 }
 .m-mic-btn:hover { background: rgba(64,158,255,0.08); color: #409eff; }
+.m-mic-btn:active { background: rgba(64,158,255,0.15); }
 .m-mic-btn.recording { color: #f56c6c; animation: mPulse 1s ease-in-out infinite; }
 @keyframes mPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.m-send-btn {
+  width: 44px; height: 44px; border-radius: 50%;
+  border: none; background: #409eff; color: #fff;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  flex-shrink: 0; padding: 0; transition: transform 0.2s, background-color 0.2s;
+}
+.m-send-btn:active { transform: scale(0.95); background: #3d8ee8; }
+.m-send-btn:disabled { background: #d9d9d9; cursor: not-allowed; }
 
-.panel-slide-enter-active { transition: all 0.3s ease; }
-.panel-slide-leave-active { transition: all 0.2s ease; }
+/* 历史侧边面板（左侧滑入，6/7 宽） */
+.m-panel-wrap { position: fixed; inset: 0; z-index: 500; display: flex; }
+.m-panel {
+  width: calc(100vw * 6 / 7);
+  max-width: 340px;
+  background: #fff;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 4px 0 24px rgba(0,0,0,0.08);
+}
+.m-panel-overlay { flex: 1; background: rgba(0,0,0,0.35); }
+
+.m-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 56px; padding: 8px 16px 8px 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.m-panel-title { font-size: 17px; font-weight: 600; color: #1f1f1f; }
+.m-panel-close {
+  width: 44px; height: 44px; border: none; background: none;
+  font-size: 22px; color: #999; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+}
+.m-panel-close:active { background: #f5f5f5; }
+
+/* 搜索 */
+.m-panel-search {
+  display: flex; align-items: center; gap: 6px;
+  margin: 12px 16px; min-height: 44px; padding: 0 12px;
+  background: #f5f5f7; border-radius: 10px; color: #999;
+}
+.m-panel-search svg { flex-shrink: 0; }
+.m-panel-search input {
+  flex: 1; border: none; background: transparent; outline: none;
+  font-size: 16px; color: #333; min-width: 0;
+}
+.m-panel-search input::placeholder { color: #bbb; }
+
+.m-panel-new-btn {
+  margin: 0 16px 10px; min-height: 44px;
+  border: 1px dashed #d0d0d0; border-radius: 10px;
+  background: none; color: #409eff; font-size: 14px; cursor: pointer;
+}
+.m-panel-new-btn:active { background: #f0f4ff; }
+
+.m-panel-list { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 0 8px; }
+.m-panel-item {
+  display: flex; align-items: center; min-height: 52px; padding: 8px 12px;
+  border-radius: 10px; cursor: pointer;
+}
+.m-panel-item:active { background: #f5f5f5; }
+.m-panel-item.active { background: #f0f4ff; }
+.m-panel-item-icon { color: #a8b0bd; margin-right: 10px; flex-shrink: 0; }
+.m-panel-item.active .m-panel-item-icon { color: #409eff; }
+.m-panel-item-content { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.m-panel-item-title {
+  flex: 1; font-size: 14px; color: #333;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.m-panel-item-time { font-size: 11px; color: var(--color-text-secondary, #64748b); flex-shrink: 0; }
+
+/* 未登录提示 */
+.m-panel-login-hint { padding: 24px 20px; text-align: center; }
+.m-panel-login-hint p { font-size: 13px; color: var(--color-text-secondary, #64748b); margin: 0; }
+
+/* 底部用户 */
+.m-panel-footer {
+  border-top: 1px solid #f0f0f0;
+  padding-bottom: constant(safe-area-inset-bottom); /* iOS 11.0 */
+  padding-bottom: env(safe-area-inset-bottom);      /* iOS 11.2+ */
+}
+.m-panel-user {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 56px; padding: 10px 16px; cursor: pointer;
+}
+.m-panel-user:active { background: #f5f5f5; }
+.m-panel-avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: rgba(64,158,255,0.15); color: #409eff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 600; flex-shrink: 0;
+}
+.m-panel-avatar-guest { background: #f0f0f0; color: #999; }
+.m-panel-username { flex: 1; font-size: 14px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-panel-logout { color: var(--color-text-secondary, #64748b); }
+.m-panel-login-tip { font-size: 13px; color: #409eff; }
+
+.panel-slide-enter-active { transition: transform 0.3s ease, opacity 0.3s ease; }
+.panel-slide-leave-active { transition: transform 0.2s ease, opacity 0.2s ease; }
+/* 子元素自身需要 transition 才会平滑播放滑入/淡入 */
+.panel-slide-enter-active .m-panel { transition: transform 0.3s ease; }
+.panel-slide-enter-active .m-panel-overlay { transition: opacity 0.3s ease; }
+.panel-slide-leave-active .m-panel { transition: transform 0.2s ease; }
+.panel-slide-leave-active .m-panel-overlay { transition: opacity 0.2s ease; }
 .panel-slide-enter-from .m-panel { transform: translateX(-100%); }
 .panel-slide-enter-from .m-panel-overlay { opacity: 0; }
 .panel-slide-leave-to .m-panel { transform: translateX(-100%); }
@@ -595,8 +737,8 @@ onUnmounted(() => {
 .ctx-item-danger .ctx-item-icon { color: #f56c6c; }
 .ctx-divider { height: 1px; background: #f0f0f0; margin: 0 16px; }
 
-.ctx-pop-enter-active { transition: all 0.2s ease-out; }
-.ctx-pop-leave-active { transition: all 0.15s ease-in; }
+.ctx-pop-enter-active { transition: opacity 0.2s ease-out, transform 0.2s ease-out; }
+.ctx-pop-leave-active { transition: opacity 0.15s ease-in, transform 0.15s ease-in; }
 .ctx-pop-enter-from { opacity: 0; transform: translateX(-50%) translateY(12px); }
 .ctx-pop-leave-to { opacity: 0; transform: translateX(-50%) translateY(8px); }
 
@@ -624,8 +766,8 @@ onUnmounted(() => {
 
 /* 欢迎页加载动画 */
 .loader {
-  --color-one: #ffbf48;
-  --color-two: #be4a1d;
+  --color-one: var(--color-loader-amber, #ffbf48);
+  --color-two: var(--color-loader-rust, #be4a1d);
   --color-three: #ffbf4780;
   --color-four: #bf4a1d80;
   --color-five: #ffbf4740;
@@ -663,4 +805,13 @@ onUnmounted(() => {
 @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 @keyframes roundness { 0% { filter: contrast(15); } 20% { filter: contrast(3); } 40% { filter: contrast(3); } 60% { filter: contrast(15); } 100% { filter: contrast(15); } }
 @keyframes colorize { 0% { filter: hue-rotate(0deg); } 20% { filter: hue-rotate(-30deg); } 40% { filter: hue-rotate(-60deg); } 60% { filter: hue-rotate(-90deg); } 80% { filter: hue-rotate(-45deg); } 100% { filter: hue-rotate(0deg); } }
+
+/* 尊重系统「减弱动态效果」设置 */
+@media (prefers-reduced-motion: reduce) {
+  .loader, .loader::before, .loader .box,
+  .loader svg #clipping, .loader svg #clipping polygon,
+  .m-mic-btn.recording {
+    animation: none !important;
+  }
+}
 </style>

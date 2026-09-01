@@ -8,6 +8,7 @@
       :create-api="createLocalAccount"
       :update-api="updateLocalAccount"
       :delete-api="deleteLocalAccount"
+      :before-delete="beforeDeleteAccount"
       :filters="defaultFilters"
       :page-size="15"
     >
@@ -68,15 +69,15 @@
 
       <!-- 操作列前置：编辑 -->
       <template #actions-prepend="{ row }">
-        <el-button type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+        <el-button v-permission="'edit'" type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
       </template>
 
       <!-- 批量操作 -->
       <template #batch-actions="{ selection }">
-        <el-button type="danger" size="small" @click="handleBatchDelete(selection)">
+        <el-button v-permission="'batch-delete'" type="danger" size="small" @click="handleBatchDelete(selection)">
           批量删除
         </el-button>
-        <el-button type="warning" size="small" @click="handleBatchReset(selection)">
+        <el-button v-permission="'batch-reset-password'" type="warning" size="small" @click="handleBatchReset(selection)">
           批量修改密码
         </el-button>
       </template>
@@ -387,9 +388,27 @@ function handleEdit(row: any) {
   })
 }
 
+// ── 删除越权保护 ──
+// 规则：不能删除当前登录账号；非超级管理员不能删除超级管理员
+function beforeDeleteAccount(row: any): boolean | string {
+  if (userStore.userInfo && row.id === userStore.userInfo.id) {
+    return '不能删除当前登录账号'
+  }
+  if (row.role === 'super_admin' && !isSuperAdmin.value) {
+    return '无权删除超级管理员账号'
+  }
+  return true
+}
+
 // ── 批量删除 ──
 async function handleBatchDelete(selection: any[]) {
   if (!selection.length) return
+  // 批量删除同样受越权保护约束
+  const blocked = selection.find((r) => beforeDeleteAccount(r) !== true)
+  if (blocked) {
+    ElMessage.warning('选中项包含当前登录账号或超级管理员，已阻止批量删除')
+    return
+  }
   try {
     await ElMessageBox.confirm(
       `确定删除选中的 ${selection.length} 个账号吗？此操作不可撤销。`,
@@ -487,12 +506,12 @@ async function confirmBatchReset() {
 
 .role-pill:hover {
   background: #eef3fe;
-  color: #2563eb;
+  color: var(--color-primary-deep, #2563eb);
 }
 
 .role-pill.active {
   background: #fff;
-  color: #2563eb;
+  color: var(--color-primary-deep, #2563eb);
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }

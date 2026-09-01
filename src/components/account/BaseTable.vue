@@ -3,7 +3,7 @@
     <!-- 标题栏 -->
     <div class="table-header">
       <h3 class="table-title">{{ title }}</h3>
-      <el-button v-if="createApi" type="primary" @click="handleAdd">+ 新增</el-button>
+      <el-button v-if="createApi" v-permission="'create'" type="primary" @click="handleAdd">+ 新增</el-button>
     </div>
 
     <!-- 搜索栏 -->
@@ -66,6 +66,7 @@
           <slot name="actions-append" :row="row" :index="$index" />
           <el-button
             v-if="deleteApi"
+            v-permission="'delete'"
             type="danger"
             size="small"
             @click="handleDelete(row)"
@@ -97,7 +98,7 @@
     <!-- 新增/编辑弹窗 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="isEdit ? '编辑' : '新增账号'"
+      :title="(isEdit ? '编辑' : '新增') + dialogTitle"
       :width="dialogWidth"
       :close-on-click-modal="false"
       destroy-on-close
@@ -128,6 +129,8 @@ interface BaseTableProps {
   createApi?: (data: any) => Promise<any>
   updateApi?: (id: number, data: any) => Promise<any>
   deleteApi?: (id: number) => Promise<any>
+  /** 删除前越权保护钩子：返回 false 静默中断；返回字符串则提示后中断；返回 true/undefined 继续 */
+  beforeDelete?: (row: any) => boolean | string | Promise<boolean | string>
   filters?: Record<string, any>
   immediate?: boolean
   showActions?: boolean
@@ -135,6 +138,10 @@ interface BaseTableProps {
   dialogWidth?: string
   rowKey?: string
   paginated?: boolean
+  /** 弹窗实体名词（默认「账号」）：标题为「新增/编辑 + 名词」 */
+  dialogTitle?: string
+  /** 删除确认文案（默认针对「账号」） */
+  deleteConfirmText?: string
 }
 
 const props = withDefaults(defineProps<BaseTableProps>(), {
@@ -144,6 +151,8 @@ const props = withDefaults(defineProps<BaseTableProps>(), {
   dialogWidth: '600px',
   rowKey: 'id',
   paginated: true,
+  dialogTitle: '账号',
+  deleteConfirmText: '确定删除该账号吗？此操作不可撤销。',
 })
 
 const emit = defineEmits<{
@@ -220,7 +229,14 @@ async function handleSubmit() {
 async function handleDelete(row: any) {
   if (!props.deleteApi) return
   try {
-    await ElMessageBox.confirm('确定删除该账号吗？此操作不可撤销。', '删除确认', {
+    // 越权保护钩子：false 静默中断；字符串作为错误文案提示后中断
+    const guard = props.beforeDelete ? await props.beforeDelete(row) : true
+    if (guard === false) return
+    if (typeof guard === 'string') {
+      ElMessage.error(guard)
+      return
+    }
+    await ElMessageBox.confirm(props.deleteConfirmText, '删除确认', {
       confirmButtonText: '确定删除',
       cancelButtonText: '取消',
       type: 'warning',
@@ -302,12 +318,12 @@ defineExpose({ refresh, handleAdd, handleEdit, getSelectionRows, triggerSearch, 
 }
 
 :deep(.el-dialog__footer .el-button--primary) {
-  background: linear-gradient(135deg, #409eff, #337ecc);
+  background: linear-gradient(135deg, var(--color-primary, #409eff), var(--color-primary-dark, #337ecc));
   border: none;
 }
 
 :deep(.el-dialog__footer .el-button--primary:hover) {
-  background: linear-gradient(135deg, #5aafff, #409eff);
+  background: linear-gradient(135deg, var(--color-primary-light, #66b1ff), var(--color-primary, #409eff));
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(64, 158, 255, 0.35);
 }

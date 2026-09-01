@@ -59,7 +59,9 @@ export const useUserStore = defineStore('user', () => {
     userInfo.value = null
     clearToken()
     // 清除缓存，避免切换账号后看到上个账号的对话记录
+    // useChat 实际用 sessionStorage 存储（CACHE_KEY 相同），两者都需清理
     localStorage.removeItem('chat_conversations_cache')
+    sessionStorage.removeItem('chat_conversations_cache')
   }
 
   function clearTokenOnly() {

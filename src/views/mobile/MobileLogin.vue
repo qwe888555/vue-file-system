@@ -26,7 +26,7 @@ async function handleLogin() {
     if (!userStore.role) {
       try { await userStore.getUserInfo() } catch {}
     }
-    localStorage.removeItem('chat_conversations_cache')
+    sessionStorage.removeItem('chat_conversations_cache')
     // 登录成功 → 显示成功动画 → 延迟跳转
     showSuccess.value = true
     setTimeout(() => {
@@ -131,7 +131,7 @@ function goBack() {
   margin-bottom: 20px;
 }
 .m-login-title { font-size: 22px; font-weight: 700; color: #1a1a2e; margin: 0 0 6px; }
-.m-login-desc { font-size: 14px; color: #8e8e93; margin: 0; }
+.m-login-desc { font-size: 14px; color: var(--color-text-secondary, #64748b); margin: 0; }
 
 .m-login-form { width: 100%; }
 .m-input-wrap {
@@ -149,13 +149,14 @@ function goBack() {
 .m-input-wrap:focus-within .m-input-icon { color: #409eff; }
 .m-input {
   flex: 1; border: none; background: none; outline: none;
-  font-size: 15px; color: #1f1f1f; height: 100%;
+  font-size: 16px; /* ≥16px 避免 iOS 聚焦自动缩放 */
+  color: #1f1f1f; height: 100%;
 }
 .m-input::placeholder { color: #b0b8c0; }
 .m-login-error { font-size: 13px; color: #f56c6c; margin: -8px 0 16px; text-align: center; }
 .m-login-btn {
   width: 100%; height: 48px; border-radius: 12px;
-  border: none; background: linear-gradient(135deg, #409eff, #1e3a8a);
+  border: none; background: linear-gradient(135deg, var(--color-primary, #409eff), var(--color-primary-deep, #2563eb));
   color: #fff; font-size: 16px; font-weight: 600; cursor: pointer;
   transition: opacity 0.2s, transform 0.15s; display: flex; align-items: center; justify-content: center;
 }
@@ -168,7 +169,7 @@ function goBack() {
 @keyframes spin { to { transform: rotate(360deg); } }
 .m-login-back {
   width: 100%; text-align: center;
-  background: none; border: none; font-size: 14px; color: #8e8e93;
+  background: none; border: none; font-size: 14px; color: var(--color-text-secondary, #64748b);
   cursor: pointer; padding: 14px 0 0; margin-top: 2px;
 }
 
@@ -184,10 +185,10 @@ function goBack() {
 }
 .m-success-circle {
   width: 72px; height: 72px; border-radius: 50%;
-  background: #22c55e; display: flex;
+  background: var(--color-success, #67c23a); display: flex;
   align-items: center; justify-content: center;
   animation: successPop 0.4s cubic-bezier(0.21, 0.98, 0.22, 1);
-  box-shadow: 0 4px 20px rgba(34,197,94,0.3);
+  box-shadow: 0 4px 20px rgba(103, 194, 58, 0.3);
 }
 .m-success-text {
   font-size: 17px; font-weight: 600; color: #1f1f1f;

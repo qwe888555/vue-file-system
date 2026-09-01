@@ -4,12 +4,19 @@
 /* 全局设计Token 统一尺寸、颜色 */
 :root {
   /* ── 色彩 ── */
+  /* 主蓝三档：primary（按钮/大面积）/ deep（浅底文字/链接/激活，≥4.5:1）/ dark+light（渐变端点/hover） */
   --color-primary: #409eff;
+  --color-primary-deep: #2563eb;
+  --color-primary-dark: #337ecc;
+  --color-primary-light: #66b1ff;
   --color-success: #67c23a;
   --color-warning: #e6a23c;
   --color-danger: #f56c6c;
   --color-gray: #909399;
   --color-info: #909399;
+  /* 中性文本二档：secondary（次要/描述/元信息，白底 ≥4.5:1）/ placeholder（占位符，白底 ≥4.5:1） */
+  --color-text-secondary: #64748b;
+  --color-text-placeholder: #6b7280;
 
   /* ── 字体大小 ── */
   --font-size-xs: 12px;
@@ -18,6 +25,21 @@
   --font-size-lg: 16px;
   --font-size-xl: 20px;
   --font-size-xxl: 24px;
+
+  /* ── 字阶（P0-1 统一字号刻度）── */
+  --text-display: 32px;   /* 大屏主数字 / 欢迎 */
+  --text-hero: 26px;      /* 页面欢迎标题 */
+  --text-h1: 24px;        /* 页面主标题 */
+  --text-h2: 20px;        /* 区块标题 */
+  --text-body: 14px;      /* 正文 */
+  --text-caption: 12px;   /* 辅助说明 */
+
+  /* ── 文件类型语义色（P0-2 杂色入 token）── */
+  --color-type-archive: #9b59b6;
+
+  /* ── 装饰暖色（蜂巢加载动画，P0-2）── */
+  --color-loader-amber: #ffbf48;
+  --color-loader-rust: #be4a1d;
 
   /* ── 间距 ── */
   --spacing-xs: 4px;
@@ -35,12 +57,47 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-base: 0 2px 8px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
+
+  /* ── 字体 ── */
+  /* 跨平台中文栈：macOS/iOS PingFang → Windows 雅黑 → Linux Noto Sans CJK */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Helvetica Neue',
+    Arial, sans-serif;
 }
 
 body {
   margin: 0;
   font-size: 14px;
-  font-family: 'Microsoft Yahei', sans-serif;
+  font-family: var(--font-sans);
+}
+
+/* ── 全局：数字/时间列等宽对齐，宽度不跳动（P0-1/P0-5）── */
+html {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 全局：键盘焦点环（P0-3 无障碍；鼠标点击不显示，键盘 Tab 显示）── */
+:focus-visible {
+  outline: 2px solid var(--color-primary-deep, #2563eb);
+  outline-offset: 2px;
+}
+
+/* ── 全局：按压反馈（P0-4）；组件自身的 :active（类选择器）优先级更高，自动覆盖 ── */
+button:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+/* ── 输入框统一（EP 组件 ↔ PersonalCenter 原生 input）── */
+/* 圆角/边框/焦点共用一套观感；登录玻璃输入框因深色场景保留 */
+.el-input__wrapper {
+  border-radius: var(--el-input-border-radius);
+}
+:root {
+  --el-input-border-radius: 8px;
+  --el-input-border-color: #e4e9f0;
+  --el-input-hover-border-color: #c8d0de;
+  --el-input-focus-border-color: var(--color-primary-deep, #2563eb);
+  --el-input-focus-shadow: 0 0 0 1px var(--color-primary-deep, #2563eb);
 }
 
 /* ── 确认弹窗美化 ── */

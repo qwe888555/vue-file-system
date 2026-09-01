@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessageBox } from 'element-plus'
+import { ROLE_CONFIG } from '@/config/roles'
 import PersonalCenter from '@/components/common/PersonalCenter.vue'
 
 const emit = defineEmits<{
@@ -16,8 +17,10 @@ const showPersonalCenter = ref(false)
 const showUserMenu = ref(false)
 
 const isLoggedIn = computed(() => !!userStore.token)
+// 角色文案统一走 ROLE_CONFIG（单一数据源），未知角色回退后端 role_display
 const userDisplayRole = computed(() => {
-  if (userStore.role === 'admin' || userStore.role === 'college_admin') return '普通管理员'
+  const role = userStore.role as keyof typeof ROLE_CONFIG | undefined
+  if (role && ROLE_CONFIG[role]) return ROLE_CONFIG[role].label
   return userStore.userInfo?.role_display || ''
 })
 
@@ -81,7 +84,7 @@ async function handleLogout() {
   padding: 12px 16px; cursor: pointer; font-size: 14px; color: #1a2332;
   transition: background 0.15s;
 }
-.user-popup-item:hover { background: #f0f4fe; color: #2b5fd9; }
+.user-popup-item:hover { background: #f0f4fe; color: var(--color-primary-deep, #2563eb); }
 .user-popup-item:first-child { border-bottom: 1px solid #f0f0f0; }
 .menu-up-enter-active, .menu-up-leave-active { transition: all 0.2s ease; }
 .menu-up-enter-from, .menu-up-leave-to { opacity: 0; transform: translateY(8px); }
@@ -104,6 +107,6 @@ async function handleLogout() {
 }
 .su-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .su-name { font-size: 13px; font-weight: 600; color: #1f1f1f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.su-role { font-size: 11px; color: #8e8e93; }
-.su-status { font-size: 11px; color: #67c23a; background: #f0f9eb; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
+.su-role { font-size: 11px; color: var(--color-text-secondary, #64748b); }
+.su-status { font-size: 11px; color: #2e7d32; background: #f0f9eb; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
 </style>

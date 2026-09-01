@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ref, computed, onMounted, triggerRef, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete, WarningFilled } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
 import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi } from '@/api/knowledge'
 import DOMPurify from 'dompurify'
@@ -38,6 +38,7 @@ const localDescriptionCache = ref<Map<number, string>>(loadJsonCache(DESC_CACHE_
 const showEditDialog = ref(false)
 const editingFile = ref<KnowledgeFile | null>(null)
 const loading = ref(false)
+const listError = ref('')
 
 const createMode = ref(false)
 const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string; title: string; keywords: string; description: string; scope: 'public' | 'private' }[]>([])
@@ -57,9 +58,22 @@ const previewFileUrl = ref('')
 const isOfficePreview = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
-const showKeywordsDialog = ref(false)
-const keywordsDialogTitle = ref('')
-const allKeywords = ref<{ id: number; phrase: string }[]>([])
+// 预览文本 HTML 转义（DOMPurify 会再兜底净化）
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+  ))
+}
+const PRE_WRAP = '<pre class="preview-pre">'
+const PRE_SUFFIX = '</pre>'
+function previewPre(text: string): string {
+  return `${PRE_WRAP}${escapeHtml(text)}${PRE_SUFFIX}`
+}
+function previewPlaceholder(msg: string): string {
+  return `<div class="preview-placeholder">${msg}</div>`
+}
+
+// （已移除死代码：showKeywordsDialog / keywordsDialogTitle / allKeywords —— "全部关键词"弹窗无触发入口且数据从未赋值）
 
 const selectedDocIds = ref<number[]>([])
 
@@ -109,7 +123,6 @@ async function extractTextFromFile(file: File): Promise<string> {
 }
 
 async function handleFileChange(file: File) {
-  console.log('[DocList] handleFileChange 被调用, file:', file.name, file.size)
   const baseName = file.name.replace(/\.[^/.]+$/, '')
   const newFileItem = {
     file,
@@ -132,7 +145,6 @@ async function classifyFile(
   file: File,
 ) {
   try {
-    console.log('[DocList] 开始提取文本:', file.name)
     let content: string
     try {
       content = await extractTextFromFile(file)
@@ -140,16 +152,13 @@ async function classifyFile(
       console.warn('[DocList] 文本提取失败，使用兜底:', extractErr)
       content = `文件名: ${file.name}\n文件大小: ${file.size} bytes\n文件类型: ${file.name.split('.').pop() || 'unknown'}`
     }
-    console.log('[DocList] 文本提取完成, 长度:', content?.length)
 
     const formData = new FormData()
     formData.append('file', file)
     formData.append('content', content)
     formData.append('filename', file.name)
 
-    console.log('[DocList] 调用 aiClassifyApi...')
     const result = await aiClassifyApi(formData)
-    console.log('[DocList] aiClassifyApi 返回:', JSON.stringify(result))
 
     if (result.title) {
       fileItem.title = result.title
@@ -165,7 +174,6 @@ async function classifyFile(
     }
 
     triggerRef(selectedFiles)
-    console.log('[DocList] AI 分类完成:', fileItem.title)
   } catch (error) {
     console.error('[DocList] AI分类失败:', error)
     ElMessage.warning(`"${file.name}" AI 分类失败，请手动填写信息`)
@@ -197,11 +205,11 @@ async function handlePreviewFile(item: { file: File; docId?: number; previewCont
       const mammoth = await import('mammoth')
       const arrayBuffer = await item.file.arrayBuffer()
       const result = await mammoth.extractRawText({ arrayBuffer })
-      previewContent.value = `<pre style="white-space: pre-wrap; word-break: break-word; max-height: 600px; overflow-y: auto;">${result.value}</pre>`
+      previewContent.value = previewPre(result.value)
       showPreviewDialog.value = true
     } catch (error) {
       console.error('预览Word文档失败:', error)
-      previewContent.value = '<div style="text-align: center; padding: 40px;">浏览器无法直接预览此文件。请下载文件后使用Word等文档软件打开查看。</div>'
+      previewContent.value = previewPlaceholder('浏览器无法直接预览此文件。请下载文件后使用Word等文档软件打开查看。')
       showPreviewDialog.value = true
     }
   } else if (ext === 'pdf') {
@@ -212,23 +220,23 @@ async function handlePreviewFile(item: { file: File; docId?: number; previewCont
           previewFileUrl.value = result.content
           showPreviewDialog.value = true
         } else {
-          previewContent.value = '<div style="text-align: center; padding: 40px;">浏览器无法直接预览此文件。请下载文件后使用PDF阅读器打开查看。</div>'
+          previewContent.value = previewPlaceholder('浏览器无法直接预览此文件。请下载文件后使用PDF阅读器打开查看。')
           showPreviewDialog.value = true
         }
       } catch (error) {
         console.error('预览文件失败:', error)
-        previewContent.value = '<div style="text-align: center; padding: 40px;">预览失败，请重试。</div>'
+        previewContent.value = previewPlaceholder('预览失败，请重试。')
         showPreviewDialog.value = true
       }
     } else {
-      previewContent.value = '<div style="text-align: center; padding: 40px;">PDF文件需要先上传才能预览。</div>'
+      previewContent.value = previewPlaceholder('PDF文件需要先上传才能预览。')
       showPreviewDialog.value = true
     }
   } else if (['jpg', 'jpeg', 'png', 'gif'].includes(ext || '')) {
     const reader = new FileReader()
     reader.onload = (e) => {
       const content = e.target?.result as string
-      previewContent.value = `<img src="${content}" style="max-width: 100%; max-height: 600px; object-fit: contain;" />`
+      previewContent.value = `<img class="preview-img" src="${content}" alt="预览图片" />`
       showPreviewDialog.value = true
     }
     reader.readAsDataURL(item.file)
@@ -236,12 +244,12 @@ async function handlePreviewFile(item: { file: File; docId?: number; previewCont
     const reader = new FileReader()
     reader.onload = (e) => {
       const content = e.target?.result as string
-      previewContent.value = `<pre style="white-space: pre-wrap; word-break: break-word; max-height: 600px; overflow-y: auto;">${content}</pre>`
+      previewContent.value = previewPre(content)
       showPreviewDialog.value = true
     }
     reader.readAsText(item.file)
   } else {
-    previewContent.value = '<div style="text-align: center; padding: 40px;">浏览器无法直接预览此文件格式。请下载文件后使用相应软件打开查看。</div>'
+    previewContent.value = previewPlaceholder('浏览器无法直接预览此文件格式。请下载文件后使用相应软件打开查看。')
     showPreviewDialog.value = true
   }
 }
@@ -262,7 +270,6 @@ function handleFileInputChange(event: Event) {
 
 /** el-upload 的 change 事件回调 */
 function onUploadChange(uploadFile: any) {
-  console.log('[DocList] onUploadChange 触发, uploadFile:', uploadFile?.name, 'raw:', !!uploadFile?.raw)
   const file = uploadFile?.raw
   if (file instanceof File) {
     handleFileChange(file)
@@ -334,7 +341,7 @@ async function handlePreviewDoc(id: number, title: string) {
         try {
           const response = await fetch(result.content)
           const text = await response.text()
-          previewContent.value = `<pre style="white-space: pre-wrap; word-break: break-word; max-height: 600px; overflow-y: auto;">${text || '无法查看文件详细内容'}</pre>`
+          previewContent.value = previewPre(text || '无法查看文件详细内容')
         } catch (error) {
           console.error('获取文本内容失败:', error)
           previewContent.value = '无法查看文件详细内容'
@@ -346,7 +353,7 @@ async function handlePreviewDoc(id: number, title: string) {
       if (result.preview_type === 'html' || result.file_type === 'pdf') {
         previewContent.value = result.content
       } else {
-        previewContent.value = `<pre style="white-space: pre-wrap; word-break: break-word; max-height: 600px; overflow-y: auto;">${result.content}</pre>`
+        previewContent.value = previewPre(result.content)
       }
     } else {
       previewContent.value = '无法查看文件详细内容'
@@ -461,7 +468,6 @@ async function handleUploadSubmit() {
         keywords: keywords.length > 0 ? keywords : undefined,
         scope: uploadForm.value.scope === 'public' ? 'school' : 'college',
       })
-      console.log('创建文件结果:', result)
       // 缓存描述，防止 fetchFiles 刷新后丢失
       if (result.id && uploadForm.value.description) {
         cacheDesc(result.id, uploadForm.value.description)
@@ -539,7 +545,6 @@ async function handleUploadSubmit() {
         successCount++
       }
 
-      console.log('文件上传结果:', `${successCount}/${totalCount}`)
       ElMessage.success(`${successCount}/${totalCount} 个文件上传成功`)
       resetUploadForm()
       fetchFiles()
@@ -560,13 +565,13 @@ const keywordsCache: Map<number, Keyword[]> = loadJsonCache(KW_CACHE_KEY) as Map
 
 async function fetchFiles(keyword?: string) {
   loading.value = true
+  listError.value = ''
   try {
     const res = await getDocListApi({
       page: 1,
       page_size: 1000,
       keyword: keyword || undefined,
     })
-    console.log('文档列表响应:', JSON.stringify(res, null, 2))
     const data = res.results || res.data || res
     const newFiles = Array.isArray(data) ? data : []
     
@@ -642,6 +647,7 @@ async function fetchFiles(keyword?: string) {
     if (error.response?.status === 401) {
       console.warn('Token过期，需要重新登录')
     }
+    listError.value = '文档列表加载失败，请检查网络后重试'
   } finally {
     loading.value = false
   }
@@ -758,7 +764,7 @@ const fileTypeColors: Record<string, string> = {
   image: '#67c23a',
   audio: '#909399',
   video: '#e6a23c',
-  archive: '#9b59b6',
+  archive: 'var(--color-type-archive, #9b59b6)',
 }
 
 function formatFileSize(bytes: number): string {
@@ -941,7 +947,8 @@ async function handleDelete(file: KnowledgeFile) {
 }
 
 function saveFiles(files: KnowledgeFile[]) {
-  localStorage.setItem('uploadedFiles', JSON.stringify(files))
+  // 与 DocDetail 共用同一 key，保证详情页重命名/删除后列表缓存一致
+  localStorage.setItem('knowledgeFiles', JSON.stringify(files))
 }
 </script>
 
@@ -1081,8 +1088,8 @@ function saveFiles(files: KnowledgeFile[]) {
             <div class="form-item">
               <label class="form-label">公开/私密</label>
               <el-radio-group v-model="currentFileForm.scope" class="scope-group">
-                <el-radio label="public">公开</el-radio>
-                <el-radio label="private">私密</el-radio>
+                <el-radio value="public">公开</el-radio>
+                <el-radio value="private">私密</el-radio>
               </el-radio-group>
             </div>
             <div class="form-item">
@@ -1145,8 +1152,8 @@ function saveFiles(files: KnowledgeFile[]) {
             <div class="form-item">
               <label class="form-label">公开/私密</label>
               <el-radio-group v-model="uploadForm.scope" class="scope-group">
-                <el-radio label="public">公开</el-radio>
-                <el-radio label="private">私密</el-radio>
+                <el-radio value="public">公开</el-radio>
+                <el-radio value="private">私密</el-radio>
               </el-radio-group>
             </div>
             <div class="form-item">
@@ -1198,9 +1205,16 @@ function saveFiles(files: KnowledgeFile[]) {
         class="edit-hint"
       />
 
-      <div v-if="filteredFiles.length === 0" class="empty-state">
-        <el-icon size="48" color="#c0c4cc"><FolderOpened /></el-icon>
-        <p>暂无文件，请上传</p>
+      <div v-if="filteredFiles.length === 0 && !loading">
+        <div v-if="listError" class="empty-state">
+          <el-icon size="48" color="#f56c6c"><WarningFilled /></el-icon>
+          <p>{{ listError }}</p>
+          <el-button type="primary" size="small" @click="fetchFiles()">重试</el-button>
+        </div>
+        <div v-else class="empty-state">
+          <el-icon size="48" color="#c0c4cc"><FolderOpened /></el-icon>
+          <p>暂无文件，请上传</p>
+        </div>
       </div>
 
       <div v-if="selectedDocIds.length > 0" class="batch-actions">
@@ -1298,38 +1312,14 @@ function saveFiles(files: KnowledgeFile[]) {
       @close="handlePreviewClose"
     >
       <div class="preview-content">
-        <iframe v-if="isOfficePreview" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
-        <iframe v-else-if="previewFileUrl && previewFileName.endsWith('.pdf')" :src="previewFileUrl" style="width: 100%; height: 600px;" frameborder="0"></iframe>
-        <img v-else-if="previewFileUrl" :src="previewFileUrl" loading="lazy" style="max-width: 100%; max-height: 600px; object-fit: contain;" />
+        <iframe v-if="isOfficePreview" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
+        <iframe v-else-if="previewFileUrl && previewFileName.endsWith('.pdf')" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
+        <img v-else-if="previewFileUrl" class="preview-img" :src="previewFileUrl" loading="lazy" alt="预览图片" />
         <!-- eslint-disable-next-line vue/no-v-html -->
         <div v-else v-html="sanitizedPreviewContent" class="preview-text"></div>
       </div>
       <template #footer>
         <el-button @click="showPreviewDialog = false">关闭</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="showKeywordsDialog"
-      :title="keywordsDialogTitle + ' - 全部关键词'"
-      width="400px"
-      top="30vh"
-    >
-      <div class="keywords-list">
-        <el-tag
-          v-for="kw in allKeywords"
-          :key="kw.id"
-          size="medium"
-          class="keyword-tag-large"
-        >
-          {{ kw.phrase }}
-        </el-tag>
-        <div v-if="allKeywords.length === 0" class="no-keywords">
-          暂无关键词
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="showKeywordsDialog = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>
@@ -1955,6 +1945,32 @@ function saveFiles(files: KnowledgeFile[]) {
   color: #303133;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* 预览内容容器：pre 包裹 / 占位 / 图片 / iframe */
+.preview-pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 13px;
+  margin: 0;
+}
+.preview-placeholder {
+  text-align: center;
+  padding: 40px;
+  color: var(--color-text-secondary, #64748b);
+}
+.preview-img {
+  display: block;
+  max-width: 100%;
+  max-height: 600px;
+  margin: 0 auto;
+  object-fit: contain;
+}
+.preview-iframe {
+  width: 100%;
+  height: 600px;
+  border: none;
 }
 
 </style>

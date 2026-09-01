@@ -1,8 +1,8 @@
-/* eslint-disable no-console */
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import type { UserRole } from '@/types'
 import { getAllowedPaths } from '@/config/permission'
+import { isAdminRole } from '@/config/roles'
 
 import authRoutes from './common'
 import chatRoutes from './chat'
@@ -45,14 +45,15 @@ let pageInitialized = false
 router.beforeEach(async (to, _from, next) => {
   const userStore = useUserStore()
 
-  // 移动端自动跳转到移动端页面
+  // 移动端自动跳转到移动端页面（FAQ 桌面链接 → 移动端 FAQ，其余 → 智能问答）
   if (isMobileDevice() && !to.path.startsWith('/mobile')) {
-    next('/mobile/chat')
+    next(to.path === '/faq' ? '/mobile/faq' : '/mobile/chat')
     return
   }
 
-  // 白名单：首页、异常页（首页 meta.hidden 由 common.ts 标记）
-  if (to.meta.hidden) {
+  // 公开路由白名单：首页、异常页、移动端登录页（用显式 meta.public，而非 meta.hidden）
+  // meta.hidden 仅用于「不出现在菜单」，与鉴权无关
+  if (to.meta.public) {
     next()
     return
   }
@@ -116,7 +117,7 @@ router.beforeEach(async (to, _from, next) => {
       `[权限守卫] 路径 "${to.path}" 不在角色 "${currentRole}" 的允许列表中，跳转角色首页`,
       allowedPaths,
     )
-    const home = currentRole === 'super_admin' || currentRole === 'admin' || currentRole === 'college_admin' || currentRole === 'dept_admin' ? '/knowledge/list' : '/chat'
+    const home = isAdminRole(currentRole) ? '/knowledge/list' : '/chat'
     next({ path: home })
     return
   }

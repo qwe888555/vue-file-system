@@ -78,7 +78,7 @@ function handleLogin() {
 .login-btn {
   width: 100%; height: 48px; border: none; border-radius: 10px;
   font-size: 16px; font-weight: 600;
-  background: linear-gradient(135deg, #409eff, #3b82f6);
+  background: linear-gradient(135deg, var(--color-primary, #409eff), var(--color-primary-dark, #337ecc));
   color: #fff; cursor: pointer;
   transition: all 0.25s;
 }
@@ -92,7 +92,7 @@ function handleLogin() {
 /* SSO */
 .sso-divider { display: flex; align-items: center; gap: 14px; margin: 22px 0; }
 .sso-line { flex: 1; height: 1px; background: #e2e8f0; }
-.sso-txt { font-size: 14px; color: #94a3b8; white-space: nowrap; }
+.sso-txt { font-size: 14px; color: var(--color-text-secondary, #64748b); white-space: nowrap; }
 
 .sso-btn {
   width: 100%; height: 46px; border: 1px solid #e2e8f0; border-radius: 10px;
@@ -113,7 +113,7 @@ function handleLogin() {
 :deep(.el-input__wrapper:hover) { box-shadow: 0 0 0 1px #cbd5e1 !important; }
 :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important; }
 :deep(.el-input__inner) { height: 42px; font-size: 14px; color: #0f172a; }
-:deep(.el-input__inner::placeholder) { color: #94a3b8; }
+:deep(.el-input__inner::placeholder) { color: var(--color-text-placeholder, #6b7280); }
 :deep(.el-form-item) { margin-bottom: 0; }
 :deep(.el-form-item__error) { padding-top: 4px; font-size: 12px; }
 </style>

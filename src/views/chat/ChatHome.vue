@@ -6,13 +6,13 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
+import { isAdminRole } from '@/config/roles'
 import type { KnowledgeFile } from '@/types'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ChatLoginDialog from '@/components/chat/ChatLoginDialog.vue'
 import SidebarUser from '@/components/common/SidebarUser.vue'
-import VoicePreviewDialog from '@/components/chat/VoicePreviewDialog.vue'
 
 const userStore = useUserStore()
 const router = useRouter()
@@ -30,17 +30,21 @@ const isRecording = ref(false)
 const streamingContent = ref('')
 const isStreaming = ref(false)
 const streamingReferences = ref<KnowledgeFile[]>([])
-const streamingMessageId = ref<number | null>(null)
 let currentSSE: ReturnType<typeof useSSE> | null = null
 let stopContentWatch: (() => void) | null = null
 let stopRefsWatch: (() => void) | null = null
+// 流序号：新消息/取消时 +1，用于识别并忽略过期流的回调（防止旧流 onDone 污染新流）
+let streamSeq = 0
 
 const isLoggedIn = computed(() => !!userStore.token)
-const isAdminUser = computed(() => userStore.role === 'super_admin' || userStore.role === 'admin' || userStore.role === 'college_admin' || userStore.role === 'dept_admin')
+// 单一数据源：凡拥有知识库访问权的角色均视为管理员口径（与 config/roles.ts 对齐）
+const isAdminUser = computed(() => isAdminRole(userStore.role))
 const hasActiveConversation = computed(() => chat.currentConversationId.value !== null)
 
 // ── 热点问题（API）──
 const hotQuestions = ref<Array<{ question: string; count: number }>>([])
+const hotLoading = ref(false)
+const hotError = ref('')
 const SEED_ICONS: Record<string, string> = {
   '如何重置密码': '🔑', '怎么连接校园网': '🌐', '论文格式要求': '📝',
   '如何查找学习资料': '📚', '课程表在哪查': '📅', '图书馆借书流程': '📖',
@@ -49,13 +53,17 @@ const SEED_ICONS: Record<string, string> = {
 }
 
 async function loadHotQuestions() {
+  hotLoading.value = true
+  hotError.value = ''
   try {
     const { getHotQuestionsApi } = await import('@/api/chat')
     const data = await getHotQuestionsApi({ top_k: 9 })
     hotQuestions.value = data
   } catch {
-    // API 不通时使用空列表
     hotQuestions.value = []
+    hotError.value = '热点问题加载失败'
+  } finally {
+    hotLoading.value = false
   }
 }
 
@@ -76,13 +84,14 @@ function toggleSidebar() { sidebarOpen.value = !sidebarOpen.value }
 
 function handleLoginSuccess() {
   showLoginDialog.value = false
-  if (userStore.role === 'super_admin' || userStore.role === 'admin' || userStore.role === 'admin_csic' || userStore.role === 'admin_dept' || userStore.role === 'college_admin') {
+  if (isAdminRole(userStore.role)) {
     router.push('/knowledge/list')
   }
   chat.fetchConversations()
 }
 function handleLoginCancel() { showLoginDialog.value = false }
 function cancelStreaming() {
+  streamSeq++ // 使在途回调失效
   currentSSE?.close()
   isStreaming.value = false
   streamingContent.value = ''
@@ -145,32 +154,41 @@ async function sendMessage() {
   chat.appendUserMessage(text)
   inputText.value = ''
 
+  // 记录本次流的序号，回调中校验仍是最新流才生效
+  const seq = ++streamSeq
   isStreaming.value = true
   streamingContent.value = ''
   streamingReferences.value = []
 
   // 30 秒超时自动取消
   const timeoutId = setTimeout(() => {
-    if (isStreaming.value) { cancelStreaming(); ElMessage.warning('AI 回复超时，可重新提问') }
+    if (seq === streamSeq && isStreaming.value) { cancelStreaming(); ElMessage.warning('AI 回复超时，可重新提问') }
   }, 30000)
 
   currentSSE = useSSE(convId, text, () => {
     clearTimeout(timeoutId)
+    if (seq !== streamSeq) return // 过期流回调，忽略（新消息已发出或已取消）
     if (!isStreaming.value) return // 已被取消
     isStreaming.value = false
+    // 错误流（SSE error 事件）：结束流状态但不追加普通回答，改用错误提示
+    if (currentSSE?.error?.value) {
+      streamingContent.value = ''
+      streamingReferences.value = []
+      ElMessage.error(currentSSE.error.value)
+      return
+    }
     const realId = currentSSE?.messageId?.value
     // streamingContent 来自 SSE 流，为空时取 currentSSE.content（后端返回的错误消息如敏感词拦截）
     const content = streamingContent.value || currentSSE?.content?.value || ''
     chat.appendAssistantMessage(content, streamingReferences.value, realId || undefined)
     streamingContent.value = ''
     streamingReferences.value = []
-    streamingMessageId.value = null
   })
-  // 清除前一轮的 watcher，防止累积
+  // 清除前一轮的 watcher，防止累积；仅最新流的内容写入 streamingContent
   stopContentWatch?.()
   stopRefsWatch?.()
-  stopContentWatch = watch(currentSSE.content, (val) => { streamingContent.value = val })
-  stopRefsWatch = watch(currentSSE.references, (val) => { streamingReferences.value = val })
+  stopContentWatch = watch(currentSSE.content, (val) => { if (seq === streamSeq) streamingContent.value = val })
+  stopRefsWatch = watch(currentSSE.references, (val) => { if (seq === streamSeq) streamingReferences.value = val })
 }
 
 function handleFeedback(messageId: number, type: 'like' | 'dislike') {
@@ -330,6 +348,19 @@ function handleBlankClick(e: MouseEvent) {
   cancelRename()
 }
 
+/** 组件卸载时停止录音/语音识别，避免麦克风持续采集 */
+function cleanupRecording() {
+  if (speechRecognition) {
+    try { speechRecognition.stop() } catch { /* 已停止 */ }
+    speechRecognition = null
+  }
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    try { mediaRecorder.stop() } catch { /* 已停止 */ }
+  }
+  mediaRecorder = null
+  isRecording.value = false
+}
+
 onMounted(() => {
   chat.init()
   loadHotQuestions()
@@ -351,6 +382,9 @@ onUnmounted(() => {
   stopContentWatch = null
   stopRefsWatch?.()
   stopRefsWatch = null
+  cleanupRecording()
+  streamSeq++ // 使在途 SSE 回调失效
+  currentSSE?.close()
 })
 </script>
 
@@ -497,13 +531,23 @@ onUnmounted(() => {
               你好！有什么可以帮助你的？
               <span v-if="showInstantContent || !showEntryAnim" class="title-scanline" />
             </h2>
-            <div v-if="topQuestions.length" class="quick-questions">
+            <div v-if="hotLoading" class="quick-questions quick-questions--skeleton">
+              <span v-for="i in 5" :key="i" class="qq-skeleton" />
+            </div>
+            <div v-else-if="hotError" class="quick-questions quick-questions--error">
+              <span class="qq-error-text">{{ hotError }}</span>
+              <button class="qq-retry" @click="loadHotQuestions">重试</button>
+            </div>
+            <div v-else-if="topQuestions.length" class="quick-questions">
               <button
                 v-for="q in topQuestions"
                 :key="q.text"
                 class="qq-btn"
                 @click="quickQuestion(q.text)"
               >{{ q.text }}</button>
+            </div>
+            <div v-else class="quick-questions quick-questions--empty">
+              <span class="qq-empty-text">暂无推荐问题，可直接输入您想了解的内容</span>
             </div>
           </div>
         </div>
@@ -572,7 +616,7 @@ onUnmounted(() => {
   width: 100vw;
   overflow: hidden;
   background: #f5f5f5;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', Roboto, sans-serif;
+  font-family: var(--font-sans);
   color: #1f1f1f;
 }
 
@@ -624,7 +668,7 @@ onUnmounted(() => {
 .sidebar-logo-text {
   font-size: 22px;
   font-weight: 700;
-  color: #2b5fd9;
+  color: var(--color-primary-deep, #2563eb);
   letter-spacing: 2px;
   line-height: 1.2;
 }
@@ -644,8 +688,8 @@ onUnmounted(() => {
   border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
-  color: #8e8e93;
-  transition: all 0.15s;
+  color: var(--color-text-secondary, #64748b);
+  transition: background-color 0.15s, color 0.15s;
 }
 .sidebar-exit:hover {
   background: rgba(64, 158, 255, 0.06);
@@ -661,7 +705,7 @@ onUnmounted(() => {
   padding: 8px 12px;
   background: rgba(64, 158, 255, 0.06);
   border-radius: 8px;
-  color: #8e8e93;
+  color: var(--color-text-secondary, #64748b);
 }
 .sidebar-search input {
   flex: 1;
@@ -671,7 +715,7 @@ onUnmounted(() => {
   font-size: 13px;
   color: #1f1f1f;
 }
-.sidebar-search input::placeholder { color: #aeaeb2; }
+.sidebar-search input::placeholder { color: var(--color-text-placeholder, #6b7280); }
 
 /* 新建对话按钮 */
 .sidebar-new-chat {
@@ -716,7 +760,7 @@ onUnmounted(() => {
 .conv-item-icon {
   width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center;
-  color: #8e8e93;
+  color: var(--color-text-secondary, #64748b);
   flex-shrink: 0;
 }
 .conv-item-content {
@@ -735,13 +779,13 @@ onUnmounted(() => {
 }
 .conv-item-time {
   font-size: 11px;
-  color: #aeaeb2;
+  color: var(--color-text-secondary, #64748b);
 }
 .conv-item-del {
   opacity: 0;
   background: none;
   border: none;
-  color: #aeaeb2;
+  color: var(--color-text-secondary, #64748b);
   font-size: 16px;
   cursor: pointer;
   padding: 0 4px;
@@ -753,7 +797,7 @@ onUnmounted(() => {
 .conv-item-del:hover { color: #f56c6c; }
 
 .conv-item-edit {
-  opacity: 0; background: none; border: none; color: #aeaeb2;
+  opacity: 0; background: none; border: none; color: var(--color-text-secondary, #64748b);
   cursor: pointer; padding: 0 2px; transition: opacity 0.15s; flex-shrink: 0;
 }
 .conv-item-edit:hover { color: #409eff; }
@@ -766,16 +810,18 @@ onUnmounted(() => {
   border-radius: 4px; font-size: 13px; outline: none; background: #fff;
 }
 .conv-rename-confirm {
+  position: relative;
   width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
   border: none; border-radius: 4px; background: #409eff; color: #fff;
   cursor: pointer; flex-shrink: 0; transition: background 0.15s;
 }
-.conv-rename-confirm:hover { background: #3a8ee6; }
+.conv-rename-confirm::before { content: ""; position: absolute; inset: -10px; }
+.conv-rename-confirm:hover { background: var(--color-primary-dark, #337ecc); }
 
 .sidebar-loading { display: flex; justify-content: center; gap: 4px; padding: 20px; }
 .load-dot {
   width: 5px; height: 5px; border-radius: 50%;
-  background: #aeaeb2; animation: dotPulse 1.2s ease-in-out infinite;
+  background: var(--color-text-secondary, #64748b); animation: dotPulse 1.2s ease-in-out infinite;
 }
 .load-dot:nth-child(2) { animation-delay: 0.2s; }
 .load-dot:nth-child(3) { animation-delay: 0.4s; }
@@ -783,7 +829,7 @@ onUnmounted(() => {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
   40% { transform: scale(1); opacity: 1; }
 }
-.sidebar-empty { text-align: center; padding: 24px; font-size: 13px; color: #aeaeb2; }
+.sidebar-empty { text-align: center; padding: 24px; font-size: 13px; color: var(--color-text-secondary, #64748b); }
 
 /* 底部用户 */
 .sidebar-user {
@@ -808,9 +854,9 @@ onUnmounted(() => {
   padding: 12px 16px; cursor: pointer; font-size: 14px; color: #1a2332;
   transition: background 0.15s;
 }
-.user-popup-item:hover { background: #f0f4fe; color: #2b5fd9; }
+.user-popup-item:hover { background: #f0f4fe; color: var(--color-primary-deep, #2563eb); }
 .user-popup-item:first-child { border-bottom: 1px solid #f0f0f0; }
-.menu-up-enter-active, .menu-up-leave-active { transition: all 0.2s ease; }
+.menu-up-enter-active, .menu-up-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .menu-up-enter-from, .menu-up-leave-to { opacity: 0; transform: translateY(8px); }
 .su-avatar {
   width: 36px; height: 36px; border-radius: 50%;
@@ -820,7 +866,7 @@ onUnmounted(() => {
 }
 .su-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .su-name { font-size: 13px; font-weight: 600; color: #1f1f1f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.su-role { font-size: 11px; color: #8e8e93; }
+.su-role { font-size: 11px; color: var(--color-text-secondary, #64748b); }
 .su-status { font-size: 11px; color: #67c23a; background: #f0f9eb; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
 .su-avatar-text { font-size: 16px; font-weight: 700; color: #333; }
 .su-name { font-size: 15px; font-weight: 500; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -863,12 +909,15 @@ onUnmounted(() => {
   gap: 8px;
 }
 .topbar-btn {
+  position: relative;
   width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
   background: transparent; border: none; border-radius: 6px;
-  cursor: pointer; color: #8e8e93;
-  transition: all 0.15s;
+  cursor: pointer; color: var(--color-text-secondary, #64748b);
+  transition: background-color 0.15s, color 0.15s;
 }
+/* 触控热区扩展到 44×44（视觉不变，满足移动端触控目标） */
+.topbar-btn::before { content: ""; position: absolute; inset: -6px; }
 .topbar-btn:hover { background: #ecf5ff; color: #409eff; }
 .topbar-title { font-size: 16px; font-weight: 600; margin: 0; color: #1f1f1f; }
 .topbar-exit-btn {
@@ -876,10 +925,10 @@ onUnmounted(() => {
   display: flex; align-items: center; gap: 4px;
   background: transparent; border: none; border-radius: 6px;
   font-size: 15px; font-weight: 600; cursor: pointer; color: #1f1f1f;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s;
 }
 .topbar-exit-btn:hover { background: #fef0f0; color: #e74c3c; }
-.topbar-conv-title { font-size: 13px; color: #8e8e93; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-conv-title { font-size: 13px; color: var(--color-text-secondary, #64748b); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 
 /* 对话消息区 */
@@ -918,8 +967,8 @@ onUnmounted(() => {
 
 /* ═══ 标题入场 + 扫光特效 ═══ */
 .welcome-title {
-  font-size: 22px;
-  font-weight: 400;
+  font-size: var(--text-hero, 26px);
+  font-weight: 600;
   color: #1f1f1f;
   margin: 0 0 10px;
   letter-spacing: -0.04em;
@@ -941,7 +990,7 @@ onUnmounted(() => {
 /* 扫光光带 */
 .title-scanline {
   position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(90deg, transparent 0%, rgba(120,190,255,0.5) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(64, 158, 255, 0.5) 50%, transparent 100%);
   background-size: 200% 100%;
   opacity: 0;
 }
@@ -977,14 +1026,43 @@ onUnmounted(() => {
   font-size: 13px;
   color: #444;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
   white-space: nowrap;
   width: auto;
 }
 .qq-btn:hover {
   background: #e5e6eb;
-  color: #1e80ff;
+  color: var(--color-primary-deep, #2563eb);
 }
+
+/* 热点问题：loading 骨架 / error 重试 / empty 提示 */
+.qq-skeleton {
+  height: 34px;
+  min-width: 96px;
+  border-radius: 20px;
+  background: linear-gradient(90deg, #eef1f6 25%, #f7f9fc 50%, #eef1f6 75%);
+  background-size: 200% 100%;
+  animation: qqShimmer 1.4s ease-in-out infinite;
+}
+@keyframes qqShimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.qq-error-text, .qq-empty-text {
+  font-size: 13px;
+  color: var(--color-text-secondary, #64748b);
+}
+.qq-retry {
+  padding: 6px 16px;
+  border: 1px solid var(--color-primary, #409eff);
+  border-radius: 18px;
+  background: transparent;
+  color: var(--color-primary-deep, #2563eb);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.qq-retry:hover { background: #ecf5ff; }
 
 /* ═══ 输入栏 ═══ */
 .chat-input-area {
@@ -1012,7 +1090,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid rgba(22, 119, 255, 0.1);
+  border: 1px solid var(--el-input-border-color, #e4e9f0);
   border-radius: 12px;
   padding: 6px 6px 6px 14px;
   background: #fff;
@@ -1076,17 +1154,17 @@ onUnmounted(() => {
 }
 
 .spin-blur::before {
-  background: linear-gradient(90deg, #4a9eff, #7bb8ff, #f5b8d0);
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light), var(--color-primary-dark));
   background-size: 200% 100%;
 }
 
 .spin-intense::before {
-  background: linear-gradient(90deg, #5ca8ff, #90c6ff, #f7c8da);
+  background: linear-gradient(90deg, var(--color-primary-dark), var(--color-primary), var(--color-primary-light));
   background-size: 200% 100%;
 }
 
 .spin-inside::before {
-  background: linear-gradient(90deg, #7bb8ff, #b0d4ff, #fad4e4);
+  background: linear-gradient(90deg, var(--color-primary-light), var(--color-primary-dark), var(--color-primary));
   background-size: 200% 100%;
 }
 
@@ -1105,24 +1183,28 @@ onUnmounted(() => {
   flex: 1; border: none; background: transparent; outline: none;
   font-size: 14px; color: #1f1f1f; padding: 8px 0; min-height: 24px;
 }
-.input-field::placeholder { color: #8e9ebd; font-size: 15px; }
+.input-field::placeholder { color: var(--color-text-placeholder, #6b7280); font-size: 15px; }
 .send-fab {
+  position: relative;
   width: 34px; height: 34px; border-radius: 50%;
-  border: none; background: #1677ff; color: #fff;
+  border: none; background: var(--color-primary, #409eff); color: #fff;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: all 0.2s; flex-shrink: 0; padding: 0;
+  cursor: pointer; transition: background-color 0.2s, transform 0.2s; flex-shrink: 0; padding: 0;
 }
+.send-fab::before { content: ""; position: absolute; inset: -5px; }
 .send-fab svg { width: 16px; height: 16px; }
-.send-fab:hover:not(:disabled) { background: #4096ff; }
+.send-fab:hover:not(:disabled) { background: var(--color-primary-dark, #337ecc); }
 .send-fab:disabled { background: #d9d9d9; cursor: not-allowed; }
 
 /* 语音输入按钮 */
 .voice-btn {
+  position: relative;
   width: 34px; height: 34px; border-radius: 50%;
-  border: none; background: transparent; color: #8e9ebd;
+  border: none; background: transparent; color: var(--color-text-secondary, #64748b);
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: all 0.2s; flex-shrink: 0; padding: 0;
+  cursor: pointer; transition: background-color 0.2s, color 0.2s; flex-shrink: 0; padding: 0;
 }
+.voice-btn::before { content: ""; position: absolute; inset: -5px; }
 .voice-btn:hover { background: rgba(64,158,255,0.08); color: #409eff; }
 .voice-btn.recording { color: #f56c6c; animation: micPulse 1s ease-in-out infinite; }
 @keyframes micPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }

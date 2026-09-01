@@ -26,11 +26,9 @@ export function getDocListApi(params: {
   })
 }
 
-/** 文档详情 */
-export function getDocDetailApi(id: number): Promise<Blob> {
-  return request.get(`/knowledge/docs/${id}/`, {
-    responseType: 'blob'
-  })
+/** 文档详情（JSON 元数据，非 Blob） */
+export function getDocDetailApi(id: number): Promise<KnowledgeFile> {
+  return request.get(`/knowledge/docs/${id}/`)
 }
 
 /** 上传文档（含元数据） */
