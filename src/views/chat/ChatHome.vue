@@ -30,9 +30,11 @@ const isRecording = ref(false)
 const streamingContent = ref('')
 const isStreaming = ref(false)
 const streamingReferences = ref<KnowledgeFile[]>([])
+const streamingSuggested = ref<string[]>([])
 let currentSSE: ReturnType<typeof useSSE> | null = null
 let stopContentWatch: (() => void) | null = null
 let stopRefsWatch: (() => void) | null = null
+let stopSuggestedWatch: (() => void) | null = null
 // 流序号：新消息/取消时 +1，用于识别并忽略过期流的回调（防止旧流 onDone 污染新流）
 let streamSeq = 0
 
@@ -99,6 +101,8 @@ function cancelStreaming() {
   stopContentWatch = null
   stopRefsWatch?.()
   stopRefsWatch = null
+  stopSuggestedWatch?.()
+  stopSuggestedWatch = null
 }
 const renamingId = ref<number | null>(null)
 const renameText = ref('')
@@ -159,6 +163,7 @@ async function sendMessage() {
   isStreaming.value = true
   streamingContent.value = ''
   streamingReferences.value = []
+  streamingSuggested.value = []
 
   // 30 秒超时自动取消
   const timeoutId = setTimeout(() => {
@@ -180,15 +185,17 @@ async function sendMessage() {
     const realId = currentSSE?.messageId?.value
     // streamingContent 来自 SSE 流，为空时取 currentSSE.content（后端返回的错误消息如敏感词拦截）
     const content = streamingContent.value || currentSSE?.content?.value || ''
-    chat.appendAssistantMessage(content, streamingReferences.value, realId || undefined)
+    chat.appendAssistantMessage(content, streamingReferences.value, realId || undefined, streamingSuggested.value)
     streamingContent.value = ''
     streamingReferences.value = []
+    streamingSuggested.value = []
   })
   // 清除前一轮的 watcher，防止累积；仅最新流的内容写入 streamingContent
   stopContentWatch?.()
   stopRefsWatch?.()
   stopContentWatch = watch(currentSSE.content, (val) => { if (seq === streamSeq) streamingContent.value = val })
   stopRefsWatch = watch(currentSSE.references, (val) => { if (seq === streamSeq) streamingReferences.value = val })
+  stopSuggestedWatch = watch(currentSSE.suggested, (val) => { if (seq === streamSeq) streamingSuggested.value = val })
 }
 
 function handleFeedback(messageId: number, type: 'like' | 'dislike') {
@@ -382,6 +389,8 @@ onUnmounted(() => {
   stopContentWatch = null
   stopRefsWatch?.()
   stopRefsWatch = null
+  stopSuggestedWatch?.()
+  stopSuggestedWatch = null
   cleanupRecording()
   streamSeq++ // 使在途 SSE 回调失效
   currentSSE?.close()
@@ -502,8 +511,10 @@ onUnmounted(() => {
               v-for="msg in chat.currentMessages.value"
               :key="msg.id"
               :message="msg"
+              :suggested-questions="msg.suggested"
               :user-role="userStore.role ?? undefined"
               @feedback="handleFeedback"
+              @quick-question="quickQuestion"
             />
             <MessageBubble
               v-if="isStreaming"
@@ -516,7 +527,9 @@ onUnmounted(() => {
               }"
               :streaming="true"
               :stream-content="streamingContent"
+              :suggested-questions="streamingSuggested"
               :user-role="userStore.role ?? undefined"
+              @quick-question="quickQuestion"
             />
           </div>
 

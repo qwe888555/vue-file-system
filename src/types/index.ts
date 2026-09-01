@@ -116,6 +116,7 @@ export interface Message {
   references?: KnowledgeFile[]
   feedback?: 'like' | 'dislike' | null
   createdAt: string
+  suggested?: string[]
 }
 
 export interface Conversation {

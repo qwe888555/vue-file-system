@@ -10,16 +10,19 @@ const props = defineProps<{
   message: Message
   streaming?: boolean
   streamContent?: string
+  suggestedQuestions?: string[]
   userRole?: UserRole
 }>()
 
 const emit = defineEmits<{
   feedback: [messageId: number, type: 'like' | 'dislike']
+  quickQuestion: [text: string]
 }>()
 
 const isUser = computed(() => props.message.role === 'user')
 const isStreaming = computed(() => props.streaming && !isUser.value)
 const hasReferences = computed(() => !isUser.value && (props.message.references?.length ?? 0) > 0)
+const hasSuggested = computed(() => !isUser.value && (props.suggestedQuestions?.length ?? 0) > 0)
 
 function handleLike() {
   if (props.message.feedback === 'like') return
@@ -58,6 +61,16 @@ function handleDislike() {
         :references="(message.references as KnowledgeFile[]) || []"
         :user-role="userRole"
       />
+
+      <!-- 追问建议 -->
+      <div v-if="hasSuggested" class="msg-suggested">
+        <button
+          v-for="(q, idx) in suggestedQuestions"
+          :key="idx"
+          class="suggested-btn"
+          @click="emit('quickQuestion', q)"
+        >{{ q }}</button>
+      </div>
 
       <!-- 反馈（仅 AI 已完成消息） -->
       <div v-if="!isUser && !streaming && message.content" class="msg-feedback">
@@ -200,4 +213,26 @@ function handleDislike() {
 
 .fb-dislike:hover { color: #409eff; }
 .fb-dislike.active { color: #409eff; }
+
+/* 追问建议按钮 */
+.msg-suggested {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.suggested-btn {
+  padding: 6px 14px;
+  background: #f0f4ff;
+  border: 1px solid #dbe4f5;
+  border-radius: 16px;
+  font-size: 13px;
+  color: #2563eb;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.suggested-btn:hover {
+  background: #dbe4f5;
+  border-color: #2563eb;
+}
 </style>
