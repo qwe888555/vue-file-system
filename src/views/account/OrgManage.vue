@@ -23,7 +23,10 @@ const colleges = ref<College[]>([])
 const departments = ref<Department[]>([])
 
 /** 部门树 → 一维列表（与 UserList 同款缩进） */
-function flattenDepts(list: Department[], prefix = ''): Array<{ id: number; name: string; label: string }> {
+function flattenDepts(
+  list: Department[],
+  prefix = '',
+): Array<{ id: number; name: string; label: string }> {
   const result: Array<{ id: number; name: string; label: string }> = []
   for (const d of list) {
     result.push({ id: d.id, name: d.name, label: `${prefix}${d.name}` })
@@ -34,7 +37,9 @@ function flattenDepts(list: Department[], prefix = ''): Array<{ id: number; name
 
 /** 部门表单父级选项：顶级 + 学院 + 其他部门（编辑时排除自身） */
 function buildParentOptions(excludeId?: number) {
-  const options: Array<{ value: number | null; label: string }> = [{ value: null, label: '（顶级）' }]
+  const options: Array<{ value: number | null; label: string }> = [
+    { value: null, label: '（顶级）' },
+  ]
   options.push(...colleges.value.map((c) => ({ value: c.id, label: `学院：${c.name}` })))
   options.push(
     ...flattenDepts(departments.value)
@@ -86,10 +91,10 @@ function flattenDeptList(list: Department[]): Department[] {
   return result
 }
 
-/** 部门 apiFn：扁平化后返回数组，同时刷新组织 ref 供父级选择 */
+/** 部门 apiFn：getDepartmentsApi 已归一化为干净树，刷新组织 ref 供父级选择 */
 function loadDepartments() {
   return getDepartmentsApi().then((r) => {
-    departments.value = r.results || []
+    departments.value = r
     return flattenDeptList(departments.value).map(({ children: _c, ...rest }) => rest)
   })
 }
@@ -114,14 +119,23 @@ function loadDepartments() {
           delete-confirm-text="确定删除该学院吗？删除后其下属部门可能受影响。"
         >
           <template #form="{ form }">
-            <el-form-item label="学院名称" prop="name" :rules="[{ required: true, message: '请输入学院名称', trigger: 'blur' }]">
+            <el-form-item
+              label="学院名称"
+              prop="name"
+              :rules="[{ required: true, message: '请输入学院名称', trigger: 'blur' }]"
+            >
               <el-input v-model="form.name" placeholder="请输入学院名称" maxlength="50" />
             </el-form-item>
             <el-form-item label="学院编码" prop="code">
               <el-input v-model="form.code" placeholder="如：school_xx（可选）" maxlength="30" />
             </el-form-item>
             <el-form-item label="排序" prop="sort_order">
-              <el-input-number v-model="form.sort_order" :min="0" :max="999" controls-position="right" />
+              <el-input-number
+                v-model="form.sort_order"
+                :min="0"
+                :max="999"
+                controls-position="right"
+              />
               <span class="form-tip">数值越小越靠前</span>
             </el-form-item>
           </template>
@@ -147,11 +161,20 @@ function loadDepartments() {
             {{ parentName(row.parent) }}
           </template>
           <template #form="{ form }">
-            <el-form-item label="部门名称" prop="name" :rules="[{ required: true, message: '请输入部门名称', trigger: 'blur' }]">
+            <el-form-item
+              label="部门名称"
+              prop="name"
+              :rules="[{ required: true, message: '请输入部门名称', trigger: 'blur' }]"
+            >
               <el-input v-model="form.name" placeholder="请输入部门名称" maxlength="50" />
             </el-form-item>
             <el-form-item label="上级单位" prop="parent">
-              <el-select v-model="form.parent" placeholder="选择上级学院或部门" clearable class="w-full">
+              <el-select
+                v-model="form.parent"
+                placeholder="选择上级学院或部门"
+                clearable
+                class="w-full"
+              >
                 <el-option
                   v-for="opt in buildParentOptions(form.id)"
                   :key="String(opt.value)"
@@ -161,7 +184,12 @@ function loadDepartments() {
               </el-select>
             </el-form-item>
             <el-form-item label="排序" prop="sort_order">
-              <el-input-number v-model="form.sort_order" :min="0" :max="999" controls-position="right" />
+              <el-input-number
+                v-model="form.sort_order"
+                :min="0"
+                :max="999"
+                controls-position="right"
+              />
               <span class="form-tip">数值越小越靠前</span>
             </el-form-item>
           </template>

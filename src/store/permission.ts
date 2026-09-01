@@ -7,6 +7,9 @@ import { allMenus, roleMenuMap } from '@/config/permission'
 
 // ═══ 按钮级权限映射：action → 允许的角色列表 ═══
 const permissionActionMap: Record<string, UserRole[]> = {
+  // ── 部门管理（接口权限：POST/DELETE 仅超级管理员，文档 v1.0 2026-09-01） ──
+  'department-manage': ['super_admin'],
+
   // ── 用户管理 ──
   create: ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
   edit: ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
