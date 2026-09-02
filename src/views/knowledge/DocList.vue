@@ -174,9 +174,9 @@ function getFileSizeLimit(ext: string): number {
   const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz']
 
   if (imageExts.includes(ext)) return 10 // 图片 10MB
-  if (videoExts.includes(ext)) return 50 // 视频 50MB（受服务器超时限制）
-  if (audioExts.includes(ext)) return 50 // 音频 50MB
-  if (archiveExts.includes(ext)) return 20 // 压缩包 20MB（受服务器 nginx 超时限制）
+  if (videoExts.includes(ext)) return 0 // 视频无限制（走 OSS 分片直传）
+  if (audioExts.includes(ext)) return 0 // 音频无限制（走 OSS 分片直传）
+  if (archiveExts.includes(ext)) return 0 // 压缩包无限制（走 OSS 分片直传）
   return 20 // 文档/其他 20MB
 }
 
@@ -1212,7 +1212,7 @@ function saveFiles(files: KnowledgeFile[]) {
               将文件拖到此处，或<em>点击上传</em>
             </div>
             <div class="upload-file-formats">
-              支持 PDF、Word、TXT、图片、音视频、压缩包等格式（图片≤10MB，音视频≤50MB，压缩包/文档≤20MB，超大文件请压缩后上传）
+              支持 PDF、Word、TXT、Markdown、图片、音视频、压缩包等格式（图片≤10MB，大文件自动走 OSS 分片直传）
             </div>
           </el-upload>
         </div>
