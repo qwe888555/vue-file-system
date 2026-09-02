@@ -8,6 +8,8 @@ import SseRenderer from './SseRenderer.vue'
 import ReferencesPopover from './ReferencesPopover.vue'
 import { previewDocApi } from '@/api/knowledge'
 import { useUserStore } from '@/store/user'
+import { classifyDocPreview, resolvePreviewMediaUrl } from '@/utils/filePreview'
+import DOMPurify from 'dompurify'
 
 const userStore = useUserStore()
 
@@ -37,6 +39,8 @@ const isMarkdownPreview = ref(false)
 const rawMarkdownContent = ref('')
 const previewFileUrl = ref('')
 const isOfficePreview = ref(false)
+// 内嵌媒体类型（图片/音频/视频/PDF），通过 previewFileUrl 承载 src
+const previewMediaKind = ref<'image' | 'audio' | 'video' | 'pdf' | ''>('')
 
 // 点击已选中的按钮 = 取消反馈（rating: none）；点击另一个按钮 = 切换
 function handleLike() {
@@ -46,78 +50,109 @@ function handleDislike() {
   emit('feedback', props.message.id, props.message.feedback === 'dislike' ? 'none' : 'dislike')
 }
 
-/** 智能检测文本是否为 Markdown */
-function isLikelyMarkdown(text: string): boolean {
-  if (!text || text.length < 10) return false
-  const patterns = [
-    /^#{1,6}\s/m, /\*\*[^*]+\*\*/, /^>\s/m, /^[-*+]\s/m,
-    /^\|.+\|$/m, /```/, /`[^`]+`/, /!\[[^\]]*\]\(/, /\[[^\]]+\]\(/,
-  ]
-  return patterns.some((p) => p.test(text))
-}
-
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
   ))
 }
 
+/** 只回收本组件用 blob URL 生成的地址（OSS http 地址 revoke 是安全的空操作） */
+function releasePreviewObjectUrl() {
+  if (previewFileUrl.value && previewFileUrl.value.startsWith('blob:')) {
+    URL.revokeObjectURL(previewFileUrl.value)
+  }
+}
+
+function previewPlaceholder(msg: string): string {
+  return `<div style="text-align:center;padding:40px;color:#909399;">${msg}</div>`
+}
+
+/** 图片加载失败（签名过期/防盗链等）时改为下载提示，避免对话框留空白 */
+function handlePreviewMediaError() {
+  if (previewMediaKind.value === 'image') {
+    releasePreviewObjectUrl()
+    previewMediaKind.value = ''
+    previewFileUrl.value = ''
+    previewContent.value = previewPlaceholder('图片在线预览失败，可能是预览地址已过期，请下载后查看')
+  }
+}
+
 /** 处理 Markdown 内容中知识库文档链接的点击事件 */
 async function handleDocLinkClick(docId: number, title: string) {
+  releasePreviewObjectUrl()
   previewFileName.value = title
   previewContent.value = ''
   isMarkdownPreview.value = false
   rawMarkdownContent.value = ''
   previewFileUrl.value = ''
   isOfficePreview.value = false
+  previewMediaKind.value = ''
   showPreview.value = true
 
+  let result: Awaited<ReturnType<typeof previewDocApi>>
   try {
-    const result = await previewDocApi(docId)
-    const fileExtension = title.split('.').pop()?.toLowerCase() || ''
-    const isMarkdownFile = fileExtension === 'md' || fileExtension === 'markdown' || result.preview_type === 'markdown'
-
-    if (result.content && result.content.startsWith('http')) {
-      if (fileExtension === 'pdf') {
-        previewFileUrl.value = result.content
-      } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'wps', 'et', 'dps'].includes(fileExtension)) {
-        previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(result.content)}`
-        isOfficePreview.value = true
-      } else {
-        try {
-          const response = await fetch(result.content)
-          const text = await response.text()
-          if (isMarkdownFile || isLikelyMarkdown(text)) {
-            isMarkdownPreview.value = true
-            rawMarkdownContent.value = text
-          } else {
-            previewContent.value = `<pre style="white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:13px;margin:0;">${escapeHtml(text)}</pre>`
-          }
-        } catch {
-          previewContent.value = '<div style="text-align:center;padding:40px;color:#909399;">无法查看文件内容</div>'
-        }
-      }
-    } else if (result.content) {
-      if (isMarkdownFile || isLikelyMarkdown(result.content)) {
-        isMarkdownPreview.value = true
-        rawMarkdownContent.value = result.content
-      } else {
-        previewContent.value = `<pre style="white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:13px;margin:0;">${escapeHtml(result.content)}</pre>`
-      }
-    } else {
-      previewContent.value = '<div style="text-align:center;padding:40px;color:#909399;">文件内容为空</div>'
-    }
+    result = await previewDocApi(docId)
   } catch (error) {
     console.error('预览文件失败:', error)
-    previewContent.value = '<div style="text-align:center;padding:40px;color:#f56c6c;">预览失败，请重试</div>'
+    previewContent.value = previewPlaceholder('预览失败，请重试')
+    return
+  }
+
+  // 文件类型以后端返回的 file_name / file_type / preview_type 为准，
+  // 不能依赖 title 扩展名（title 多为「文件名去后缀」，不含扩展名）。
+  const { kind, fileName } = classifyDocPreview(result, title)
+  if (fileName) previewFileName.value = fileName
+  const content = result?.content || ''
+
+  switch (kind) {
+    case 'markdown':
+      isMarkdownPreview.value = true
+      rawMarkdownContent.value = content || '无法查看文件内容'
+      break
+    case 'html':
+      // HTML 原文：模板处 v-html 渲染（DOMPurify 净化防 XSS）
+      previewContent.value = DOMPurify.sanitize(content || '无法查看文件内容')
+      break
+    case 'text':
+      previewContent.value = `<pre style="white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:13px;margin:0;">${escapeHtml(content || '无法查看文件内容')}</pre>`
+      break
+    case 'image':
+    case 'audio':
+    case 'video':
+    case 'pdf': {
+      if (!content) {
+        previewContent.value = previewPlaceholder('无法获取在线预览地址，请下载后查看')
+        break
+      }
+      const { url } = await resolvePreviewMediaUrl(kind, content)
+      previewMediaKind.value = kind
+      previewFileUrl.value = url
+      break
+    }
+    case 'office': {
+      // Office 文档走微软 Office Online 在线预览（要求 OSS 地址公网可达）
+      if (!content) {
+        previewContent.value = previewPlaceholder('无法获取在线预览地址，请下载后查看')
+        break
+      }
+      previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(content)}`
+      isOfficePreview.value = true
+      break
+    }
+    default:
+      previewContent.value = previewPlaceholder('该文件类型暂不支持在线预览，请下载后查看')
+      break
   }
 }
 
 function closePreview() {
-  if (previewFileUrl.value) {
-    URL.revokeObjectURL(previewFileUrl.value)
-    previewFileUrl.value = ''
-  }
+  releasePreviewObjectUrl()
+  previewFileUrl.value = ''
+  previewMediaKind.value = ''
+  previewContent.value = ''
+  isOfficePreview.value = false
+  isMarkdownPreview.value = false
+  rawMarkdownContent.value = ''
   showPreview.value = false
 }
 
@@ -234,8 +269,17 @@ function downloadBlob(blob: Blob, fileName: string) {
         @close="closePreview"
       >
         <div class="msg-preview-content">
-          <iframe v-if="isOfficePreview" class="msg-preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
-          <iframe v-else-if="previewFileUrl && previewFileName.endsWith('.pdf')" class="msg-preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
+          <img
+            v-if="previewMediaKind === 'image'"
+            :src="previewFileUrl"
+            :alt="previewFileName"
+            class="msg-preview-media msg-preview-image"
+            @error="handlePreviewMediaError"
+          />
+          <video v-else-if="previewMediaKind === 'video'" :src="previewFileUrl" controls class="msg-preview-media msg-preview-video"></video>
+          <audio v-else-if="previewMediaKind === 'audio'" :src="previewFileUrl" controls class="msg-preview-media msg-preview-audio"></audio>
+          <iframe v-else-if="previewMediaKind === 'pdf'" class="msg-preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
+          <iframe v-else-if="isOfficePreview" class="msg-preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
           <MarkdownViewer v-else-if="isMarkdownPreview" :content="rawMarkdownContent" class="msg-preview-markdown" />
           <!-- eslint-disable-next-line vue/no-v-html -->
           <div v-else v-html="previewContent" class="msg-preview-text"></div>
@@ -403,6 +447,28 @@ function downloadBlob(blob: Blob, fileName: string) {
   width: 100%;
   height: 60vh;
   border: none;
+}
+
+/* 内嵌图片/音视频预览（配合 previewMediaKind） */
+.msg-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  margin: 0 auto;
+  object-fit: contain;
+}
+.msg-preview-video {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  margin: 0 auto;
+  background: #000;
+  border-radius: 4px;
+}
+.msg-preview-audio {
+  display: block;
+  width: 100%;
+  margin: 40px auto;
 }
 
 .msg-preview-markdown {

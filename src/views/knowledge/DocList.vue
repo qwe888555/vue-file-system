@@ -1,5 +1,4 @@
 <script setup lang="ts">
-/* eslint-disable no-console */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ref, computed, onMounted, triggerRef, watch } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
@@ -8,8 +7,9 @@ import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi, fixMojibake } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi } from '@/api/knowledge'
 import { uploadFileToOss } from '@/utils/oss-upload'
+import { classifyDocPreview, resolvePreviewMediaUrl } from '@/utils/filePreview'
 import DOMPurify from 'dompurify'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 import MarkdownViewer from '@/components/chat/MarkdownViewer.vue'
@@ -60,6 +60,8 @@ const previewContent = ref('')
 const sanitizedPreviewContent = computed(() => DOMPurify.sanitize(previewContent.value))
 const previewFileName = ref('')
 const previewFileUrl = ref('')
+// 内嵌媒体类型（图片/音频/视频/PDF），通过 previewFileUrl 承载 src
+const previewMediaKind = ref<'image' | 'audio' | 'video' | 'pdf' | ''>('')
 const isOfficePreview = ref(false)
 const isMarkdownPreview = ref(false)
 const rawMarkdownContent = ref('')
@@ -74,7 +76,7 @@ const md = new MarkdownIt({
     if (lang && hljs.getLanguage(lang)) {
       try {
         return hljs.highlight(str, { language: lang }).value
-      } catch (error) {
+      } catch {
         // 忽略高亮错误
       }
     }
@@ -95,26 +97,6 @@ function previewPre(text: string): string {
 }
 function previewPlaceholder(msg: string): string {
   return `<div class="preview-placeholder">${msg}</div>`
-}
-
-/**
- * 智能检测文本是否为 Markdown 格式
- * 用于文件无 .md 扩展名但内容是 Markdown 的场景（如"创建文件"功能生成的文档）
- */
-function isLikelyMarkdown(text: string): boolean {
-  if (!text || text.length < 10) return false
-  const patterns = [
-    /^#{1,6}\s/m,           // 标题 # ## ###
-    /\*\*[^*]+\*\*/,        // 加粗 **text**
-    /^>\s/m,                // 引用 > 
-    /^[-*+]\s/m,            // 列表项 - * +
-    /^\|.+\|$/m,            // 表格行 | ... |
-    /```/,                   // 代码块 ```
-    /`[^`]+`/,              // 行内代码 `code`
-    /!\[[^\]]*\]\(/,        // 图片 ![alt](url)
-    /\[[^\]]+\]\(/,         // 链接 [text](url)
-  ]
-  return patterns.some((p) => p.test(text))
 }
 
 // （已移除死代码：showKeywordsDialog / keywordsDialogTitle / allKeywords —— "全部关键词"弹窗无触发入口且数据从未赋值）
@@ -164,20 +146,6 @@ async function extractTextFromFile(file: File): Promise<string> {
   } else {
     return `文件名: ${file.name}\n文件大小: ${file.size} bytes\n文件类型: ${ext}`
   }
-}
-
-/** 获取文件类型的中文描述 */
-function getExtTypeName(ext: string): string {
-  const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv']
-  const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma']
-  const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp']
-  const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz']
-
-  if (videoExts.includes(ext)) return '视频'
-  if (audioExts.includes(ext)) return '音频'
-  if (imageExts.includes(ext)) return '图片'
-  if (archiveExts.includes(ext)) return '压缩包'
-  return '文件'
 }
 
 /** 支持的扩展名白名单 */
@@ -428,100 +396,99 @@ function onUploadContentDrop(e: DragEvent) {
   }
 }
 
-async function handlePreviewDoc(id: number, title: string) {
-  try {
-    previewFileName.value = title
-    previewContent.value = ''
+function releasePreviewObjectUrl() {
+  // 只回收本组件用 blob URL 生成的地址（OSS http 地址 revoke 是安全的空操作）
+  if (previewFileUrl.value && previewFileUrl.value.startsWith('blob:')) {
+    URL.revokeObjectURL(previewFileUrl.value)
+  }
+}
+
+/** 图片加载失败（签名过期/防盗链等）时改为下载提示，避免对话框留空白 */
+function handlePreviewMediaError() {
+  if (previewMediaKind.value === 'image') {
+    releasePreviewObjectUrl()
+    previewMediaKind.value = ''
     previewFileUrl.value = ''
-    isOfficePreview.value = false
-    isMarkdownPreview.value = false
-    rawMarkdownContent.value = ''
-    
-    const result = await previewDocApi(id)
-    
-    const fileExtension = title.split('.').pop()?.toLowerCase() || ''
-    // 判断是否为 Markdown：文件扩展名 / 后端 preview_type / 内容智能检测
-    const isMarkdownFile = fileExtension === 'md' || fileExtension === 'markdown' || result.preview_type === 'markdown'
-    
-    if (result.content && result.content.startsWith('http')) {
-      // 图片和视频不支持在线预览，提示用户下载
-      if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExtension)) {
-        previewContent.value = previewPlaceholder('图片文件暂不支持在线预览，请下载后使用图片查看器打开')
-      } else if (['mp3', 'wav', 'ogg', 'mp4', 'avi', 'mkv', 'mov'].includes(fileExtension)) {
-        previewContent.value = previewPlaceholder('视频/音频文件暂不支持在线预览，请下载后使用相应播放器打开')
-      } else if (fileExtension === 'pdf') {
-        previewFileUrl.value = result.content
-      } else if (result.preview_type === 'url' && result.file_type === 'document') {
-        // Office 文档使用 Office Online 预览
-        previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(result.content)}`
-        isOfficePreview.value = true
-      } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'wps', 'et', 'dps'].includes(fileExtension)) {
-        // Office 文档使用 Office Online 预览
-        previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(result.content)}`
-        isOfficePreview.value = true
-      } else if (isMarkdownFile) {
-        // Markdown 文件：获取原始文本，交给 MarkdownViewer 组件渲染
-        try {
-          const response = await fetch(result.content)
-          const text = fixMojibake(await response.text())
-          isMarkdownPreview.value = true
-          rawMarkdownContent.value = text || '无法查看文件内容'
-        } catch (error) {
-          console.error('获取 Markdown 内容失败:', error)
-          previewContent.value = previewPre('无法查看文件内容')
-        }
-      } else if (fileExtension === 'txt') {
-        try {
-          const response = await fetch(result.content)
-          const text = fixMojibake(await response.text())
-          previewContent.value = previewPre(text || '无法查看文件详细内容')
-        } catch (error) {
-          console.error('获取文本内容失败:', error)
-          previewContent.value = '无法查看文件详细内容'
-        }
-      } else {
-        // 无扩展名或未知格式：先获取内容，智能检测是否为 Markdown
-        try {
-          const response = await fetch(result.content)
-          const text = fixMojibake(await response.text())
-          if (isLikelyMarkdown(text)) {
-            isMarkdownPreview.value = true
-            rawMarkdownContent.value = text
-          } else {
-            previewContent.value = previewPre(text || '无法查看文件详细内容')
-          }
-        } catch (error) {
-          console.error('获取文件内容失败:', error)
-          previewContent.value = '无法查看文件详细内容'
-        }
-      }
-    } else if (result.content) {
-      if (result.preview_type === 'html' || result.file_type === 'pdf') {
-        previewContent.value = result.content
-      } else if (isMarkdownFile || isLikelyMarkdown(result.content)) {
-        // Markdown 内容：交给 MarkdownViewer 组件渲染
-        isMarkdownPreview.value = true
-        rawMarkdownContent.value = result.content
-      } else {
-        previewContent.value = previewPre(result.content)
-      }
-    } else {
-      previewContent.value = '无法查看文件详细内容'
-    }
-    
-    showPreviewDialog.value = true
+    previewContent.value = previewPlaceholder('图片在线预览失败，可能是预览地址已过期，请下载后查看')
+  }
+}
+
+/**
+ * 预览已上传文档（按 doc id 调后端预览接口）。
+ * 文件类型以后端返回的 file_name / file_type / preview_type 为准，
+ * 不能依赖 title 扩展名（title 多为「文件名去后缀」，不含扩展名）。
+ */
+async function handlePreviewDoc(id: number, title: string) {
+  releasePreviewObjectUrl()
+  previewFileName.value = title
+  previewContent.value = ''
+  previewFileUrl.value = ''
+  previewMediaKind.value = ''
+  isOfficePreview.value = false
+  isMarkdownPreview.value = false
+  rawMarkdownContent.value = ''
+
+  let result: Awaited<ReturnType<typeof previewDocApi>>
+  try {
+    result = await previewDocApi(id)
   } catch (error) {
     console.error('获取文件预览失败:', error)
-    ElMessage.error('获取文件预览失败')
+    previewContent.value = previewPlaceholder('获取预览失败，请重试')
+    showPreviewDialog.value = true
+    return
+  }
+  showPreviewDialog.value = true
+
+  const { kind, fileName } = classifyDocPreview(result, title)
+  if (fileName) previewFileName.value = fileName // 用真实文件名（含扩展名）作为标题
+  const content = result?.content || ''
+
+  switch (kind) {
+    case 'markdown':
+      isMarkdownPreview.value = true
+      rawMarkdownContent.value = content || '无法查看文件内容'
+      break
+    case 'html':
+      // HTML 原文交给弹窗 v-html 渲染（模板处经 DOMPurify 净化）
+      previewContent.value = content || '无法查看文件内容'
+      break
+    case 'text':
+      previewContent.value = previewPre(content || '无法查看文件详细内容')
+      break
+    case 'image':
+    case 'audio':
+    case 'video':
+    case 'pdf': {
+      if (!content) {
+        previewContent.value = previewPlaceholder('无法获取在线预览地址，请下载后查看')
+        break
+      }
+      const { url } = await resolvePreviewMediaUrl(kind, content)
+      previewMediaKind.value = kind
+      previewFileUrl.value = url
+      break
+    }
+    case 'office': {
+      // Office 文档走微软 Office Online 在线预览（要求 OSS 地址公网可达）
+      if (!content) {
+        previewContent.value = previewPlaceholder('无法获取在线预览地址，请下载后查看')
+        break
+      }
+      previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(content)}`
+      isOfficePreview.value = true
+      break
+    }
+    default:
+      previewContent.value = previewPlaceholder('该文件类型暂不支持在线预览，请下载后查看')
+      break
   }
 }
 
 function handlePreviewClose() {
-  if (previewFileUrl.value) {
-    URL.revokeObjectURL(previewFileUrl.value)
-    previewFileUrl.value = ''
-  }
+  releasePreviewObjectUrl()
+  previewFileUrl.value = ''
   previewContent.value = ''
+  previewMediaKind.value = ''
   isOfficePreview.value = false
   isMarkdownPreview.value = false
   rawMarkdownContent.value = ''
@@ -1406,23 +1373,7 @@ function saveFiles(files: KnowledgeFile[]) {
       </div>
 
       <el-alert
-        title="图片和视频文件请下载后使用相应软件查看，暂不支持在线预览"
-        type="info"
-        :closable="false"
-        show-icon
-        class="preview-hint"
-      />
-
-      <el-alert
-        title="如需修改文档内容，请先下载文件，本地修改后再重新上传"
-        type="info"
-        :closable="false"
-        show-icon
-        class="edit-hint"
-      />
-
-      <el-alert
-        title="点击资料名可以查看该资料的内容"
+        title="点击资料名可以在线预览；图片/音视频/PDF/Office 等格式均支持，也可下载到本地查看。如需修改文档内容，请先下载文件，本地修改后再重新上传。"
         type="success"
         :closable="false"
         show-icon
@@ -1551,8 +1502,17 @@ function saveFiles(files: KnowledgeFile[]) {
       @close="handlePreviewClose"
     >
       <div class="preview-content">
-        <iframe v-if="isOfficePreview" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
-        <iframe v-else-if="previewFileUrl && previewFileName.endsWith('.pdf')" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
+        <img
+          v-if="previewMediaKind === 'image'"
+          :src="previewFileUrl"
+          :alt="previewFileName"
+          class="preview-media preview-media-image"
+          @error="handlePreviewMediaError"
+        />
+        <video v-else-if="previewMediaKind === 'video'" :src="previewFileUrl" controls class="preview-media preview-media-video"></video>
+        <audio v-else-if="previewMediaKind === 'audio'" :src="previewFileUrl" controls class="preview-media preview-media-audio"></audio>
+        <iframe v-else-if="previewMediaKind === 'pdf'" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
+        <iframe v-else-if="isOfficePreview" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
         <MarkdownViewer v-else-if="isMarkdownPreview" :content="rawMarkdownContent" class="preview-markdown" />
         <!-- eslint-disable-next-line vue/no-v-html -->
         <div v-else v-html="sanitizedPreviewContent" class="preview-text" :class="{ 'markdown-body': previewFileName.endsWith('.md') || previewFileName.endsWith('.markdown') }"></div>
@@ -2378,6 +2338,28 @@ function saveFiles(files: KnowledgeFile[]) {
   width: 100%;
   height: 600px;
   border: none;
+}
+
+/* 内嵌图片/音视频预览（配合 previewMediaKind） */
+.preview-media-image {
+  display: block;
+  max-width: 100%;
+  max-height: 600px;
+  margin: 0 auto;
+  object-fit: contain;
+}
+.preview-media-video {
+  display: block;
+  width: 100%;
+  max-height: 600px;
+  margin: 0 auto;
+  background: #000;
+  border-radius: 4px;
+}
+.preview-media-audio {
+  display: block;
+  width: 100%;
+  margin: 40px auto;
 }
 
 /* Markdown 预览容器 */
