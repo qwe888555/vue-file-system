@@ -9,6 +9,7 @@ import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import type { KnowledgeFile, Keyword } from '@/types'
 import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi, fixMojibake } from '@/api/knowledge'
+import { uploadFileToOss } from '@/utils/oss-upload'
 import DOMPurify from 'dompurify'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 import MarkdownViewer from '@/components/chat/MarkdownViewer.vue'
@@ -704,37 +705,59 @@ async function handleUploadSubmit() {
     try {
       let successCount = 0
       const totalCount = selectedFiles.value.length
-      
+      // 大文件阈值：超过 20MB 走 OSS 分片直传，规避 nginx 超时
+      const LARGE_FILE_THRESHOLD = 20 * 1024 * 1024
+
       for (let i = 0; i < totalCount; i++) {
         const item = selectedFiles.value[i]
         const file = item.file
         const fileName = file.name.replace(/\.[^/.]+$/, '')
-        
-        // 更新上传进度文字
-        loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}`)
-        
-        const formData = new FormData()
-        formData.append('file', file)
-        formData.append('title', item.title || fileName)
-        if (item.description) {
-          formData.append('description', item.description)
-        }
-        // 将用户修改后的关键词也发给后端
+
+        // 将用户修改后的关键词整理成数组
         const uploadKeywords = item.keywords
           .split(/[,，、\s]+/)
           .map((kw: string) => kw.trim())
           .filter((kw: string) => kw)
-        uploadKeywords.forEach((kw: string) => formData.append('keywords', kw))
-        formData.append('scope', item.scope === 'public' ? 'school' : 'college')
 
-        const result = await uploadFileApi(formData)
+        let result: KnowledgeFile
+
+        if (file.size > LARGE_FILE_THRESHOLD) {
+          // ── 大文件：走 OSS 分片直传（无超时，支持断点续传） ──
+          loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}（OSS 分片直传）`)
+
+          result = await uploadFileToOss({
+            file,
+            title: item.title || fileName,
+            description: item.description,
+            scope: item.scope,
+            keywords: uploadKeywords,
+            // 分片上传进度回调，实时更新 loading 文字
+            onProgress: (percent) => {
+              loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}（${percent}%）`)
+            },
+          })
+        } else {
+          // ── 小文件：走原有 FormData 后端中转上传 ──
+          loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}`)
+
+          const formData = new FormData()
+          formData.append('file', file)
+          formData.append('title', item.title || fileName)
+          if (item.description) {
+            formData.append('description', item.description)
+          }
+          uploadKeywords.forEach((kw: string) => formData.append('keywords', kw))
+          formData.append('scope', item.scope === 'public' ? 'school' : 'college')
+
+          result = await uploadFileApi(formData)
+        }
+
+        // 上传成功后的统一处理：缓存描述、写入关键词
         if (result.id) {
           item.docId = result.id
-          // 缓存描述，防止 fetchFiles 刷新后丢失
           if (item.description) {
             cacheDesc(result.id, item.description)
           }
-          // 手动写入关键词 + 本地缓存（后端异步 AI 提取可能覆盖用户修改）
           if (uploadKeywords.length > 0) {
             try { await addKeywordsApi(result.id, uploadKeywords) } catch {}
             cacheKeywords(result.id, uploadKeywords.map((phrase: string) => ({
@@ -750,7 +773,7 @@ async function handleUploadSubmit() {
       fetchFiles()
     } catch (error) {
       console.error('文件上传失败:', error)
-      ElMessage.error('文件上传失败，请重试')
+      ElMessage.error(error instanceof Error ? error.message : '文件上传失败，请重试')
     } finally {
       loadingInstance.close()
     }

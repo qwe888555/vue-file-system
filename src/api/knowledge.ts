@@ -38,17 +38,22 @@ export function uploadDocApi(data: FormData): Promise<KnowledgeFile> {
   })
 }
 
-/** 获取 OSS 上传凭证 */
+/** 获取 OSS 上传凭证（STS 临时凭证，用于前端直传） */
 export function getUploadCredentialApi(): Promise<{
+  // PostObject 凭证（兼容旧接口）
   file_name: string
   file_type: string
   file_size: number
   policy: string
   signature: string
+  // STS 临时凭证（multipartUpload 必需）
   access_key_id: string
   access_key_secret: string
+  security_token: string
   expire: string
   endpoint: string
+  region: string
+  bucket: string
   object_key: string
 }> {
   return request.post('/knowledge/upload/sts/')
@@ -81,8 +86,8 @@ export function uploadCallbackApi(data: {
   file_type: string
   hash: string
   size: number
-  college_id: number
-  department_id?: number
+  college_id?: number | null
+  department_id?: number | null
   category_id?: number
   scope?: string
 }): Promise<KnowledgeFile> {
