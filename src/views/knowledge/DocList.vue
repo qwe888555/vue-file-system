@@ -150,7 +150,7 @@ async function extractTextFromFile(file: File): Promise<string> {
 /** 支持的扩展名白名单（后端允许的扩展名，逐类有大小限制） */
 const SUPPORTED_EXTENSIONS = [
   // 文档类
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'md', 'html',
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'md', 'html',
   // 图片类（30MB 限制）
   'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif',
   // 音频类（50MB 限制）
@@ -543,7 +543,7 @@ async function handlePreviewDoc(id: number, title: string) {
   }
   showPreviewDialog.value = true
 
-  const { kind, fileName } = classifyDocPreview(result, title)
+  const { kind, ext, fileName } = classifyDocPreview(result, title)
   if (fileName) previewFileName.value = fileName // 用真实文件名（含扩展名）作为标题
   const content = result?.content || ''
 
@@ -567,19 +567,54 @@ async function handlePreviewDoc(id: number, title: string) {
         previewContent.value = previewPlaceholder('无法获取在线预览地址，请下载后查看')
         break
       }
-      const { url } = await resolvePreviewMediaUrl(kind, content)
+      const { url, isBlob } = await resolvePreviewMediaUrl(kind, content)
+      if (kind === 'pdf' && !isBlob) {
+        // blob 化失败说明 OSS 原始地址也拿不到文件（Content-Type/签名覆盖报错），
+        // 直接展示友好提示，避免 iframe 里露出 OSS 的 XML 报错
+        previewContent.value = previewPlaceholder('PDF 在线预览失败，请下载后使用 PDF 阅读器打开查看')
+        break
+      }
       previewMediaKind.value = kind
       previewFileUrl.value = url
       break
     }
     case 'office': {
-      // Office 文档走微软 Office Online 在线预览（要求 OSS 地址公网可达）
+      // Office 文档在线预览。docx/xls/xlsx 用浏览器本地解析渲染，
+      // 不依赖微软 Office Online——私有 OSS 的签名地址微软服务器访问不到会报 File not found。
       if (!content) {
         previewContent.value = previewPlaceholder('无法获取在线预览地址，请下载后查看')
         break
       }
-      previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(content)}`
-      isOfficePreview.value = true
+      if (ext === 'docx' || ext === 'wps' || ext === 'et' || ext === 'dps') {
+        // Word 系：mammoth 前端解析文本
+        try {
+          const resp = await fetch(content)
+          const arrayBuffer = await resp.arrayBuffer()
+          const mammoth = await import('mammoth')
+          const extracted = await mammoth.extractRawText({ arrayBuffer })
+          previewContent.value = previewPre(extracted.value || '无法提取文档文字内容')
+        } catch (err) {
+          console.error('Word 在线预览失败:', err)
+          previewContent.value = previewPlaceholder('在线预览失败，请下载后使用 Word 打开查看')
+        }
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        // Excel：前端解析首个工作表为 HTML 表格
+        try {
+          const resp = await fetch(content)
+          const arrayBuffer = await resp.arrayBuffer()
+          const XLSX = await import('xlsx')
+          const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+          const sheet = workbook.Sheets[workbook.SheetNames[0]]
+          const html = XLSX.utils.sheet_to_html(sheet, { editable: false })
+          previewContent.value = `<div class="excel-preview">${html}</div>`
+        } catch (err) {
+          console.error('Excel 在线预览失败:', err)
+          previewContent.value = previewPlaceholder('在线预览失败，请下载后使用 Excel 打开查看')
+        }
+      } else {
+        // doc / ppt / pptx：无前端解析库；OSS 非公网可访问时 Office Online 必定失败，直接提示下载
+        previewContent.value = previewPlaceholder('该文件暂不支持在线预览，请下载后使用对应 Office 软件打开查看')
+      }
       break
     }
     default:
@@ -1256,7 +1291,7 @@ function saveFiles(files: KnowledgeFile[]) {
             @change="onUploadChange"
             drag
             multiple
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.pub,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.md,.pub,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
             class="upload-dragger"
           >
             <el-icon :size="300" color="#c0c4cc"><Upload /></el-icon>
@@ -1342,7 +1377,7 @@ function saveFiles(files: KnowledgeFile[]) {
                 ref="fileInputRef"
                 type="file"
                 multiple
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.pub,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.md,.pub,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
                 style="display: none"
                 @change="handleFileInputChange"
               />
