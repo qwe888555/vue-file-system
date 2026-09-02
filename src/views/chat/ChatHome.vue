@@ -2,7 +2,7 @@
 // ── 智能问答主页面 ──
 // 豆包风格：简洁、留白、圆润
 
-import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
@@ -30,6 +30,7 @@ const showEntryAnim = ref(!hasPlayed)
 const showInstantContent = ref(hasPlayed)
 const inputText = ref('')
 const isRecording = ref(false)
+const chatScrollRef = ref<HTMLElement | null>(null)
 
 // SSE —— 按 convId 索引：切换会话不杀流，后台继续接收，token 写到发起会话的流式态
 interface StreamingState {
@@ -189,6 +190,14 @@ async function handleDeleteConversation(id: number) {
   chatUi.clearConvUnread(id)
 }
 
+/** 滚动对话区到底部 */
+function scrollToBottom() {
+  nextTick(() => {
+    const el = chatScrollRef.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
 async function sendMessage() {
   const text = inputText.value.trim()
   if (!text || isStreaming.value) return
@@ -204,6 +213,7 @@ async function sendMessage() {
   const convId = chat.currentConversationId.value!
   chat.appendUserMessage(text)
   inputText.value = ''
+  scrollToBottom()
 
   // 同会话有旧流则先杀掉（避免并发污染同一会话）
   cancelStreaming(convId)
@@ -469,6 +479,11 @@ onMounted(() => {
     showInstantContent.value = true
   }
 })
+// 流式输出时自动跟随滚动到底部
+watch(streamingContent, () => {
+  if (isStreaming.value) scrollToBottom()
+})
+
 onUnmounted(() => {
   document.removeEventListener('mousedown', handleBlankClick)
   cleanupRecording()
@@ -598,7 +613,7 @@ watch(
       </header>
 
       <!-- 对话区 -->
-      <div class="chat-messages">
+      <div ref="chatScrollRef" class="chat-messages">
         <div class="messages-inner">
           <!-- 消息列表（有对话且有消息时显示） -->
           <div v-if="hasActiveConversation && chat.currentMessages.value.length > 0" class="messages-list">
