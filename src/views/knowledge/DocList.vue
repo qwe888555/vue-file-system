@@ -1137,7 +1137,7 @@ async function handleDownload(file: KnowledgeFile) {
   try {
     // 优先使用后端返回的 download_url（带原始文件名）
     if (file.download_url) {
-      window.open(file.download_url, '_blank')
+      downloadByIframe(file.download_url)
       return
     }
 
@@ -1159,7 +1159,7 @@ async function handleDownload(file: KnowledgeFile) {
       const json = await response.json()
       const downloadUrl = json.download_url || json.url || json.file_url || json.fileUrl
       if (!downloadUrl) throw new Error('未获取到下载地址')
-      window.open(downloadUrl, '_blank')
+      downloadByIframe(downloadUrl)
       return
     }
 
@@ -1171,6 +1171,15 @@ async function handleDownload(file: KnowledgeFile) {
     console.error('下载文件失败:', error)
     ElMessage.error(error.message || '下载文件失败')
   }
+}
+
+/** 通过隐藏 iframe 触发下载，避免新标签页闪烁 */
+function downloadByIframe(url: string) {
+  const iframe = document.createElement('iframe')
+  iframe.style.display = 'none'
+  iframe.src = url
+  document.body.appendChild(iframe)
+  setTimeout(() => document.body.removeChild(iframe), 3000)
 }
 
 /** 创建 Blob URL 并触发浏览器下载 */

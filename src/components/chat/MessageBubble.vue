@@ -128,7 +128,11 @@ async function handleDocDownload(docId: number, title: string) {
     try {
       const docDetail = await getDocDetailApi(docId)
       if (docDetail.download_url) {
-        window.open(docDetail.download_url, '_blank')
+        const iframe = document.createElement('iframe')
+        iframe.style.display = 'none'
+        iframe.src = docDetail.download_url
+        document.body.appendChild(iframe)
+        setTimeout(() => document.body.removeChild(iframe), 3000)
         ElMessage.success('下载已开始')
         return
       }
@@ -148,7 +152,11 @@ async function handleDocDownload(docId: number, title: string) {
       const json = await response.json()
       const downloadUrl = json.download_url || json.url || json.file_url || json.fileUrl
       if (!downloadUrl) throw new Error('未获取到下载地址')
-      window.open(downloadUrl, '_blank')
+      const iframe = document.createElement('iframe')
+      iframe.style.display = 'none'
+      iframe.src = downloadUrl
+      document.body.appendChild(iframe)
+      setTimeout(() => document.body.removeChild(iframe), 3000)
       return
     }
 
