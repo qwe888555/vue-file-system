@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ref, computed, onMounted, triggerRef, watch } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete, WarningFilled, Loading } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete, WarningFilled, Loading, Grid } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
@@ -119,7 +119,6 @@ const uploadForm = ref({
 })
 
 function resetUploadForm() {
-  createMode.value = true
   selectedFiles.value = []
   showCreateForm.value = false
   uploadForm.value = {
@@ -148,22 +147,109 @@ async function extractTextFromFile(file: File): Promise<string> {
   }
 }
 
-/** 支持的扩展名白名单 */
+/** 支持的扩展名白名单（后端允许的扩展名，逐类有大小限制） */
 const SUPPORTED_EXTENSIONS = [
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'md',
-  'jpg', 'jpeg', 'png', 'gif', 'webp',
-  'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma',
-  'mp4', 'avi', 'mkv', 'mov', 'webm', 'flv', 'wmv',
-  'zip', 'rar', '7z', 'tar', 'gz',
+  // 文档类
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'md', 'html',
+  // 图片类（30MB 限制）
+  'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif',
+  // 音频类（50MB 限制）
+  'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'amr',
+  // 视频类（500MB 限制）
+  'mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'm4v',
+  // 压缩包（80MB 限制）
+  'zip', 'rar', '7z',
+  // 设计源文件（100MB 限制）
+  'psd', 'ai',
+  // 3D 模型（200MB 限制）
+  'stl', 'obj', 'fbx',
+  // 电子书（50MB 限制）
+  'epub', 'pub',
 ]
+
+/** 文件大小限制映射（单位：字节） */
+const FILE_SIZE_LIMITS: Record<string, number> = {
+  // PDF: 50MB
+  pdf: 50 * 1024 * 1024,
+  // Word: 30MB
+  doc: 30 * 1024 * 1024,
+  docx: 30 * 1024 * 1024,
+  // Excel: 30MB
+  xls: 30 * 1024 * 1024,
+  xlsx: 30 * 1024 * 1024,
+  csv: 30 * 1024 * 1024,
+  // PPT: 50MB
+  ppt: 50 * 1024 * 1024,
+  pptx: 50 * 1024 * 1024,
+  // 文本: 50MB
+  txt: 50 * 1024 * 1024,
+  md: 50 * 1024 * 1024,
+  html: 50 * 1024 * 1024,
+  // 图片: 30MB
+  jpg: 30 * 1024 * 1024,
+  jpeg: 30 * 1024 * 1024,
+  png: 30 * 1024 * 1024,
+  gif: 30 * 1024 * 1024,
+  webp: 30 * 1024 * 1024,
+  bmp: 30 * 1024 * 1024,
+  tiff: 30 * 1024 * 1024,
+  tif: 30 * 1024 * 1024,
+  // 音频: 50MB
+  mp3: 50 * 1024 * 1024,
+  wav: 50 * 1024 * 1024,
+  ogg: 50 * 1024 * 1024,
+  flac: 50 * 1024 * 1024,
+  aac: 50 * 1024 * 1024,
+  m4a: 50 * 1024 * 1024,
+  amr: 50 * 1024 * 1024,
+  // 视频: 500MB
+  mp4: 500 * 1024 * 1024,
+  webm: 500 * 1024 * 1024,
+  mov: 500 * 1024 * 1024,
+  avi: 500 * 1024 * 1024,
+  mkv: 500 * 1024 * 1024,
+  flv: 500 * 1024 * 1024,
+  m4v: 500 * 1024 * 1024,
+  // 压缩包: 80MB
+  zip: 80 * 1024 * 1024,
+  rar: 80 * 1024 * 1024,
+  '7z': 80 * 1024 * 1024,
+  // 设计源文件: 100MB
+  psd: 100 * 1024 * 1024,
+  ai: 100 * 1024 * 1024,
+  // 3D 模型: 200MB
+  stl: 200 * 1024 * 1024,
+  obj: 200 * 1024 * 1024,
+  fbx: 200 * 1024 * 1024,
+  // 电子书: 50MB
+  epub: 50 * 1024 * 1024,
+  pub: 50 * 1024 * 1024,
+}
+
+/** 格式化文件大小显示 */
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
+}
 
 /** 校验文件是否可上传，返回错误原因或 null */
 function validateFile(file: File): string | null {
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
 
-  // 仅做格式校验，大小限制完全由后端控制
+  // 1. 格式校验
   if (!ext || !SUPPORTED_EXTENSIONS.includes(ext)) {
-    return `不支持的文件格式 ".${ext || '未知'}"，支持：PDF、Word、Excel、CSV、TXT、Markdown、图片、音视频、压缩包`
+    return `不支持的文件格式 ".${ext || '未知'}"，支持：PDF、Word、Excel、PPT、CSV、TXT、Markdown、HTML、图片、音视频、压缩包、设计文件、3D模型、电子书（共43种扩展名）`
+  }
+
+  // 2. 大小校验
+  const maxSize = FILE_SIZE_LIMITS[ext]
+  if (maxSize && file.size > maxSize) {
+    const limitMB = (maxSize / (1024 * 1024)).toFixed(0)
+    const sizeMB = (file.size / (1024 * 1024)).toFixed(2)
+    return `文件大小超出限制：${ext.toUpperCase()} 文件最大支持 ${limitMB}MB，当前文件 ${sizeMB}MB`
   }
 
   return null
@@ -312,6 +398,24 @@ async function handlePreviewFile(item: { file: File; docId?: number; previewCont
     }
   } else if (['jpg', 'jpeg', 'png', 'gif'].includes(ext || '')) {
     previewContent.value = previewPlaceholder('图片文件请下载后使用图片查看器打开查看')
+    showPreviewDialog.value = true
+  } else if (['xls', 'xlsx'].includes(ext || '')) {
+    // Excel 文件：用 xlsx 库解析首个工作表为 HTML 表格预览
+    try {
+      const XLSX = await import('xlsx')
+      const arrayBuffer = await item.file.arrayBuffer()
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+      const html = XLSX.utils.sheet_to_html(firstSheet, { editable: false })
+      previewContent.value = `<div class="excel-preview">${html}</div>`
+      showPreviewDialog.value = true
+    } catch (error) {
+      console.error('预览Excel文件失败:', error)
+      previewContent.value = previewPlaceholder('Excel文件预览失败，请下载后使用Excel打开查看')
+      showPreviewDialog.value = true
+    }
+  } else if (ext === 'pub') {
+    previewContent.value = previewPlaceholder('Publisher(.pub)文件暂不支持在线预览，请下载后使用Microsoft Publisher打开查看')
     showPreviewDialog.value = true
   } else if (['md', 'markdown'].includes(ext || '')) {
     const reader = new FileReader()
@@ -665,21 +769,38 @@ async function handleUploadSubmit() {
 
         if (file.size > LARGE_FILE_THRESHOLD) {
           // ── 大文件：走 OSS 分片直传（无超时，支持断点续传） ──
-          result = await uploadFileToOss({
-            file,
-            title: item.title || fileName,
-            description: item.description,
-            scope: item.scope,
-            keywords: uploadKeywords,
-            // 文件哈希计算进度回调
-            onMd5Progress: (percent) => {
-              loadingInstance.setText(`正在校验文件... ${i + 1}/${totalCount}：${file.name}（${percent}%）`)
-            },
-            // 分片上传进度回调，实时更新 loading 文字
-            onProgress: (percent) => {
-              loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}（${percent}%）`)
-            },
-          })
+          try {
+            result = await uploadFileToOss({
+              file,
+              title: item.title || fileName,
+              description: item.description,
+              scope: item.scope,
+              keywords: uploadKeywords,
+              // 文件哈希计算进度回调
+              onMd5Progress: (percent) => {
+                loadingInstance.setText(`正在校验文件... ${i + 1}/${totalCount}：${file.name}（${percent}%）`)
+              },
+              // 分片上传进度回调，实时更新 loading 文字
+              onProgress: (percent) => {
+                loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}（${percent}%）`)
+              },
+            })
+          } catch (ossError) {
+            // OSS 上传失败（如 CORS 错误），降级到后端中转上传
+            console.warn('[DocList] OSS 上传失败，降级到后端中转:', ossError)
+            loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}（后端中转）`)
+
+            const formData = new FormData()
+            formData.append('file', file)
+            formData.append('title', item.title || fileName)
+            if (item.description) {
+              formData.append('description', item.description)
+            }
+            uploadKeywords.forEach((kw: string) => formData.append('keywords', kw))
+            formData.append('scope', item.scope === 'public' ? 'school' : 'college')
+
+            result = await uploadFileApi(formData)
+          }
         } else {
           // ── 小文件：走原有 FormData 后端中转上传 ──
           loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}`)
@@ -925,6 +1046,8 @@ function handleSizeChange(size: number) {
 const fileTypeIcons: Record<string, any> = {
   pdf: Document,
   doc: Files,
+  excel: Grid,
+  publisher: Document,
   image: Picture,
   audio: Headset,
   video: VideoCamera,
@@ -934,16 +1057,12 @@ const fileTypeIcons: Record<string, any> = {
 const fileTypeColors: Record<string, string> = {
   pdf: '#f56c6c',
   doc: '#409eff',
+  excel: '#67c23a',
+  publisher: '#e6a23c',
   image: '#67c23a',
   audio: '#909399',
   video: '#e6a23c',
   archive: 'var(--color-type-archive, #9b59b6)',
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
 function formatDate(dateStr: string): string {
@@ -997,28 +1116,13 @@ function handleEditSubmit(data: { title: string; description: string; keywords: 
 
 async function handleDownload(file: KnowledgeFile) {
   try {
-    // 1. 先确定文件名：列表显示什么就下载什么
-    let fileName: string
-    if (file.title && file.title.includes('.')) {
-      fileName = file.title
-    } else {
-      let ext = ''
-      if (file.fileUrl) {
-        const urlExt = file.fileUrl.split('?')[0].split('.').pop()?.toLowerCase()
-        if (urlExt && /^[a-z0-9]{1,5}$/i.test(urlExt)) ext = '.' + urlExt
-      }
-      if (!ext) {
-        const extMap: Record<string, string> = {
-          doc: '.docx', docx: '.docx', pdf: '.pdf',
-          txt: '.txt', md: '.md',
-          image: '.png', audio: '.mp3', video: '.mp4', archive: '.zip',
-        }
-        ext = extMap[file.fileType] || ''
-      }
-      fileName = (file.title || `文件${file.id}`) + ext
+    // 优先使用后端返回的 download_url（带原始文件名）
+    if (file.download_url) {
+      downloadByIframe(file.download_url)
+      return
     }
 
-    // 2. 请求后端下载接口
+    // 兜底方案：请求后端下载接口获取 download_url
     const token = localStorage.getItem('access_token')
     const response = await fetch(`/api/knowledge/docs/${file.id}/download/`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -1031,32 +1135,32 @@ async function handleDownload(file: KnowledgeFile) {
 
     const contentType = response.headers.get('Content-Type') || ''
 
-    // 3. 后端返回 JSON（含 OSS 地址）：先尝试 fetch 为 Blob 以保留自定义文件名
+    // 后端返回 JSON（含 download_url）
     if (contentType.includes('application/json')) {
       const json = await response.json()
-      const fileUrl = json.url || json.file_url || json.fileUrl || json.download_url
-      if (!fileUrl) throw new Error('后端返回了 JSON 但没有包含文件下载地址')
-
-      try {
-        const ossRes = await fetch(fileUrl)
-        if (ossRes.ok) {
-          const blob = await ossRes.blob()
-          downloadBlob(blob, fileName)
-          return
-        }
-      } catch {
-        // CORS 不通，回退到 window.open（文件名由 OSS 决定）
-      }
-      window.open(fileUrl, '_blank')
+      const downloadUrl = json.download_url || json.url || json.file_url || json.fileUrl
+      if (!downloadUrl) throw new Error('未获取到下载地址')
+      downloadByIframe(downloadUrl)
       return
     }
 
-    // 4. 后端直接返回二进制文件流
-    downloadBlob(await response.blob(), fileName)
+    // 后端直接返回二进制文件流（旧兼容）
+    const blob = await response.blob()
+    const fileName = file.file_name || file.title || `文件${file.id}`
+    downloadBlob(blob, fileName)
   } catch (error: any) {
     console.error('下载文件失败:', error)
     ElMessage.error(error.message || '下载文件失败')
   }
+}
+
+/** 通过隐藏 iframe 触发下载，避免新标签页闪烁 */
+function downloadByIframe(url: string) {
+  const iframe = document.createElement('iframe')
+  iframe.style.display = 'none'
+  iframe.src = url
+  document.body.appendChild(iframe)
+  setTimeout(() => document.body.removeChild(iframe), 3000)
 }
 
 /** 创建 Blob URL 并触发浏览器下载 */
@@ -1152,7 +1256,7 @@ function saveFiles(files: KnowledgeFile[]) {
             @change="onUploadChange"
             drag
             multiple
-            accept=".pdf,.doc,.docx,.txt,.md,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.pub,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
             class="upload-dragger"
           >
             <el-icon :size="300" color="#c0c4cc"><Upload /></el-icon>
@@ -1238,7 +1342,7 @@ function saveFiles(files: KnowledgeFile[]) {
                 ref="fileInputRef"
                 type="file"
                 multiple
-                accept=".pdf,.doc,.docx,.txt,.md,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.pub,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
                 style="display: none"
                 @change="handleFileInputChange"
               />
@@ -2198,6 +2302,28 @@ function saveFiles(files: KnowledgeFile[]) {
 .preview-content {
   max-height: 600px;
   overflow-y: auto;
+}
+
+/* Excel 预览表格样式 */
+.excel-preview {
+  overflow-x: auto;
+}
+.excel-preview table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.excel-preview td, .excel-preview th {
+  border: 1px solid #dcdfe6;
+  padding: 6px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+.excel-preview tr:nth-child(even) {
+  background: #f5f7fa;
+}
+.excel-preview tr:hover {
+  background: #ecf5ff;
 }
 
 /* Markdown 渲染样式 */

@@ -2,7 +2,7 @@
 // 功能：通过 POST /api/chat/ask/ 连接 AI 接口，解析 SSE 事件流
 import { ref, onUnmounted } from 'vue'
 import { askQuestionApi } from '@/api/chat'
-import type { KnowledgeFile } from '@/types'
+import type { KnowledgeFile, SuggestedItem, ImageItem } from '@/types'
 
 export interface SSEResult {
   content: ReturnType<typeof ref<string>>
@@ -10,7 +10,8 @@ export interface SSEResult {
   done: ReturnType<typeof ref<boolean>>
   error: ReturnType<typeof ref<string | null>>
   references: ReturnType<typeof ref<KnowledgeFile[]>>
-  suggested: ReturnType<typeof ref<string[]>>
+  suggested: ReturnType<typeof ref<SuggestedItem[]>>
+  images: ReturnType<typeof ref<ImageItem[]>>
   messageId: ReturnType<typeof ref<number | null>>
   close: () => void
 }
@@ -27,7 +28,8 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
   const done = ref(false)
   const error = ref<string | null>(null)
   const references = ref<KnowledgeFile[]>([])
-  const suggested = ref<string[]>([])
+  const suggested = ref<SuggestedItem[]>([])
+  const images = ref<ImageItem[]>([])
   const messageId = ref<number | null>(null)
 
   let abortController: AbortController | null = null
@@ -62,6 +64,7 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
 
       const decoder = new TextDecoder()
       let buffer = ''
+      let currentEvent = ''
 
       while (true) {
         const { done: streamDone, value } = await reader.read()
@@ -72,7 +75,6 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
         const lines = buffer.split(/\r?\n/)
         buffer = lines.pop() || '' // 保留不完整的行
 
-        let currentEvent = ''
         for (const line of lines) {
           if (line.startsWith('event: ')) {
             currentEvent = line.slice(7).trim()
@@ -108,6 +110,11 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
         case 'suggested': {
           const list = JSON.parse(dataStr)
           if (Array.isArray(list)) suggested.value = list
+          break
+        }
+        case 'images': {
+          const list = JSON.parse(dataStr)
+          if (Array.isArray(list)) images.value = list.filter((img: any) => img.preview_url)
           break
         }
         case 'references': {
@@ -165,5 +172,5 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
 
   onUnmounted(close)
 
-  return { content, streaming, done, error, references, suggested, messageId, close }
+  return { content, streaming, done, error, references, suggested, images, messageId, close }
 }

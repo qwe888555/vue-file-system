@@ -25,6 +25,40 @@ async function fetchDashboard() {
     if (e?.response?.status !== 404) ElMessage.error('获取 Dashboard 失败')
     dashboardData.value = { blocks: {} }
   }
+  // 概览「登录」块对接独立统计接口；dashboard 登录聚合异常时先置为加载态，避免闪现"数据获取失败"
+  const login = dashboardData.value?.blocks?.login
+  if (login && login.error) {
+    dashboardData.value = {
+      ...dashboardData.value,
+      blocks: { ...dashboardData.value.blocks, login: { loading: true } },
+    }
+  }
+  fetchLoginBlock()
+}
+
+/** 登录块数据来源：dashboard 登录聚合正常时优先用其周期数据，异常/缺失时回退独立统计接口 */
+async function fetchLoginBlock() {
+  try {
+    const s = await request.get('/admin/logs/login/stats/')
+    if (!s || !dashboardData.value) return
+    const blocks = dashboardData.value.blocks || {}
+    const login = blocks.login
+    // dashboard 登录块有周期数据（total 非空且无 error）→ 以 dashboard 为准
+    if (login && !login.error && login.total != null) return
+    blocks.login = {
+      total: s.total ?? 0,
+      success_count: s.success_count ?? 0,
+      fail_count: s.fail_count ?? 0,
+    }
+    dashboardData.value = { ...dashboardData.value, blocks }
+  } catch {
+    // 独立接口也失败时恢复错误态，避免一直停留在"加载中"
+    if (dashboardData.value) {
+      const blocks = dashboardData.value.blocks || {}
+      blocks.login = { error: true }
+      dashboardData.value = { ...dashboardData.value, blocks }
+    }
+  }
 }
 
 function hasError(block: any) { return block && block.error }
@@ -65,6 +99,7 @@ const logTabs = [
         <div v-for="(block, name) in dashboardData.blocks" :key="name" class="db-block">
           <h4>{{ { upload: '上传', query: '查询', sensitive: '敏感内容', login: '登录', operation: '操作' }[name] || name }}</h4>
           <div v-if="hasError(block)" class="db-error">数据获取失败</div>
+          <div v-else-if="block.loading" class="db-error">加载中...</div>
           <div v-else class="db-stats">
             <div class="db-stat"><span>总数</span><strong>{{ block.total ?? 0 }}</strong></div>
             <div v-if="block.total_size != null" class="db-stat"><span>总大小</span><strong>{{ (block.total_size / 1048576).toFixed(1) }}MB</strong></div>

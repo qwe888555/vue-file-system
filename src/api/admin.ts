@@ -138,7 +138,6 @@ export interface Department {
   id: number
   name: string
   parent: number | null
-  sort_order: number
   children: Department[]
 }
 
@@ -175,7 +174,6 @@ export async function getDepartmentsApi(params?: {
 export function createDepartmentApi(data: {
   name: string
   parent?: number | null
-  sort_order?: number
 }): Promise<Department> {
   return request.post('/admin/departments/', data)
 }
@@ -183,7 +181,7 @@ export function createDepartmentApi(data: {
 /** 编辑部门 */
 export function updateDepartmentApi(
   id: number,
-  data: { name?: string; parent?: number | null; sort_order?: number },
+  data: { name?: string; parent?: number | null },
 ): Promise<Department> {
   return request.put(`/admin/departments/${id}/`, data)
 }

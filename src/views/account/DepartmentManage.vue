@@ -34,10 +34,9 @@ onMounted(loadList)
 const dialogVisible = ref(false)
 const submitting = ref(false)
 const formRef = ref<FormInstance>()
-const form = reactive<{ name: string; parent: number | null; sort_order: number }>({
+const form = reactive<{ name: string; parent: number | null }>({
   name: '',
   parent: null,
-  sort_order: 0,
 })
 const rules: FormRules = {
   name: [
@@ -52,7 +51,6 @@ const parentOptions = computed(() => tree.value)
 function openCreateDialog() {
   form.name = ''
   form.parent = null
-  form.sort_order = 0
   dialogVisible.value = true
 }
 
@@ -69,7 +67,6 @@ async function handleCreate() {
       name: form.name.trim(),
       // clearable 清空后可能为 ''，统一归一化：null = 一级部门
       parent: form.parent == null || (form.parent as unknown) === '' ? null : Number(form.parent),
-      sort_order: form.sort_order,
     })
     ElMessage.success('部门创建成功')
     dialogVisible.value = false
@@ -149,7 +146,6 @@ async function handleDelete(row: Department) {
           {{ row.children?.length || 0 }}
         </template>
       </el-table-column>
-      <el-table-column prop="sort_order" label="排序" width="100" align="center" />
       <el-table-column label="操作" width="140" align="center">
         <template #default="{ row }">
           <el-button
@@ -191,15 +187,6 @@ async function handleDelete(row: Department) {
             <el-option v-for="d in parentOptions" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
           <span class="form-tip">部门最多两级，仅可选择一级部门作为上级</span>
-        </el-form-item>
-        <el-form-item label="排序" prop="sort_order">
-          <el-input-number
-            v-model="form.sort_order"
-            :min="0"
-            :max="999"
-            controls-position="right"
-          />
-          <span class="form-tip">数值越小越靠前</span>
         </el-form-item>
       </el-form>
       <template #footer>

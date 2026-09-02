@@ -182,12 +182,7 @@ instance.interceptors.response.use(
     }
     error.message = msg
     if (error.response?.status !== 401) {
-      // 关键词已存在的错误用 info 提示，避免显示为红色错误
-      if (msg.includes('关键词') && msg.includes('已存在')) {
-        ElMessage.info(msg)
-      } else {
-        ElMessage.error(msg)
-      }
+      ElMessage.error(msg)
     }
     return Promise.reject(error)
   },

@@ -78,7 +78,6 @@ function loadColleges() {
 const departmentColumns = [
   { prop: 'name', label: '部门名称', minWidth: '200' },
   { prop: 'parent', label: '上级单位', minWidth: '200', align: 'center' as const },
-  { prop: 'sort_order', label: '排序', width: '100', align: 'center' as const },
 ]
 
 /** 部门树 → 扁平列表（children 仅用于递归，不进入表格行，避免回传后端） */
@@ -182,15 +181,6 @@ function loadDepartments() {
                   :value="opt.value"
                 />
               </el-select>
-            </el-form-item>
-            <el-form-item label="排序" prop="sort_order">
-              <el-input-number
-                v-model="form.sort_order"
-                :min="0"
-                :max="999"
-                controls-position="right"
-              />
-              <span class="form-tip">数值越小越靠前</span>
             </el-form-item>
           </template>
         </BaseTable>

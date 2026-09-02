@@ -1,7 +1,7 @@
 // ── 智能问答状态管理 Composable ──
 // 功能：管理对话列表/消息缓存/增删改查/刷新
 import { ref, computed } from 'vue'
-import type { Conversation, Message, KnowledgeFile } from '@/types'
+import type { Conversation, Message, KnowledgeFile, SuggestedItem, ImageItem } from '@/types'
 import {
   getConversationsApi,
   getConversationDetailApi,
@@ -24,12 +24,7 @@ function summaryTitle(text: string): string {
   let s = t.replace(/^(请问|我想问一下|你好|帮我|请教一下|我想|如何|怎么|怎样|哪里|什么是|哪个)\s*/g, '')
   // 去除末尾标点
   s = s.replace(/[？?。，,！!]$/g, '')
-  // 提取关键部分：取前 8 个字，适应侧边栏宽度
-  if (s.length <= 8) return s
-  // 尝试按标点/连词拆分，取前半段
-  const split = s.split(/[，,、；;]/, 1)[0]
-  if (split.length <= 8) return split
-  return split.slice(0, 8) + '…'
+  return s
 }
 
 interface CacheData {
@@ -197,7 +192,7 @@ export function useChat() {
   /** 添加 AI 回复消息（SSE 完成后调用）
    *  convId 用于后台流式场景：发起提问的会话可能已不是当前会话，
    *  需按发起 convId 落库，避免 AI 回答串到其他会话 */
-  function appendAssistantMessage(content: string, references?: KnowledgeFile[], realId?: number, suggested?: string[], convId?: number): Message {
+  function appendAssistantMessage(content: string, references?: KnowledgeFile[], realId?: number, suggested?: SuggestedItem[], images?: ImageItem[], convId?: number): Message {
     const id = convId ?? currentConversationId.value
     if (!id) throw new Error('No active conversation')
     const msg: Message = {
@@ -207,6 +202,7 @@ export function useChat() {
       content,
       references,
       suggested,
+      images,
       createdAt: new Date().toISOString(),
     }
     if (!messagesMap.value[id]) messagesMap.value[id] = []

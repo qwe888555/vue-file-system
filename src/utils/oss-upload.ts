@@ -53,12 +53,12 @@ export interface OssUploadOptions {
  * 从 endpoint URL 解析 region
  * 例：https://oss-cn-beijing.aliyuncs.com → oss-cn-beijing
  */
-function parseRegionFromEndpoint(endpoint: string): string {
-  const match = endpoint.match(/oss-[a-z0-9-]+/)
-  if (!match) {
-    throw new Error(`无法从 endpoint 解析 region: ${endpoint}`)
+function parseRegionFromEndpoint(endpoint: string): string | null {
+  if (!endpoint || typeof endpoint !== 'string') {
+    return null
   }
-  return match[0]
+  const match = endpoint.match(/oss-[a-z0-9-]+/)
+  return match ? match[0] : null
 }
 
 /**
@@ -66,6 +66,9 @@ function parseRegionFromEndpoint(endpoint: string): string {
  * 例：https://my-bucket.oss-cn-beijing.aliyuncs.com → my-bucket
  */
 function parseBucketFromEndpoint(endpoint: string): string | null {
+  if (!endpoint || typeof endpoint !== 'string') {
+    return null
+  }
   const match = endpoint.match(/\/\/([^.]+)\./)
   return match ? match[1] : null
 }
@@ -168,25 +171,110 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
   const md5 = await calculateFileMd5(file, onMd5Progress)
 
   // 后端 file_type 字段接受具体扩展名（如 mp4、xls），不是类型名
+  // 后端支持的扩展名列表外的类型映射到相近的支持类型（43种扩展名）
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  const BACKEND_SUPPORTED_TYPES = [
+    // 文档类
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'md', 'html',
+    // 图片类
+    'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif',
+    // 音频类
+    'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'amr',
+    // 视频类
+    'mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'm4v',
+    // 压缩包
+    'zip', 'rar', '7z',
+    // 设计源文件
+    'psd', 'ai',
+    // 3D 模型
+    'stl', 'obj', 'fbx',
+    // 电子书
+    'epub', 'pub',
+    // 兜底类型
+    'other',
+  ]
+  // 不支持扩展名的映射规则
+  const FILE_TYPE_FALLBACK: Record<string, string> = {
+    // PPT 虽然后端支持，但旧代码可能需要映射
+    ppt: 'other',
+    pptx: 'other',
+  }
+  const stsFileType = BACKEND_SUPPORTED_TYPES.includes(ext)
+    ? ext
+    : (FILE_TYPE_FALLBACK[ext] || 'other')
 
-  // ── 第2步：获取 STS 临时凭证 ──
+  // ── 第2步：获取上传凭证 ──
   const credential = await getUploadCredentialApi({
     file_name: file.name,
     file_size: file.size,
     md5,
-    file_type: ext,
+    file_type: stsFileType,
   })
 
-  // 字段读取（后端返回 snake_case）
-  const accessKeyId = credential.access_key_id
-  const accessKeySecret = credential.access_key_secret
-  const stsToken = credential.security_token
-  const region = credential.region || parseRegionFromEndpoint(credential.endpoint)
-  const bucket = credential.bucket || parseBucketFromEndpoint(credential.endpoint)
-  const objectKey = credential.object_key
+  // 检查是否为直接上传模式（后端返回 upload_url 而非 STS 凭证）
+  if (credential.upload_url && !credential.sts_credentials) {
+    const userStore = useUserStore()
+    const userCollegeId = userStore.userInfo?.college_id ?? null
 
-  // 凭证完整性校验
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('PUT', credential.upload_url)
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) {
+          const percent = Math.round((e.loaded / e.total) * 100)
+          onProgress(percent)
+        }
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve()
+        } else {
+          reject(new Error(`文件上传失败: ${xhr.status} ${xhr.statusText}`))
+        }
+      }
+
+      xhr.onerror = () => {
+        reject(new Error('OSS CORS 配置错误，请联系管理员配置 OSS Bucket 的 CORS 规则'))
+      }
+
+      xhr.send(file)
+    })
+
+    const callbackResult = await uploadCallbackApi({
+      object_key: credential.oss_key,
+      title,
+      description,
+      file_name: file.name,
+      file_type: file.name.split('.').pop() || '',
+      hash: md5,
+      size: file.size,
+      college_id: userCollegeId,
+      scope: scope === 'public' ? 'school' : 'college',
+    })
+
+    return callbackResult
+  }
+
+  // STS 模式：使用后端返回的凭证
+  const stsCreds = credential.sts_credentials || credential
+  const accessKeyId = stsCreds.access_key_id
+  const accessKeySecret = stsCreds.access_key_secret
+  const stsToken = stsCreds.security_token
+
+  let region = stsCreds.region
+  let bucket = stsCreds.bucket
+
+  if (!region && stsCreds.endpoint) {
+    region = parseRegionFromEndpoint(stsCreds.endpoint)
+  }
+  if (!bucket && stsCreds.endpoint) {
+    bucket = parseBucketFromEndpoint(stsCreds.endpoint)
+  }
+
+  const objectKey = stsCreds.object_key || credential.oss_key
+
   if (!accessKeyId || !accessKeySecret) {
     throw new Error('STS 凭证缺少 accessKeyId 或 accessKeySecret，请检查后端返回')
   }
@@ -215,7 +303,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
         file_name: file.name,
         file_size: file.size,
         md5,
-        file_type: ext,
+        file_type: stsFileType,
       })
       return {
         accessKeyId: newCred.access_key_id,

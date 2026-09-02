@@ -2,12 +2,12 @@
 // ── 智能问答主页面 ──
 // 豆包风格：简洁、留白、圆润
 
-import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
 import { isAdminRole } from '@/config/roles'
-import type { KnowledgeFile } from '@/types'
+import type { KnowledgeFile, SuggestedItem, ImageItem } from '@/types'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
 import AppRail from '@/components/chat/AppRail.vue'
@@ -30,12 +30,14 @@ const showEntryAnim = ref(!hasPlayed)
 const showInstantContent = ref(hasPlayed)
 const inputText = ref('')
 const isRecording = ref(false)
+const chatScrollRef = ref<HTMLElement | null>(null)
 
 // SSE —— 按 convId 索引：切换会话不杀流，后台继续接收，token 写到发起会话的流式态
 interface StreamingState {
   content: string
   references: KnowledgeFile[]
-  suggested: string[]
+  suggested: SuggestedItem[]
+  images: ImageItem[]
   streaming: boolean
   messageId: number | null
   error: string | null
@@ -45,7 +47,7 @@ interface StreamingState {
 const streamingMap = ref<Record<number, StreamingState>>({})
 // 非响应式：按 convId 索引的 SSE 实例与 watcher 清理函数
 const sseMap: Record<number, ReturnType<typeof useSSE> | null> = {}
-const stopWatchMap: Record<number, { content?: () => void; refs?: () => void; suggested?: () => void }> = {}
+const stopWatchMap: Record<number, { content?: () => void; refs?: () => void; suggested?: () => void; images?: () => void }> = {}
 
 // 当前会话的流式态（切换会话时自动反映新会话的流式内容）
 const currentStreaming = computed(() => {
@@ -56,6 +58,7 @@ const isStreaming = computed(() => !!currentStreaming.value?.streaming)
 const streamingContent = computed(() => currentStreaming.value?.content ?? '')
 const streamingReferences = computed(() => currentStreaming.value?.references ?? [])
 const streamingSuggested = computed(() => currentStreaming.value?.suggested ?? [])
+const streamingImages = computed(() => currentStreaming.value?.images ?? [])
 
 const isLoggedIn = computed(() => !!userStore.token)
 // 单一数据源：凡拥有知识库访问权的角色均视为管理员口径（与 config/roles.ts 对齐）
@@ -189,6 +192,14 @@ async function handleDeleteConversation(id: number) {
   chatUi.clearConvUnread(id)
 }
 
+/** 滚动对话区到底部 */
+function scrollToBottom() {
+  nextTick(() => {
+    const el = chatScrollRef.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
 async function sendMessage() {
   const text = inputText.value.trim()
   if (!text || isStreaming.value) return
@@ -204,6 +215,7 @@ async function sendMessage() {
   const convId = chat.currentConversationId.value!
   chat.appendUserMessage(text)
   inputText.value = ''
+  scrollToBottom()
 
   // 同会话有旧流则先杀掉（避免并发污染同一会话）
   cancelStreaming(convId)
@@ -215,6 +227,7 @@ async function sendMessage() {
     content: '',
     references: [],
     suggested: [],
+    images: [],
     streaming: true,
     messageId: null,
     error: null,
@@ -245,7 +258,7 @@ async function sendMessage() {
     const realId = sse.messageId?.value
     // st.content 来自 SSE 流，为空时取 sse.content（后端返回的错误消息如敏感词拦截）
     const content = st.content || sse.content?.value || ''
-    chat.appendAssistantMessage(content, st.references, realId || undefined, st.suggested, convId)
+    chat.appendAssistantMessage(content, st.references, realId || undefined, st.suggested, st.images, convId)
     // 落库后清掉流式状态，下次该会话显示正式消息
     delete streamingMap.value[convId]
     delete sseMap[convId]
@@ -268,6 +281,7 @@ async function sendMessage() {
   stopWatchMap[convId]?.content?.()
   stopWatchMap[convId]?.refs?.()
   stopWatchMap[convId]?.suggested?.()
+  stopWatchMap[convId]?.images?.()
   stopWatchMap[convId] = {
     content: watch(sse.content, (val) => {
       const st = streamingMap.value[convId]
@@ -280,6 +294,10 @@ async function sendMessage() {
     suggested: watch(sse.suggested, (val) => {
       const st = streamingMap.value[convId]
       if (st && st.seq === seq) st.suggested = val
+    }),
+    images: watch(sse.images, (val) => {
+      const st = streamingMap.value[convId]
+      if (st && st.seq === seq) st.images = val
     }),
   }
 }
@@ -469,6 +487,11 @@ onMounted(() => {
     showInstantContent.value = true
   }
 })
+// 流式输出时自动跟随滚动到底部
+watch(streamingContent, () => {
+  if (isStreaming.value) scrollToBottom()
+})
+
 onUnmounted(() => {
   document.removeEventListener('mousedown', handleBlankClick)
   cleanupRecording()
@@ -592,13 +615,13 @@ watch(
               <path d="M3 4h14v1.5H3V4zm0 5h14v1.5H3V9zm0 5h14v1.5H3v-1.5z" />
             </svg>
           </button>
-          <h1 class="topbar-title">{{ topbarTitle }}</h1>
+          <h1 class="topbar-title" :title="topbarTitle">{{ topbarTitle }}</h1>
           <span v-if="isStreaming" class="chip-stream"><i></i>正在回答…</span>
         </div>
       </header>
 
       <!-- 对话区 -->
-      <div class="chat-messages">
+      <div ref="chatScrollRef" class="chat-messages">
         <div class="messages-inner">
           <!-- 消息列表（有对话且有消息时显示） -->
           <div v-if="hasActiveConversation && chat.currentMessages.value.length > 0" class="messages-list">
@@ -607,6 +630,7 @@ watch(
               :key="msg.id"
               :message="msg"
               :suggested-questions="msg.suggested"
+              :images="msg.images"
               :user-role="userStore.role ?? undefined"
               @feedback="handleFeedback"
               @quick-question="quickQuestion"
@@ -623,6 +647,7 @@ watch(
               :streaming="true"
               :stream-content="streamingContent"
               :suggested-questions="streamingSuggested"
+              :images="streamingImages"
               :user-role="userStore.role ?? undefined"
               @quick-question="quickQuestion"
             />
