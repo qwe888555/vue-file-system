@@ -729,9 +729,9 @@ async function handleUploadSubmit() {
             description: item.description,
             scope: item.scope,
             keywords: uploadKeywords,
-            // MD5 计算进度回调
+            // 文件哈希计算进度回调
             onMd5Progress: (percent) => {
-              loadingInstance.setText(`正在校验文件... ${i + 1}/${totalCount}：${file.name}（MD5 ${percent}%）`)
+              loadingInstance.setText(`正在校验文件... ${i + 1}/${totalCount}：${file.name}（${percent}%）`)
             },
             // 分片上传进度回调，实时更新 loading 文字
             onProgress: (percent) => {
