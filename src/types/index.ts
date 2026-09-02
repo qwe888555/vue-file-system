@@ -105,6 +105,11 @@ export interface KnowledgeFile {
   updatedAt: string
   content?: string
   fileData?: string
+  // OSS 相关字段（后端新增）
+  oss_url?: string           // 签名内联预览 URL（7天有效）
+  download_url?: string      // 附件下载 URL，带原始文件名（7天有效）
+  file_name?: string         // 原始文件名
+  oss_key?: string           // OSS 对象键（UUID）
 }
 
 // ── 会话消息 ──

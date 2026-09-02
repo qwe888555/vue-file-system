@@ -180,22 +180,109 @@ function getExtTypeName(ext: string): string {
   return '文件'
 }
 
-/** 支持的扩展名白名单 */
+/** 支持的扩展名白名单（后端允许的 43 种扩展名） */
 const SUPPORTED_EXTENSIONS = [
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'md',
-  'jpg', 'jpeg', 'png', 'gif', 'webp',
-  'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma',
-  'mp4', 'avi', 'mkv', 'mov', 'webm', 'flv', 'wmv',
-  'zip', 'rar', '7z', 'tar', 'gz',
+  // 文档类
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'md', 'html',
+  // 图片类（30MB 限制）
+  'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif',
+  // 音频类（50MB 限制）
+  'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'amr',
+  // 视频类（500MB 限制）
+  'mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'm4v',
+  // 压缩包（80MB 限制）
+  'zip', 'rar', '7z',
+  // 设计源文件（100MB 限制）
+  'psd', 'ai',
+  // 3D 模型（200MB 限制）
+  'stl', 'obj', 'fbx',
+  // 电子书（50MB 限制）
+  'epub', 'pub',
 ]
+
+/** 文件大小限制映射（单位：字节） */
+const FILE_SIZE_LIMITS: Record<string, number> = {
+  // PDF: 50MB
+  pdf: 50 * 1024 * 1024,
+  // Word: 30MB
+  doc: 30 * 1024 * 1024,
+  docx: 30 * 1024 * 1024,
+  // Excel: 30MB
+  xls: 30 * 1024 * 1024,
+  xlsx: 30 * 1024 * 1024,
+  csv: 30 * 1024 * 1024,
+  // PPT: 50MB
+  ppt: 50 * 1024 * 1024,
+  pptx: 50 * 1024 * 1024,
+  // 文本: 50MB
+  txt: 50 * 1024 * 1024,
+  md: 50 * 1024 * 1024,
+  html: 50 * 1024 * 1024,
+  // 图片: 30MB
+  jpg: 30 * 1024 * 1024,
+  jpeg: 30 * 1024 * 1024,
+  png: 30 * 1024 * 1024,
+  gif: 30 * 1024 * 1024,
+  webp: 30 * 1024 * 1024,
+  bmp: 30 * 1024 * 1024,
+  tiff: 30 * 1024 * 1024,
+  tif: 30 * 1024 * 1024,
+  // 音频: 50MB
+  mp3: 50 * 1024 * 1024,
+  wav: 50 * 1024 * 1024,
+  ogg: 50 * 1024 * 1024,
+  flac: 50 * 1024 * 1024,
+  aac: 50 * 1024 * 1024,
+  m4a: 50 * 1024 * 1024,
+  amr: 50 * 1024 * 1024,
+  // 视频: 500MB
+  mp4: 500 * 1024 * 1024,
+  webm: 500 * 1024 * 1024,
+  mov: 500 * 1024 * 1024,
+  avi: 500 * 1024 * 1024,
+  mkv: 500 * 1024 * 1024,
+  flv: 500 * 1024 * 1024,
+  m4v: 500 * 1024 * 1024,
+  // 压缩包: 80MB
+  zip: 80 * 1024 * 1024,
+  rar: 80 * 1024 * 1024,
+  '7z': 80 * 1024 * 1024,
+  // 设计源文件: 100MB
+  psd: 100 * 1024 * 1024,
+  ai: 100 * 1024 * 1024,
+  // 3D 模型: 200MB
+  stl: 200 * 1024 * 1024,
+  obj: 200 * 1024 * 1024,
+  fbx: 200 * 1024 * 1024,
+  // 电子书: 50MB
+  epub: 50 * 1024 * 1024,
+  pub: 50 * 1024 * 1024,
+}
+
+/** 格式化文件大小显示 */
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
+}
 
 /** 校验文件是否可上传，返回错误原因或 null */
 function validateFile(file: File): string | null {
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
 
-  // 仅做格式校验，大小限制完全由后端控制
+  // 1. 格式校验
   if (!ext || !SUPPORTED_EXTENSIONS.includes(ext)) {
-    return `不支持的文件格式 ".${ext || '未知'}"，支持：PDF、Word、Excel、CSV、TXT、Markdown、图片、音视频、压缩包`
+    return `不支持的文件格式 ".${ext || '未知'}"，支持：PDF、Word、Excel、PPT、CSV、TXT、Markdown、HTML、图片、音视频、压缩包、设计文件、3D模型、电子书（共43种扩展名）`
+  }
+
+  // 2. 大小校验
+  const maxSize = FILE_SIZE_LIMITS[ext]
+  if (maxSize && file.size > maxSize) {
+    const limitMB = (maxSize / (1024 * 1024)).toFixed(0)
+    const sizeMB = (file.size / (1024 * 1024)).toFixed(2)
+    return `文件大小超出限制：${ext.toUpperCase()} 文件最大支持 ${limitMB}MB，当前文件 ${sizeMB}MB`
   }
 
   return null
@@ -345,6 +432,24 @@ async function handlePreviewFile(item: { file: File; docId?: number; previewCont
   } else if (['jpg', 'jpeg', 'png', 'gif'].includes(ext || '')) {
     previewContent.value = previewPlaceholder('图片文件请下载后使用图片查看器打开查看')
     showPreviewDialog.value = true
+  } else if (['xls', 'xlsx'].includes(ext || '')) {
+    // Excel 文件：用 xlsx 库解析首个工作表为 HTML 表格预览
+    try {
+      const XLSX = await import('xlsx')
+      const arrayBuffer = await item.file.arrayBuffer()
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+      const html = XLSX.utils.sheet_to_html(firstSheet, { editable: false })
+      previewContent.value = `<div class="excel-preview">${html}</div>`
+      showPreviewDialog.value = true
+    } catch (error) {
+      console.error('预览Excel文件失败:', error)
+      previewContent.value = previewPlaceholder('Excel文件预览失败，请下载后使用Excel打开查看')
+      showPreviewDialog.value = true
+    }
+  } else if (ext === 'pub') {
+    previewContent.value = previewPlaceholder('Publisher(.pub)文件暂不支持在线预览，请下载后使用Microsoft Publisher打开查看')
+    showPreviewDialog.value = true
   } else if (['md', 'markdown'].includes(ext || '')) {
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -459,6 +564,9 @@ async function handlePreviewDoc(id: number, title: string) {
         // Office 文档使用 Office Online 预览
         previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(result.content)}`
         isOfficePreview.value = true
+      } else if (fileExtension === 'pub') {
+        // Publisher 文件浏览器无法在线预览
+        previewContent.value = previewPlaceholder('Publisher(.pub)文件暂不支持在线预览，请下载后使用Microsoft Publisher打开查看')
       } else if (isMarkdownFile) {
         // Markdown 文件：获取原始文本，交给 MarkdownViewer 组件渲染
         try {
@@ -958,6 +1066,8 @@ function handleSizeChange(size: number) {
 const fileTypeIcons: Record<string, any> = {
   pdf: Document,
   doc: Files,
+  excel: Grid,
+  publisher: Document,
   image: Picture,
   audio: Headset,
   video: VideoCamera,
@@ -967,16 +1077,12 @@ const fileTypeIcons: Record<string, any> = {
 const fileTypeColors: Record<string, string> = {
   pdf: '#f56c6c',
   doc: '#409eff',
+  excel: '#67c23a',
+  publisher: '#e6a23c',
   image: '#67c23a',
   audio: '#909399',
   video: '#e6a23c',
   archive: 'var(--color-type-archive, #9b59b6)',
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
 function formatDate(dateStr: string): string {
@@ -1030,28 +1136,13 @@ function handleEditSubmit(data: { title: string; description: string; keywords: 
 
 async function handleDownload(file: KnowledgeFile) {
   try {
-    // 1. 先确定文件名：列表显示什么就下载什么
-    let fileName: string
-    if (file.title && file.title.includes('.')) {
-      fileName = file.title
-    } else {
-      let ext = ''
-      if (file.fileUrl) {
-        const urlExt = file.fileUrl.split('?')[0].split('.').pop()?.toLowerCase()
-        if (urlExt && /^[a-z0-9]{1,5}$/i.test(urlExt)) ext = '.' + urlExt
-      }
-      if (!ext) {
-        const extMap: Record<string, string> = {
-          doc: '.docx', docx: '.docx', pdf: '.pdf',
-          txt: '.txt', md: '.md',
-          image: '.png', audio: '.mp3', video: '.mp4', archive: '.zip',
-        }
-        ext = extMap[file.fileType] || ''
-      }
-      fileName = (file.title || `文件${file.id}`) + ext
+    // 优先使用后端返回的 download_url（带原始文件名）
+    if (file.download_url) {
+      window.open(file.download_url, '_blank')
+      return
     }
 
-    // 2. 请求后端下载接口
+    // 兜底方案：请求后端下载接口获取 download_url
     const token = localStorage.getItem('access_token')
     const response = await fetch(`/api/knowledge/docs/${file.id}/download/`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -1064,28 +1155,19 @@ async function handleDownload(file: KnowledgeFile) {
 
     const contentType = response.headers.get('Content-Type') || ''
 
-    // 3. 后端返回 JSON（含 OSS 地址）：先尝试 fetch 为 Blob 以保留自定义文件名
+    // 后端返回 JSON（含 download_url）
     if (contentType.includes('application/json')) {
       const json = await response.json()
-      const fileUrl = json.url || json.file_url || json.fileUrl || json.download_url
-      if (!fileUrl) throw new Error('后端返回了 JSON 但没有包含文件下载地址')
-
-      try {
-        const ossRes = await fetch(fileUrl)
-        if (ossRes.ok) {
-          const blob = await ossRes.blob()
-          downloadBlob(blob, fileName)
-          return
-        }
-      } catch {
-        // CORS 不通，回退到 window.open（文件名由 OSS 决定）
-      }
-      window.open(fileUrl, '_blank')
+      const downloadUrl = json.download_url || json.url || json.file_url || json.fileUrl
+      if (!downloadUrl) throw new Error('未获取到下载地址')
+      window.open(downloadUrl, '_blank')
       return
     }
 
-    // 4. 后端直接返回二进制文件流
-    downloadBlob(await response.blob(), fileName)
+    // 后端直接返回二进制文件流（旧兼容）
+    const blob = await response.blob()
+    const fileName = file.file_name || file.title || `文件${file.id}`
+    downloadBlob(blob, fileName)
   } catch (error: any) {
     console.error('下载文件失败:', error)
     ElMessage.error(error.message || '下载文件失败')
@@ -1185,7 +1267,7 @@ function saveFiles(files: KnowledgeFile[]) {
             @change="onUploadChange"
             drag
             multiple
-            accept=".pdf,.doc,.docx,.txt,.md,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.pub,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
             class="upload-dragger"
           >
             <el-icon :size="300" color="#c0c4cc"><Upload /></el-icon>
@@ -1271,7 +1353,7 @@ function saveFiles(files: KnowledgeFile[]) {
                 ref="fileInputRef"
                 type="file"
                 multiple
-                accept=".pdf,.doc,.docx,.txt,.md,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.pub,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
                 style="display: none"
                 @change="handleFileInputChange"
               />
@@ -2238,6 +2320,28 @@ function saveFiles(files: KnowledgeFile[]) {
 .preview-content {
   max-height: 600px;
   overflow-y: auto;
+}
+
+/* Excel 预览表格样式 */
+.excel-preview {
+  overflow-x: auto;
+}
+.excel-preview table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.excel-preview td, .excel-preview th {
+  border: 1px solid #dcdfe6;
+  padding: 6px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+.excel-preview tr:nth-child(even) {
+  background: #f5f7fa;
+}
+.excel-preview tr:hover {
+  background: #ecf5ff;
 }
 
 /* Markdown 渲染样式 */

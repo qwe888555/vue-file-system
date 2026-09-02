@@ -257,37 +257,17 @@ function goBack() {
 async function handleDownload() {
   if (!file.value) return
 
+  // 优先使用后端返回的 download_url（带原始文件名）
+  if (file.value.download_url) {
+    window.open(file.value.download_url, '_blank')
+    ElMessage.success('下载已开始')
+    return
+  }
+
+  // 兜底方案：使用旧下载接口
   try {
-    // downloadDocApi 返回 Blob 本身（拦截器已解包 response.data），不能按 {data, headers} 解构
     const blob = await downloadDocApi(file.value.id)
-
-    // 文件名取自文档元数据（标题通常已含扩展名），无需解析 content-disposition
-    let fileName = file.value.title || 'download'
-
-    const extMap: Record<string, string> = {
-      pdf: '.pdf',
-      doc: '.doc',
-      docx: '.docx',
-      xls: '.xls',
-      xlsx: '.xlsx',
-      ppt: '.ppt',
-      pptx: '.pptx',
-      txt: '.txt',
-      html: '.html',
-      jpg: '.jpg',
-      jpeg: '.jpeg',
-      png: '.png',
-      gif: '.gif',
-      json: '.json',
-      zip: '.zip',
-      rar: '.rar',
-    }
-
-    const fileExt = getFileExtension(file.value.title)
-    if (!fileExt && file.value.fileType && extMap[file.value.fileType]) {
-      fileName += extMap[file.value.fileType]
-    }
-
+    const fileName = file.value.file_name || file.value.title || 'download'
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url

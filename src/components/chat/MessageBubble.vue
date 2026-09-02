@@ -6,7 +6,7 @@ import type { Message, KnowledgeFile, UserRole } from '@/types'
 import MarkdownViewer from './MarkdownViewer.vue'
 import SseRenderer from './SseRenderer.vue'
 import ReferencesPopover from './ReferencesPopover.vue'
-import { previewDocApi } from '@/api/knowledge'
+import { previewDocApi, getDocDetailApi } from '@/api/knowledge'
 import { useUserStore } from '@/store/user'
 
 const userStore = useUserStore()
@@ -124,8 +124,20 @@ function closePreview() {
 
 /** 下载知识库文档 */
 async function handleDocDownload(docId: number, title: string) {
-  const fileName = title || `文档${docId}`
   try {
+    // 优先使用 download_url（通过获取详情获取）
+    try {
+      const docDetail = await getDocDetailApi(docId)
+      if (docDetail.download_url) {
+        window.open(docDetail.download_url, '_blank')
+        ElMessage.success('下载已开始')
+        return
+      }
+    } catch {
+      // 获取详情失败，继续使用旧逻辑
+    }
+
+    // 兜底方案：请求后端下载接口获取 download_url
     const token = userStore.token
     const response = await fetch(`/api/knowledge/docs/${docId}/download/`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -135,21 +147,15 @@ async function handleDocDownload(docId: number, title: string) {
     const contentType = response.headers.get('Content-Type') || ''
     if (contentType.includes('application/json')) {
       const json = await response.json()
-      const fileUrl = json.url || json.file_url || json.fileUrl || json.download_url
-      if (!fileUrl) throw new Error('未获取到下载地址')
-      try {
-        const ossRes = await fetch(fileUrl)
-        if (ossRes.ok) {
-          downloadBlob(await ossRes.blob(), fileName)
-          return
-        }
-      } catch {
-        // CORS 不通，回退到新窗口打开
-      }
-      window.open(fileUrl, '_blank')
+      const downloadUrl = json.download_url || json.url || json.file_url || json.fileUrl
+      if (!downloadUrl) throw new Error('未获取到下载地址')
+      window.open(downloadUrl, '_blank')
       return
     }
-    downloadBlob(await response.blob(), fileName)
+
+    // 后端直接返回二进制文件流（旧兼容）
+    const blob = await response.blob()
+    downloadBlob(blob, title || `文档${docId}`)
     ElMessage.success('下载已开始')
   } catch (error: any) {
     console.error('下载文件失败:', error)

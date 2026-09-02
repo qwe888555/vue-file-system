@@ -168,14 +168,44 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
   const md5 = await calculateFileMd5(file, onMd5Progress)
 
   // 后端 file_type 字段接受具体扩展名（如 mp4、xls），不是类型名
+  // 后端支持的扩展名列表外的类型映射到相近的支持类型（43种扩展名）
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  const BACKEND_SUPPORTED_TYPES = [
+    // 文档类
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'md', 'html',
+    // 图片类
+    'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif',
+    // 音频类
+    'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'amr',
+    // 视频类
+    'mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'm4v',
+    // 压缩包
+    'zip', 'rar', '7z',
+    // 设计源文件
+    'psd', 'ai',
+    // 3D 模型
+    'stl', 'obj', 'fbx',
+    // 电子书
+    'epub', 'pub',
+    // 兜底类型
+    'other',
+  ]
+  // 不支持扩展名的映射规则
+  const FILE_TYPE_FALLBACK: Record<string, string> = {
+    // PPT 虽然后端支持，但旧代码可能需要映射
+    ppt: 'other',
+    pptx: 'other',
+  }
+  const stsFileType = BACKEND_SUPPORTED_TYPES.includes(ext)
+    ? ext
+    : (FILE_TYPE_FALLBACK[ext] || 'other')
 
   // ── 第2步：获取 STS 临时凭证 ──
   const credential = await getUploadCredentialApi({
     file_name: file.name,
     file_size: file.size,
     md5,
-    file_type: ext,
+    file_type: stsFileType,
   })
 
   // 字段读取（后端返回 snake_case）
@@ -215,7 +245,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
         file_name: file.name,
         file_size: file.size,
         md5,
-        file_type: ext,
+        file_type: stsFileType,
       })
       return {
         accessKeyId: newCred.access_key_id,

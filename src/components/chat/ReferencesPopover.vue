@@ -141,9 +141,13 @@ async function downloadFile(file: KnowledgeFile) {
   }
 
   try {
-    // 确定文件名
-    let fileName = file.title || `文件${file.id}`
+    // 优先使用后端返回的 download_url（带原始文件名）
+    if (file.download_url) {
+      window.open(file.download_url, '_blank')
+      return
+    }
 
+    // 兜底方案：请求后端下载接口获取 download_url
     const token = userStore.token
     const response = await fetch(`/api/knowledge/docs/${file.id}/download/`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -155,28 +159,19 @@ async function downloadFile(file: KnowledgeFile) {
 
     const contentType = response.headers.get('Content-Type') || ''
 
-    // 后端返回 JSON（含 OSS 地址）
+    // 后端返回 JSON（含 download_url）
     if (contentType.includes('application/json')) {
       const json = await response.json()
-      const fileUrl = json.url || json.file_url || json.fileUrl || json.download_url
-      if (!fileUrl) throw new Error('未获取到下载地址')
-
-      try {
-        const ossRes = await fetch(fileUrl)
-        if (ossRes.ok) {
-          const blob = await ossRes.blob()
-          downloadBlob(blob, fileName)
-          return
-        }
-      } catch {
-        // CORS 不通，回退到 window.open
-      }
-      window.open(fileUrl, '_blank')
+      const downloadUrl = json.download_url || json.url || json.file_url || json.fileUrl
+      if (!downloadUrl) throw new Error('未获取到下载地址')
+      window.open(downloadUrl, '_blank')
       return
     }
 
-    // 后端直接返回二进制文件流
-    downloadBlob(await response.blob(), fileName)
+    // 后端直接返回二进制文件流（旧兼容）
+    const blob = await response.blob()
+    const fileName = file.file_name || file.title || `文件${file.id}`
+    downloadBlob(blob, fileName)
   } catch (error: any) {
     console.error('下载文件失败:', error)
     ElMessage.error(error.message || '下载文件失败')
