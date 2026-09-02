@@ -1441,6 +1441,14 @@ function saveFiles(files: KnowledgeFile[]) {
         show-icon
         class="edit-hint"
       />
+
+      <el-alert
+        title="点击资料名可以查看该资料的内容"
+        type="success"
+        :closable="false"
+        show-icon
+        class="preview-hint"
+      />
       
       <div class="search-section">
         <el-input
@@ -1511,7 +1519,13 @@ function saveFiles(files: KnowledgeFile[]) {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="240" align="center" fixed="right">
+        <el-table-column prop="fileSize" label="文件大小" min-width="110" align="center">
+          <template #default="scope">
+            {{ formatFileSize(scope.row.fileSize) }}
+          </template>
+        </el-table-column>
+
+        <el-table-column label="操作" width="220" align="center" fixed="right">
           <template #default="scope">
             <div class="action-buttons">
               <el-button size="small" type="primary" plain :icon="Download" @click.stop="handleDownload(scope.row)">
@@ -2073,9 +2087,21 @@ function saveFiles(files: KnowledgeFile[]) {
 
 .action-buttons {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   justify-content: center;
-  padding: 0 4px;
+  flex-wrap: nowrap;
+}
+
+/* 操作按钮更紧凑，防止两边溢出 */
+.action-buttons :deep(.el-button) {
+  padding: 5px 8px;
+  font-size: 12px;
+  --el-button-size: 24px;
+}
+
+.action-buttons :deep(.el-button .el-icon) {
+  margin-right: 3px;
+  font-size: 12px;
 }
 
 .file-name-cell {
