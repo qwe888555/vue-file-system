@@ -42,8 +42,13 @@ export function useUpload() {
         return true
       }
 
-      // 2. 获取 OSS 凭证
-      await getUploadCredentialApi()
+      // 2. 获取 OSS 凭证（需要传文件信息）
+      const fileHash = await calcFileHash(file)
+      await getUploadCredentialApi({
+        file_name: file.name,
+        file_size: file.size,
+        md5: fileHash,
+      })
       // TODO: 使用 OSS SDK 直传文件到阿里云 OSS，监听进度
       // const ossClient = new OSS(credential)
       // await ossClient.put(file.name, file, { progress: (p) => { progress.value = p * 90 } })
