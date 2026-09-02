@@ -164,14 +164,23 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     checkpoint,
   } = options
 
-  // ── 第1步：计算文件 MD5（后端 STS 接口必填参数） ──
+  // ── 第1步：计算文件哈希（后端 STS 接口必填参数） ──
   const md5 = await calculateFileMd5(file, onMd5Progress)
+
+  // 检测文件类型，传给后端避免被归类为 "other"
+  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  let fileType = 'document'
+  if (['mp4', 'avi', 'mkv', 'mov', 'webm', 'flv', 'wmv'].includes(ext)) fileType = 'video'
+  else if (['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma'].includes(ext)) fileType = 'audio'
+  else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) fileType = 'image'
+  else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) fileType = 'archive'
 
   // ── 第2步：获取 STS 临时凭证 ──
   const credential = await getUploadCredentialApi({
     file_name: file.name,
     file_size: file.size,
     md5,
+    file_type: fileType,
   })
 
   // 字段读取（后端返回 snake_case）
@@ -211,6 +220,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
         file_name: file.name,
         file_size: file.size,
         md5,
+        file_type: fileType,
       })
       return {
         accessKeyId: newCred.access_key_id,

@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ref, computed, onMounted, triggerRef, watch } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete, WarningFilled, Loading } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete, WarningFilled, Loading, Grid } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
@@ -196,7 +196,7 @@ function getExtTypeName(ext: string): string {
 
 /** 支持的扩展名白名单 */
 const SUPPORTED_EXTENSIONS = [
-  'pdf', 'doc', 'docx', 'txt', 'md',
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'md',
   'jpg', 'jpeg', 'png', 'gif', 'webp',
   'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma',
   'mp4', 'avi', 'mkv', 'mov', 'webm', 'flv', 'wmv',
@@ -209,7 +209,7 @@ function validateFile(file: File): string | null {
 
   // 格式校验
   if (!ext || !SUPPORTED_EXTENSIONS.includes(ext)) {
-    return `不支持的文件格式 ".${ext || '未知'}"，支持：PDF、Word、TXT、Markdown、图片、音视频、压缩包`
+    return `不支持的文件格式 ".${ext || '未知'}"，支持：PDF、Word、Excel、CSV、TXT、Markdown、图片、音视频、压缩包`
   }
 
   // 大小校验
@@ -369,6 +369,9 @@ async function handlePreviewFile(item: { file: File; docId?: number; previewCont
     }
   } else if (['jpg', 'jpeg', 'png', 'gif'].includes(ext || '')) {
     previewContent.value = previewPlaceholder('图片文件请下载后使用图片查看器打开查看')
+    showPreviewDialog.value = true
+  } else if (['xls', 'xlsx'].includes(ext || '')) {
+    previewContent.value = previewPlaceholder('Excel表格文件请下载后使用Excel或WPS打开查看')
     showPreviewDialog.value = true
   } else if (['md', 'markdown'].includes(ext || '')) {
     const reader = new FileReader()
@@ -979,6 +982,7 @@ function handleSizeChange(size: number) {
 const fileTypeIcons: Record<string, any> = {
   pdf: Document,
   doc: Files,
+  excel: Grid,
   image: Picture,
   audio: Headset,
   video: VideoCamera,
@@ -988,6 +992,7 @@ const fileTypeIcons: Record<string, any> = {
 const fileTypeColors: Record<string, string> = {
   pdf: '#f56c6c',
   doc: '#409eff',
+  excel: '#67c23a',
   image: '#67c23a',
   audio: '#909399',
   video: '#e6a23c',
@@ -1064,6 +1069,7 @@ async function handleDownload(file: KnowledgeFile) {
       if (!ext) {
         const extMap: Record<string, string> = {
           doc: '.docx', docx: '.docx', pdf: '.pdf',
+          xls: '.xlsx', xlsx: '.xlsx', excel: '.xlsx', csv: '.csv',
           txt: '.txt', md: '.md',
           image: '.png', audio: '.mp3', video: '.mp4', archive: '.zip',
         }
@@ -1206,7 +1212,7 @@ function saveFiles(files: KnowledgeFile[]) {
             @change="onUploadChange"
             drag
             multiple
-            accept=".pdf,.doc,.docx,.txt,.md,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
             class="upload-dragger"
           >
             <el-icon :size="300" color="#c0c4cc"><Upload /></el-icon>
@@ -1292,7 +1298,7 @@ function saveFiles(files: KnowledgeFile[]) {
                 ref="fileInputRef"
                 type="file"
                 multiple
-                accept=".pdf,.doc,.docx,.txt,.md,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
                 style="display: none"
                 @change="handleFileInputChange"
               />
@@ -2065,16 +2071,24 @@ function saveFiles(files: KnowledgeFile[]) {
   border-bottom: 1px solid var(--color-border);
 }
 
+/* fixed 右侧操作列：增加内边距，防止按钮边框被截断 */
+.file-table :deep(.el-table__fixed-right .el-table__body td) {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
 .action-buttons {
   display: flex;
   gap: 6px;
   justify-content: center;
+  padding: 0 4px;
 }
 
 .file-name-cell {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0; /* flex 容器需要此属性，子元素才能正确省略文本 */
 }
 
 .file-icon {
@@ -2082,10 +2096,15 @@ function saveFiles(files: KnowledgeFile[]) {
 }
 
 .file-title {
+  flex: 1;
+  min-width: 0;
   font-size: 14px;
   color: var(--color-text);
   font-weight: 500;
   transition: color 0.2s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .file-title:hover {
   color: var(--color-primary, #409eff);
