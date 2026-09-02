@@ -220,12 +220,12 @@ export function useChat() {
     return msg
   }
 
-  async function submitFeedback(messageId: number, type: 'like' | 'dislike') {
+  async function submitFeedback(messageId: number, type: 'like' | 'dislike' | 'none') {
     try { await rateMessageApi(messageId, type) } catch (e) { console.warn('评分提交失败', e) }
     const id = currentConversationId.value
     if (!id) return
     const msg = messagesMap.value[id]?.find(m => m.id === messageId)
-    if (msg) msg.feedback = type
+    if (msg) msg.feedback = type === 'none' ? null : type
   }
 
   function refreshConversation(conversationId: number) {

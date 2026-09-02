@@ -93,8 +93,8 @@ export function askQuestionApi(conversationId: number | null, question: string):
   })
 }
 
-/** 赞/踩消息（文档 1.2） */
-export function rateMessageApi(messageId: number, type: 'like' | 'dislike'): Promise<void> {
+/** 赞/踩/取消反馈消息（文档 1.2）— rating: "like" | "dislike" | "none" */
+export function rateMessageApi(messageId: number, type: 'like' | 'dislike' | 'none'): Promise<void> {
   return request.post(`/chat/message/${messageId}/rate/`, { rating: type })
 }
 
