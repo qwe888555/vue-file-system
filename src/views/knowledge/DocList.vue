@@ -2,7 +2,7 @@
 /* eslint-disable no-console */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ref, computed, onMounted, triggerRef, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete, WarningFilled, Loading } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
@@ -45,7 +45,7 @@ const loading = ref(false)
 const listError = ref('')
 
 const createMode = ref(false)
-const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string; title: string; keywords: string; description: string; scope: 'public' | 'private'; isAnalyzing: boolean }[]>([])
+const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string; title: string; keywords: string; description: string; scope: 'public' | 'private'; isAnalyzing: boolean; uploadError?: string }[]>([])
 const selectedFileIndex = ref(0)
 
 // ── 文件列表区域拖拽上传状态 ──
@@ -193,33 +193,59 @@ function getExtTypeName(ext: string): string {
   return '文件'
 }
 
-async function handleFileChange(file: File) {
-  const ext = file.name.split('.').pop()?.toLowerCase() || ''
-  const sizeLimit = getFileSizeLimit(ext)
-  const fileSizeMB = file.size / (1024 * 1024)
+/** 支持的扩展名白名单 */
+const SUPPORTED_EXTENSIONS = [
+  'pdf', 'doc', 'docx', 'txt', 'md',
+  'jpg', 'jpeg', 'png', 'gif', 'webp',
+  'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma',
+  'mp4', 'avi', 'mkv', 'mov', 'webm', 'flv', 'wmv',
+  'zip', 'rar', '7z', 'tar', 'gz',
+]
 
-  if (sizeLimit > 0 && fileSizeMB > sizeLimit) {
-    const typeName = getExtTypeName(ext)
-    // 视频/音频超限时，额外提示可以压缩成压缩包上传
-    const isMedia = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv',
-      'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma'].includes(ext)
-    const tip = isMedia ? `，建议压缩后打包成 ZIP/RAR 压缩包上传（压缩包限制 20MB）` : ''
-    ElMessage.warning(`"${file.name}" 文件过大（${fileSizeMB.toFixed(1)}MB），${typeName}文件限制 ${sizeLimit}MB 以内${tip}`)
-    return
+/** 校验文件是否可上传，返回错误原因或 null */
+function validateFile(file: File): string | null {
+  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+
+  // 格式校验
+  if (!ext || !SUPPORTED_EXTENSIONS.includes(ext)) {
+    return `不支持的文件格式 ".${ext || '未知'}"，支持：PDF、Word、TXT、Markdown、图片、音视频、压缩包`
   }
 
+  // 大小校验
+  const sizeLimit = getFileSizeLimit(ext)
+  const fileSizeMB = file.size / (1024 * 1024)
+  if (sizeLimit > 0 && fileSizeMB > sizeLimit) {
+    const typeName = getExtTypeName(ext)
+    const isMedia = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv',
+      'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma'].includes(ext)
+    const tip = isMedia ? `，建议压缩后打包成 ZIP/RAR 压缩包上传` : ''
+    return `${file.name} 文件过大（${fileSizeMB.toFixed(1)}MB），${typeName}文件限制 ${sizeLimit}MB 以内${tip}`
+  }
+
+  return null
+}
+
+async function handleFileChange(file: File) {
   const baseName = file.name.replace(/\.[^/.]+$/, '')
+  const errorMsg = validateFile(file)
+
   const newFileItem = {
     file,
     title: baseName,
     keywords: '',
     description: '',
     scope: 'public' as const,
-    isAnalyzing: true,
+    isAnalyzing: !errorMsg,
+    uploadError: errorMsg || undefined,
   }
 
   selectedFiles.value.push(newFileItem)
   selectedFileIndex.value = selectedFiles.value.length - 1
+
+  if (errorMsg) {
+    ElMessage.warning(errorMsg)
+    return
+  }
 
   // 异步调用 AI 分类（不阻塞文件添加到列表）
   classifyFile(newFileItem, file)
@@ -227,7 +253,7 @@ async function handleFileChange(file: File) {
 
 /** 对单个文件执行 AI 分类，结果直接写回 fileItem */
 async function classifyFile(
-  fileItem: { title: string; keywords: string; description: string; scope: 'public' | 'private'; isAnalyzing: boolean },
+  fileItem: { title: string; keywords: string; description: string; scope: 'public' | 'private'; isAnalyzing: boolean; uploadError?: string },
   file: File,
 ) {
   try {
@@ -586,7 +612,14 @@ async function handleUploadSubmit() {
       ElMessage.warning('请选择要上传的文件')
       return
     }
-    
+
+    // 检查是否有不可上传的文件
+    const errorFiles = selectedFiles.value.filter(item => item.uploadError)
+    if (errorFiles.length > 0) {
+      ElMessage.warning(`有 ${errorFiles.length} 个文件无法上传，请先移除或更换：${errorFiles[0].file.name}`)
+      return
+    }
+
     for (const item of selectedFiles.value) {
       if (!item.keywords) {
         ElMessage.warning(`文件 "${item.title || item.file.name}" 缺少关键词，请先确认信息`)
@@ -610,6 +643,12 @@ async function handleUploadSubmit() {
       return
     }
 
+    const loadingInstance = ElLoading.service({
+      lock: true,
+      text: '正在创建文件...',
+      background: 'rgba(0, 0, 0, 0.7)',
+    })
+
     try {
       const result = await uploadTextApi({
         title: uploadForm.value.title,
@@ -628,6 +667,8 @@ async function handleUploadSubmit() {
     } catch (error) {
       console.error('创建文件失败:', error)
       ElMessage.error('创建文件失败，请重试')
+    } finally {
+      loadingInstance.close()
     }
   } else {
     if (selectedFiles.value.length === 0) {
@@ -654,6 +695,12 @@ async function handleUploadSubmit() {
       }
     }
 
+    const loadingInstance = ElLoading.service({
+      lock: true,
+      text: `正在上传中... 0/${selectedFiles.value.length}`,
+      background: 'rgba(0, 0, 0, 0.7)',
+    })
+
     try {
       let successCount = 0
       const totalCount = selectedFiles.value.length
@@ -662,6 +709,9 @@ async function handleUploadSubmit() {
         const item = selectedFiles.value[i]
         const file = item.file
         const fileName = file.name.replace(/\.[^/.]+$/, '')
+        
+        // 更新上传进度文字
+        loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}`)
         
         const formData = new FormData()
         formData.append('file', file)
@@ -701,6 +751,8 @@ async function handleUploadSubmit() {
     } catch (error) {
       console.error('文件上传失败:', error)
       ElMessage.error('文件上传失败，请重试')
+    } finally {
+      loadingInstance.close()
     }
   }
 }
@@ -1164,7 +1216,7 @@ function saveFiles(files: KnowledgeFile[]) {
                 v-for="(item, index) in selectedFiles"
                 :key="index"
                 class="file-preview-item"
-                :class="{ 'selected': selectedFileIndex === index }"
+                :class="{ 'selected': selectedFileIndex === index, 'has-error': item.uploadError }"
                 @click="selectedFileIndex = index"
               >
                 <div class="file-selection-indicator" :class="{ 'selected': selectedFileIndex === index }">
@@ -1172,12 +1224,16 @@ function saveFiles(files: KnowledgeFile[]) {
                     <Check />
                   </el-icon>
                 </div>
-                <el-icon :size="32" class="preview-file-icon">
+                <el-icon :size="32" class="preview-file-icon" :class="{ 'error-icon': item.uploadError }">
                   <Document />
                 </el-icon>
                 <div class="preview-file-info">
                   <span class="preview-file-name">{{ item.file.name }}</span>
                   <span class="preview-file-size">{{ (item.file.size / 1024).toFixed(1) }} KB</span>
+                  <span v-if="item.uploadError" class="preview-file-error">
+                    <el-icon :size="12"><WarningFilled /></el-icon>
+                    {{ item.uploadError }}
+                  </span>
                 </div>
                 <div class="preview-file-actions">
                   <el-icon
@@ -1260,7 +1316,7 @@ function saveFiles(files: KnowledgeFile[]) {
               />
             </div>
             <div class="form-submit">
-              <el-button type="primary" @click="handleUploadSubmit" :disabled="currentFileForm.isAnalyzing">确认上传</el-button>
+              <el-button type="primary" @click="handleUploadSubmit" :disabled="currentFileForm.isAnalyzing || selectedFiles.some(f => f.uploadError)">确认上传</el-button>
             </div>
           </div>
         </div>
@@ -1635,6 +1691,24 @@ function saveFiles(files: KnowledgeFile[]) {
 
 .file-preview-item:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.file-preview-item.has-error {
+  border: 1px solid #f56c6c;
+  background: #fef0f0;
+}
+
+.preview-file-icon.error-icon {
+  color: #f56c6c;
+}
+
+.preview-file-error {
+  font-size: 12px;
+  color: #f56c6c;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1.4;
 }
 
 .preview-file-icon {
