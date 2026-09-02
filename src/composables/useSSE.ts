@@ -64,6 +64,7 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
 
       const decoder = new TextDecoder()
       let buffer = ''
+      let currentEvent = ''
 
       while (true) {
         const { done: streamDone, value } = await reader.read()
@@ -74,7 +75,6 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
         const lines = buffer.split(/\r?\n/)
         buffer = lines.pop() || '' // 保留不完整的行
 
-        let currentEvent = ''
         for (const line of lines) {
           if (line.startsWith('event: ')) {
             currentEvent = line.slice(7).trim()
