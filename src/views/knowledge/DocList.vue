@@ -832,6 +832,10 @@ async function fetchFiles(keyword?: string) {
       if (file.uploader_name && !file.author) {
         file.author = file.uploader_name
       }
+      // 文件大小映射（后端 file_size → 前端 fileSize）
+      if (file.file_size != null && file.fileSize == null) {
+        file.fileSize = file.file_size
+      }
       // 后端可能返回 description 或 summary，统一映射确保数据不丢失
       const rawDesc = (file as any).description
       if (rawDesc && !file.summary) {
@@ -1487,7 +1491,7 @@ function saveFiles(files: KnowledgeFile[]) {
       >
         <el-table-column type="selection" width="55" align="center" />
         
-        <el-table-column prop="title" label="资料名" min-width="200" show-overflow-tooltip>
+        <el-table-column prop="title" label="资料名" min-width="160" align="center" show-overflow-tooltip>
           <template #default="scope">
             <div class="file-name-cell">
               <el-icon 
@@ -1525,7 +1529,7 @@ function saveFiles(files: KnowledgeFile[]) {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="220" align="center" fixed="right">
+        <el-table-column label="操作" width="280" align="center" fixed="right">
           <template #default="scope">
             <div class="action-buttons">
               <el-button size="small" type="primary" plain :icon="Download" @click.stop="handleDownload(scope.row)">
@@ -2107,8 +2111,10 @@ function saveFiles(files: KnowledgeFile[]) {
 .file-name-cell {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   min-width: 0; /* flex 容器需要此属性，子元素才能正确省略文本 */
+  width: 100%;
 }
 
 .file-icon {
@@ -2116,8 +2122,8 @@ function saveFiles(files: KnowledgeFile[]) {
 }
 
 .file-title {
-  flex: 1;
   min-width: 0;
+  max-width: calc(100% - 28px); /* 留出图标空间，防止文字过长挤压 */
   font-size: 14px;
   color: var(--color-text);
   font-weight: 500;
