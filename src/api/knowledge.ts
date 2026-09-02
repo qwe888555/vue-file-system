@@ -60,7 +60,12 @@ export function getUploadCredentialApi(data: {
   bucket: string
   object_key: string
 }> {
-  return request.post('/knowledge/upload/sts/', data)
+  // 使用 FormData 发送，Django/DRF 兼容性最好
+  const formData = new FormData()
+  formData.append('file_name', data.file_name)
+  formData.append('file_size', String(data.file_size))
+  formData.append('md5', data.md5)
+  return request.post('/knowledge/upload/sts/', formData)
 }
 
 /** MD5 秒传校验 */
