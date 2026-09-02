@@ -15,14 +15,10 @@
  *   - OSS Bucket 已配置 CORS 规则（允许 PUT/POST，x-oss-* headers，暴露 ETag）
  */
 import OSS from 'ali-oss'
-import SparkMD5 from 'spark-md5'
+import CryptoJS from 'crypto-js'
 import { getUploadCredentialApi, uploadCallbackApi } from '@/api/knowledge'
 import { useUserStore } from '@/store/user'
 import type { KnowledgeFile } from '@/types'
-
-// 兼容 CommonJS/ESM 导出：spark-md5 的 Array 构造器
-const SparkMD5Lib = (SparkMD5 as any).default || SparkMD5
-const SparkMD5Array = SparkMD5Lib.Array
 
 /** OSS 分片上传进度回调 */
 export type ProgressCallback = (percent: number, checkpoint?: OSS.Checkpoint) => void
@@ -78,7 +74,7 @@ function parseBucketFromEndpoint(endpoint: string): string | null {
 /**
  * 计算文件 MD5（分片读取，支持大文件，不会内存溢出）
  *
- * 使用 SparkMD5.Array 分块计算，每块 2MB，通过 FileReader 异步读取。
+ * 使用 crypto-js 的增量 MD5 计算，每块 2MB，通过 FileReader 异步读取。
  *
  * @param file 要计算哈希的文件
  * @param onProgress 可选的进度回调（0~100）
@@ -88,7 +84,8 @@ export function calculateFileMd5(file: File, onProgress?: Md5ProgressCallback): 
   return new Promise((resolve, reject) => {
     const chunkSize = 2 * 1024 * 1024 // 每块 2MB
     const chunks = Math.ceil(file.size / chunkSize)
-    const spark = new SparkMD5Array()
+    // 创建增量 MD5 哈希器
+    const hasher = CryptoJS.algo.MD5.create()
     const fileReader = new FileReader()
     let currentChunk = 0
 
@@ -97,7 +94,9 @@ export function calculateFileMd5(file: File, onProgress?: Md5ProgressCallback): 
         reject(new Error('文件读取失败'))
         return
       }
-      spark.append(e.target.result as ArrayBuffer)
+      // 将 ArrayBuffer 转换为 CryptoJS WordArray 并增量更新
+      const wordArray = CryptoJS.lib.WordArray.create(e.target.result as ArrayBuffer)
+      hasher.update(wordArray)
       currentChunk++
 
       // 报告 MD5 计算进度
@@ -109,8 +108,8 @@ export function calculateFileMd5(file: File, onProgress?: Md5ProgressCallback): 
       if (currentChunk < chunks) {
         loadNextChunk()
       } else {
-        // 计算完成，返回 MD5 十六进制字符串
-        resolve(spark.end())
+        // 计算完成，返回十六进制 MD5 字符串
+        resolve(hasher.finalize().toString(CryptoJS.enc.Hex))
       }
     }
 
