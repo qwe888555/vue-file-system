@@ -31,17 +31,31 @@ const showInstantContent = ref(hasPlayed)
 const inputText = ref('')
 const isRecording = ref(false)
 
-// SSE
-const streamingContent = ref('')
-const isStreaming = ref(false)
-const streamingReferences = ref<KnowledgeFile[]>([])
-const streamingSuggested = ref<string[]>([])
-let currentSSE: ReturnType<typeof useSSE> | null = null
-let stopContentWatch: (() => void) | null = null
-let stopRefsWatch: (() => void) | null = null
-let stopSuggestedWatch: (() => void) | null = null
-// 流序号：新消息/取消时 +1，用于识别并忽略过期流的回调（防止旧流 onDone 污染新流）
-let streamSeq = 0
+// SSE —— 按 convId 索引：切换会话不杀流，后台继续接收，token 写到发起会话的流式态
+interface StreamingState {
+  content: string
+  references: KnowledgeFile[]
+  suggested: string[]
+  streaming: boolean
+  messageId: number | null
+  error: string | null
+  // 本会话的流序号：同会话再提问/取消时 +1，用于识别并忽略过期流的回调
+  seq: number
+}
+const streamingMap = ref<Record<number, StreamingState>>({})
+// 非响应式：按 convId 索引的 SSE 实例与 watcher 清理函数
+const sseMap: Record<number, ReturnType<typeof useSSE> | null> = {}
+const stopWatchMap: Record<number, { content?: () => void; refs?: () => void; suggested?: () => void }> = {}
+
+// 当前会话的流式态（切换会话时自动反映新会话的流式内容）
+const currentStreaming = computed(() => {
+  const id = chat.currentConversationId.value
+  return id ? streamingMap.value[id] : undefined
+})
+const isStreaming = computed(() => !!currentStreaming.value?.streaming)
+const streamingContent = computed(() => currentStreaming.value?.content ?? '')
+const streamingReferences = computed(() => currentStreaming.value?.references ?? [])
+const streamingSuggested = computed(() => currentStreaming.value?.suggested ?? [])
 
 const isLoggedIn = computed(() => !!userStore.token)
 // 单一数据源：凡拥有知识库访问权的角色均视为管理员口径（与 config/roles.ts 对齐）
@@ -105,17 +119,34 @@ function handleLoginSuccess() {
   chat.fetchConversations()
 }
 function handleLoginCancel() { showLoginDialog.value = false }
-function cancelStreaming() {
-  streamSeq++ // 使在途回调失效
-  currentSSE?.close()
-  isStreaming.value = false
-  streamingContent.value = ''
-  stopContentWatch?.()
-  stopContentWatch = null
-  stopRefsWatch?.()
-  stopRefsWatch = null
-  stopSuggestedWatch?.()
-  stopSuggestedWatch = null
+/** 取消指定会话的流（默认当前会话）：同会话再提问或用户主动停止时调用 */
+function cancelStreaming(convId?: number) {
+  const id = convId ?? chat.currentConversationId.value
+  if (!id) return
+  const st = streamingMap.value[id]
+  if (st) st.seq++ // 使在途回调失效
+  sseMap[id]?.close()
+  delete sseMap[id]
+  stopWatchMap[id]?.content?.()
+  stopWatchMap[id]?.refs?.()
+  stopWatchMap[id]?.suggested?.()
+  delete stopWatchMap[id]
+  if (st) st.streaming = false
+  delete streamingMap.value[id]
+}
+/** 关闭所有后台流（组件卸载/登出时调用） */
+function closeAllStreaming() {
+  for (const k of Object.keys(sseMap)) {
+    const id = Number(k)
+    streamingMap.value[id] && (streamingMap.value[id].seq++)
+    sseMap[id]?.close()
+    stopWatchMap[id]?.content?.()
+    stopWatchMap[id]?.refs?.()
+    stopWatchMap[id]?.suggested?.()
+  }
+  for (const k of Object.keys(sseMap)) delete sseMap[Number(k)]
+  for (const k of Object.keys(stopWatchMap)) delete stopWatchMap[Number(k)]
+  streamingMap.value = {}
 }
 const renamingId = ref<number | null>(null)
 const renameText = ref('')
@@ -144,11 +175,11 @@ function cancelRename() {
 }
 
 function handleNewConversation() {
-  cancelStreaming()
+  // 不杀其他后台流：切走时让其继续生成，落库后切回可见
   chat.createConversation()
 }
 async function handleSelectConversation(id: number) {
-  cancelStreaming()
+  // 不杀原会话流：切走时让其继续生成，落库后切回可见
   await chat.selectConversation(id)
 }
 async function handleDeleteConversation(id: number) { await chat.deleteConversation(id) }
@@ -161,7 +192,6 @@ async function sendMessage() {
     showLoginDialog.value = true
     return
   }
-  currentSSE?.close()
   if (!chat.currentConversationId.value) {
     const conv = await chat.createConversation()
     if (!conv) return
@@ -170,49 +200,76 @@ async function sendMessage() {
   chat.appendUserMessage(text)
   inputText.value = ''
 
-  // 记录本次流的序号，回调中校验仍是最新流才生效
-  const seq = ++streamSeq
-  isStreaming.value = true
-  streamingContent.value = ''
-  streamingReferences.value = []
-  streamingSuggested.value = []
+  // 同会话有旧流则先杀掉（避免并发污染同一会话）
+  cancelStreaming(convId)
+
+  // 初始化本会话的流式状态（seq 递增使旧流回调失效）
+  const prevSeq = streamingMap.value[convId]?.seq ?? 0
+  const seq = prevSeq + 1
+  streamingMap.value[convId] = {
+    content: '',
+    references: [],
+    suggested: [],
+    streaming: true,
+    messageId: null,
+    error: null,
+    seq,
+  }
 
   // 30 秒超时自动取消
   const timeoutId = setTimeout(() => {
-    if (seq === streamSeq && isStreaming.value) { cancelStreaming(); ElMessage.warning('AI 回复超时，可重新提问') }
+    const st = streamingMap.value[convId]
+    if (st && st.seq === seq && st.streaming) {
+      cancelStreaming(convId)
+      ElMessage.warning('AI 回复超时，可重新提问')
+    }
   }, 30000)
 
-  currentSSE = useSSE(convId, text, () => {
+  const sse = useSSE(convId, text, () => {
     clearTimeout(timeoutId)
-    if (seq !== streamSeq) return // 过期流回调，忽略（新消息已发出或已取消）
-    if (!isStreaming.value) return // 已被取消
-    isStreaming.value = false
+    const st = streamingMap.value[convId]
+    if (!st || st.seq !== seq) return // 过期流回调，忽略
+    st.streaming = false
     // 错误流（SSE error 事件）：结束流状态但不追加普通回答，改用错误提示
-    if (currentSSE?.error?.value) {
-      streamingContent.value = ''
-      streamingReferences.value = []
-      ElMessage.error(currentSSE.error.value)
+    if (sse.error?.value) {
+      delete streamingMap.value[convId]
+      delete sseMap[convId]
+      ElMessage.error(sse.error.value)
       return
     }
-    const realId = currentSSE?.messageId?.value
-    // streamingContent 来自 SSE 流，为空时取 currentSSE.content（后端返回的错误消息如敏感词拦截）
-    const content = streamingContent.value || currentSSE?.content?.value || ''
-    chat.appendAssistantMessage(content, streamingReferences.value, realId || undefined, streamingSuggested.value)
-    streamingContent.value = ''
-    streamingReferences.value = []
-    streamingSuggested.value = []
-    // Q4A/Q10A：切走页面时后台生成完毕 → 左侧 rail / Layout 侧边栏亮红点
-    if (router.currentRoute.value.name !== 'Chat') {
+    const realId = sse.messageId?.value
+    // st.content 来自 SSE 流，为空时取 sse.content（后端返回的错误消息如敏感词拦截）
+    const content = st.content || sse.content?.value || ''
+    chat.appendAssistantMessage(content, st.references, realId || undefined, st.suggested, convId)
+    // 落库后清掉流式状态，下次该会话显示正式消息
+    delete streamingMap.value[convId]
+    delete sseMap[convId]
+    // Q4A/Q10A：切走页面/会话时后台生成完毕 → 左侧 rail / Layout 侧边栏亮红点
+    if (router.currentRoute.value.name !== 'Chat' || chat.currentConversationId.value !== convId) {
       chatUi.setUnread(true)
       ElMessage.success(`回答已生成，点击左侧「${isAdminUser.value ? '教研问答' : '智能问答'}」查看`)
     }
   })
-  // 清除前一轮的 watcher，防止累积；仅最新流的内容写入 streamingContent
-  stopContentWatch?.()
-  stopRefsWatch?.()
-  stopContentWatch = watch(currentSSE.content, (val) => { if (seq === streamSeq) streamingContent.value = val })
-  stopRefsWatch = watch(currentSSE.references, (val) => { if (seq === streamSeq) streamingReferences.value = val })
-  stopSuggestedWatch = watch(currentSSE.suggested, (val) => { if (seq === streamSeq) streamingSuggested.value = val })
+
+  sseMap[convId] = sse
+  // 清除前一轮的 watcher，防止累积；仅最新流的内容写入本会话状态
+  stopWatchMap[convId]?.content?.()
+  stopWatchMap[convId]?.refs?.()
+  stopWatchMap[convId]?.suggested?.()
+  stopWatchMap[convId] = {
+    content: watch(sse.content, (val) => {
+      const st = streamingMap.value[convId]
+      if (st && st.seq === seq) st.content = val
+    }),
+    refs: watch(sse.references, (val) => {
+      const st = streamingMap.value[convId]
+      if (st && st.seq === seq) st.references = val
+    }),
+    suggested: watch(sse.suggested, (val) => {
+      const st = streamingMap.value[convId]
+      if (st && st.seq === seq) st.suggested = val
+    }),
+  }
 }
 
 function handleFeedback(messageId: number, type: 'like' | 'dislike') {
@@ -402,15 +459,9 @@ onMounted(() => {
 })
 onUnmounted(() => {
   document.removeEventListener('mousedown', handleBlankClick)
-  stopContentWatch?.()
-  stopContentWatch = null
-  stopRefsWatch?.()
-  stopRefsWatch = null
-  stopSuggestedWatch?.()
-  stopSuggestedWatch = null
   cleanupRecording()
-  streamSeq++ // 使在途 SSE 回调失效
-  currentSSE?.close()
+  // 关闭所有后台流（含 watcher），使在途 SSE 回调失效
+  closeAllStreaming()
 })
 
 // ── KeepAlive 生命周期（App.vue 已缓存本组件）──
@@ -428,10 +479,7 @@ watch(
   () => userStore.token,
   (token) => {
     if (!token) {
-      streamSeq++
-      currentSSE?.close()
-      isStreaming.value = false
-      streamingContent.value = ''
+      closeAllStreaming()
       chat.reset()
       inputText.value = ''
       chatUi.setUnread(false)
@@ -634,7 +682,7 @@ watch(
               :disabled="isStreaming"
               @keyup.enter="sendMessage"
             />
-            <button v-if="isStreaming" class="cancel-btn" @click="cancelStreaming" title="取消">
+            <button v-if="isStreaming" class="cancel-btn" @click="cancelStreaming()" title="取消">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2"/></svg>
             </button>
             <button class="voice-btn" :class="{ recording: isRecording }" @click="handleVoiceMsg" title="语音输入">
