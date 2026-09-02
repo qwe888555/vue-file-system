@@ -259,7 +259,11 @@ async function handleDownload() {
 
   // 优先使用后端返回的 download_url（带原始文件名）
   if (file.value.download_url) {
-    window.open(file.value.download_url, '_blank')
+    const iframe = document.createElement('iframe')
+    iframe.style.display = 'none'
+    iframe.src = file.value.download_url
+    document.body.appendChild(iframe)
+    setTimeout(() => document.body.removeChild(iframe), 3000)
     ElMessage.success('下载已开始')
     return
   }
