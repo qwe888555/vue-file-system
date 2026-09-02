@@ -181,8 +181,13 @@ function handleNewConversation() {
 async function handleSelectConversation(id: number) {
   // 不杀原会话流：切走时让其继续生成，落库后切回可见
   await chat.selectConversation(id)
+  // 切回该会话即视为已读，清除其 conv 红点
+  chatUi.clearConvUnread(id)
 }
-async function handleDeleteConversation(id: number) { await chat.deleteConversation(id) }
+async function handleDeleteConversation(id: number) {
+  await chat.deleteConversation(id)
+  chatUi.clearConvUnread(id)
+}
 
 async function sendMessage() {
   const text = inputText.value.trim()
@@ -244,10 +249,17 @@ async function sendMessage() {
     // 落库后清掉流式状态，下次该会话显示正式消息
     delete streamingMap.value[convId]
     delete sseMap[convId]
-    // Q4A/Q10A：切走页面/会话时后台生成完毕 → 左侧 rail / Layout 侧边栏亮红点
-    if (router.currentRoute.value.name !== 'Chat' || chat.currentConversationId.value !== convId) {
+    // 后台生成完毕的红点策略：
+    //   1) 用户已离开问答页 → rail 红点（原行为，提示用户回到问答模块）
+    //   2) 用户还在问答页但切到其他对话 → 给被切走的原对话项加红点
+    //   3) 用户还在原对话 → 不标（用户正在看）
+    const onChatPage = router.currentRoute.value.name === 'Chat'
+    const onThisConv = chat.currentConversationId.value === convId
+    if (!onChatPage) {
       chatUi.setUnread(true)
       ElMessage.success(`回答已生成，点击左侧「${isAdminUser.value ? '教研问答' : '智能问答'}」查看`)
+    } else if (!onThisConv) {
+      chatUi.markConvUnread(convId)
     }
   })
 
@@ -483,6 +495,7 @@ watch(
       chat.reset()
       inputText.value = ''
       chatUi.setUnread(false)
+      chatUi.clearAllConvUnread()
     }
   },
 )
@@ -528,13 +541,14 @@ watch(
           v-for="conv in chat.filteredConversations.value"
           :key="conv.id"
           class="conv-item"
-          :class="{ active: conv.id === chat.currentConversationId.value }"
+          :class="{ active: conv.id === chat.currentConversationId.value, unread: chatUi.unreadConvIds[conv.id] }"
           @click="renamingId !== conv.id && handleSelectConversation(conv.id)"
         >
           <div class="conv-item-icon">
             <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
               <path d="M2 3.5A1.5 1.5 0 013.5 2h9A1.5 1.5 0 0114 3.5v7a1.5 1.5 0 01-1.5 1.5h-3.586a1.5 1.5 0 00-1.06.44L5 15V12H3.5A1.5 1.5 0 012 10.5v-7z"/>
             </svg>
+            <span v-if="chatUi.unreadConvIds[conv.id]" class="conv-unread-dot" />
           </div>
           <div class="conv-item-content">
             <div v-if="renamingId === conv.id" class="conv-rename-row">
@@ -863,6 +877,16 @@ watch(
   display: flex; align-items: center; justify-content: center;
   color: var(--color-text-secondary, #64748b);
   flex-shrink: 0;
+  position: relative;
+}
+.conv-unread-dot {
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--color-danger, #f56c6c);
+  box-shadow: 0 0 0 2px #fff;
+  pointer-events: none;
 }
 .conv-item-content {
   flex: 1;
