@@ -533,9 +533,6 @@ watch(
           <h1 class="topbar-title">{{ topbarTitle }}</h1>
           <span v-if="isStreaming" class="chip-stream"><i></i>正在回答…</span>
         </div>
-        <div class="topbar-right">
-          <span class="kb-chip"><i></i>教研知识库 · RAG</span>
-        </div>
       </header>
 
       <!-- 对话区 -->
@@ -572,13 +569,20 @@ watch(
           <!-- 欢迎页（无对话或对话为空时显示） -->
           <div v-else class="chat-welcome">
             <div class="welcome-icon">
-              <div class="wi-honeycomb">
-                <div></div><div></div><div></div><div></div><div></div><div></div><div></div>
-              </div>
+              <svg class="wi-honeycomb" viewBox="-30 -33 60 66" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <g fill="#409eff">
+                  <polygon points="0,-12 10.392,-6 10.392,6 0,12 -10.392,6 -10.392,-6"/>
+                  <polygon transform="translate(18,10.392)" points="0,-12 10.392,-6 10.392,6 0,12 -10.392,6 -10.392,-6"/>
+                  <polygon transform="translate(0,20.785)" points="0,-12 10.392,-6 10.392,6 0,12 -10.392,6 -10.392,-6"/>
+                  <polygon transform="translate(-18,10.392)" points="0,-12 10.392,-6 10.392,6 0,12 -10.392,6 -10.392,-6"/>
+                  <polygon transform="translate(-18,-10.392)" points="0,-12 10.392,-6 10.392,6 0,12 -10.392,6 -10.392,-6"/>
+                  <polygon transform="translate(0,-20.785)" points="0,-12 10.392,-6 10.392,6 0,12 -10.392,6 -10.392,-6"/>
+                  <polygon transform="translate(18,-10.392)" points="0,-12 10.392,-6 10.392,6 0,12 -10.392,6 -10.392,-6"/>
+                </g>
+              </svg>
             </div>
             <h2 class="welcome-title" :class="{ 'wi-anim-in': !showEntryAnim, instant: showInstantContent }">
               你好！有什么可以帮助你的？
-              <span v-if="showInstantContent || !showEntryAnim" class="title-scanline" />
             </h2>
             <div v-if="hotLoading" class="quick-questions quick-questions--skeleton">
               <span v-for="i in 5" :key="i" class="qq-skeleton" />
@@ -952,7 +956,7 @@ watch(
   0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
 }
-.topbar-left, .topbar-right {
+.topbar-left {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1006,25 +1010,6 @@ watch(
   50% { opacity: 0.3; }
 }
 
-/* ── 知识库标签 ── */
-.kb-chip {
-  font-size: 11px;
-  color: var(--color-text-secondary, #64748b);
-  border: 1px solid var(--color-border, #e8ecf1);
-  padding: 4px 10px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-}
-.kb-chip i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-success, #67c23a);
-}
-
 
 /* 对话消息区 */
 .chat-messages {
@@ -1060,7 +1045,7 @@ watch(
   position: relative; z-index: 1;
 }
 
-/* ═══ 标题入场 + 扫光特效 ═══ */
+/* ═══ 标题入场 ═══ */
 .welcome-title {
   font-size: var(--text-hero, 26px);
   font-weight: 600;
@@ -1081,21 +1066,6 @@ watch(
   opacity: 1;
   transform: translateY(0);
   transition: none;
-}
-/* 扫光光带 */
-.title-scanline {
-  position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(90deg, transparent 0%, rgba(64, 158, 255, 0.5) 50%, transparent 100%);
-  background-size: 200% 100%;
-  opacity: 0;
-}
-.welcome-title.wi-anim-in .title-scanline {
-  opacity: 1;
-  animation: scanlineSweep 0.4s ease-out 0s forwards;
-}
-@keyframes scanlineSweep {
-  0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
 }
 
 /* ═══ 快捷按钮入场（分层延时 + 外发光脉冲） ═══ */
@@ -1351,9 +1321,9 @@ watch(
   100%      { transform: scale(1) translateY(-190px); }
 }
 
-/* ═══ 欢迎页永久蜂巢图标（缓慢顺时旋转） ═══ */
+/* ═══ 欢迎页永久蜂巢图标（SVG 严格六重对称，缓慢顺时旋转） ═══ */
 .wi-honeycomb {
-  height: 24px; position: relative; width: 24px;
+  width: 30px; height: 30px;
   animation: slowSpin 12s linear infinite;
   animation-delay: 2.6s; /* 等待入场动画完成 */
 }
@@ -1361,21 +1331,4 @@ watch(
   0%   { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
-.wi-honeycomb div {
-  background: #409eff; height: 12px; margin-top: 6px;
-  position: absolute; width: 24px;
-}
-.wi-honeycomb div:after, .wi-honeycomb div:before {
-  content: ''; border-left: 12px solid transparent; border-right: 12px solid transparent;
-  position: absolute; left: 0; right: 0;
-}
-.wi-honeycomb div:after { top: -6px; border-bottom: 6px solid #409eff; }
-.wi-honeycomb div:before { bottom: -6px; border-top: 6px solid #409eff; }
-.wi-honeycomb div:nth-child(1) { left: -28px; top: 0; }
-.wi-honeycomb div:nth-child(2) { left: -14px; top: 22px; }
-.wi-honeycomb div:nth-child(3) { left: 14px; top: 22px; }
-.wi-honeycomb div:nth-child(4) { left: 28px; top: 0; }
-.wi-honeycomb div:nth-child(5) { left: 14px; top: -22px; }
-.wi-honeycomb div:nth-child(6) { left: -14px; top: -22px; }
-.wi-honeycomb div:nth-child(7) { left: 0; top: 0; }
 </style>
