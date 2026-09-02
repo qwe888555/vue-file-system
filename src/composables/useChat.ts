@@ -195,7 +195,7 @@ export function useChat() {
   }
 
   /** 添加 AI 回复消息（SSE 完成后调用） */
-  function appendAssistantMessage(content: string, references?: KnowledgeFile[], realId?: number): Message {
+  function appendAssistantMessage(content: string, references?: KnowledgeFile[], realId?: number, suggested?: string[]): Message {
     const id = currentConversationId.value
     if (!id) throw new Error('No active conversation')
     const msg: Message = {
@@ -204,6 +204,7 @@ export function useChat() {
       role: 'assistant',
       content,
       references,
+      suggested,
       createdAt: new Date().toISOString(),
     }
     if (!messagesMap.value[id]) messagesMap.value[id] = []

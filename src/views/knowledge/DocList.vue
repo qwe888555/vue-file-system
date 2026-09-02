@@ -3,11 +3,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ref, computed, onMounted, triggerRef, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete, WarningFilled } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Upload, Close, Plus, Check, Download, Edit, Delete, WarningFilled, Loading } from '@element-plus/icons-vue'
+import MarkdownIt from 'markdown-it'
+import hljs from 'highlight.js'
+import 'highlight.js/styles/github.css'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi, fixMojibake } from '@/api/knowledge'
 import DOMPurify from 'dompurify'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
+import MarkdownViewer from '@/components/chat/MarkdownViewer.vue'
 
 const searchQuery = ref('')
 // 本地描述缓存：后端列表接口不返回 description 字段，持久化到 localStorage 防刷新丢失
@@ -41,7 +45,7 @@ const loading = ref(false)
 const listError = ref('')
 
 const createMode = ref(false)
-const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string; title: string; keywords: string; description: string; scope: 'public' | 'private' }[]>([])
+const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string; title: string; keywords: string; description: string; scope: 'public' | 'private'; isAnalyzing: boolean }[]>([])
 const selectedFileIndex = ref(0)
 
 // ── 文件列表区域拖拽上传状态 ──
@@ -56,7 +60,26 @@ const sanitizedPreviewContent = computed(() => DOMPurify.sanitize(previewContent
 const previewFileName = ref('')
 const previewFileUrl = ref('')
 const isOfficePreview = ref(false)
+const isMarkdownPreview = ref(false)
+const rawMarkdownContent = ref('')
 const fileInputRef = ref<HTMLInputElement | null>(null)
+
+// 初始化 MarkdownIt 实例，支持代码高亮
+const md = new MarkdownIt({
+  html: true,
+  linkify: true,
+  typographer: true,
+  highlight: (str, lang) => {
+    if (lang && hljs.getLanguage(lang)) {
+      try {
+        return hljs.highlight(str, { language: lang }).value
+      } catch (error) {
+        // 忽略高亮错误
+      }
+    }
+    return ''
+  },
+})
 
 // 预览文本 HTML 转义（DOMPurify 会再兜底净化）
 function escapeHtml(s: string): string {
@@ -71,6 +94,26 @@ function previewPre(text: string): string {
 }
 function previewPlaceholder(msg: string): string {
   return `<div class="preview-placeholder">${msg}</div>`
+}
+
+/**
+ * 智能检测文本是否为 Markdown 格式
+ * 用于文件无 .md 扩展名但内容是 Markdown 的场景（如"创建文件"功能生成的文档）
+ */
+function isLikelyMarkdown(text: string): boolean {
+  if (!text || text.length < 10) return false
+  const patterns = [
+    /^#{1,6}\s/m,           // 标题 # ## ###
+    /\*\*[^*]+\*\*/,        // 加粗 **text**
+    /^>\s/m,                // 引用 > 
+    /^[-*+]\s/m,            // 列表项 - * +
+    /^\|.+\|$/m,            // 表格行 | ... |
+    /```/,                   // 代码块 ```
+    /`[^`]+`/,              // 行内代码 `code`
+    /!\[[^\]]*\]\(/,        // 图片 ![alt](url)
+    /\[[^\]]+\]\(/,         // 链接 [text](url)
+  ]
+  return patterns.some((p) => p.test(text))
 }
 
 // （已移除死代码：showKeywordsDialog / keywordsDialogTitle / allKeywords —— "全部关键词"弹窗无触发入口且数据从未赋值）
@@ -122,7 +165,49 @@ async function extractTextFromFile(file: File): Promise<string> {
   }
 }
 
+/** 根据文件类型获取大小限制（MB），返回 0 表示无限制 */
+function getFileSizeLimit(ext: string): number {
+  const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp']
+  const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv']
+  const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma']
+  const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz']
+
+  if (imageExts.includes(ext)) return 10 // 图片 10MB
+  if (videoExts.includes(ext)) return 50 // 视频 50MB（受服务器超时限制）
+  if (audioExts.includes(ext)) return 50 // 音频 50MB
+  if (archiveExts.includes(ext)) return 20 // 压缩包 20MB（受服务器 nginx 超时限制）
+  return 20 // 文档/其他 20MB
+}
+
+/** 获取文件类型的中文描述 */
+function getExtTypeName(ext: string): string {
+  const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv']
+  const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma']
+  const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp']
+  const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz']
+
+  if (videoExts.includes(ext)) return '视频'
+  if (audioExts.includes(ext)) return '音频'
+  if (imageExts.includes(ext)) return '图片'
+  if (archiveExts.includes(ext)) return '压缩包'
+  return '文件'
+}
+
 async function handleFileChange(file: File) {
+  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  const sizeLimit = getFileSizeLimit(ext)
+  const fileSizeMB = file.size / (1024 * 1024)
+
+  if (sizeLimit > 0 && fileSizeMB > sizeLimit) {
+    const typeName = getExtTypeName(ext)
+    // 视频/音频超限时，额外提示可以压缩成压缩包上传
+    const isMedia = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv',
+      'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma'].includes(ext)
+    const tip = isMedia ? `，建议压缩后打包成 ZIP/RAR 压缩包上传（压缩包限制 20MB）` : ''
+    ElMessage.warning(`"${file.name}" 文件过大（${fileSizeMB.toFixed(1)}MB），${typeName}文件限制 ${sizeLimit}MB 以内${tip}`)
+    return
+  }
+
   const baseName = file.name.replace(/\.[^/.]+$/, '')
   const newFileItem = {
     file,
@@ -130,6 +215,7 @@ async function handleFileChange(file: File) {
     keywords: '',
     description: '',
     scope: 'public' as const,
+    isAnalyzing: true,
   }
 
   selectedFiles.value.push(newFileItem)
@@ -141,24 +227,41 @@ async function handleFileChange(file: File) {
 
 /** 对单个文件执行 AI 分类，结果直接写回 fileItem */
 async function classifyFile(
-  fileItem: { title: string; keywords: string; description: string; scope: 'public' | 'private' },
+  fileItem: { title: string; keywords: string; description: string; scope: 'public' | 'private'; isAnalyzing: boolean },
   file: File,
 ) {
   try {
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    // 音视频/压缩包等二进制文件无法提取文本，只发 metadata 给 AI 分类，避免上传大文件超时
+    const isBinaryNoText = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma',
+      'mp4', 'avi', 'mkv', 'mov', 'webm', 'flv', 'wmv',
+      'zip', 'rar', '7z', 'tar', 'gz'].includes(ext)
+
     let content: string
-    try {
-      content = await extractTextFromFile(file)
-    } catch (extractErr) {
-      console.warn('[DocList] 文本提取失败，使用兜底:', extractErr)
-      content = `文件名: ${file.name}\n文件大小: ${file.size} bytes\n文件类型: ${file.name.split('.').pop() || 'unknown'}`
+    if (isBinaryNoText) {
+      // 音视频/压缩包只发基本信息，不上传文件本身
+      content = `文件名: ${file.name}\n文件大小: ${(file.size / 1024 / 1024).toFixed(2)} MB\n文件类型: ${ext}`
+    } else {
+      try {
+        content = await extractTextFromFile(file)
+      } catch (extractErr) {
+        console.warn('[DocList] 文本提取失败，使用兜底:', extractErr)
+        content = `文件名: ${file.name}\n文件大小: ${(file.size / 1024 / 1024).toFixed(2)} MB\n文件类型: ${ext}`
+      }
     }
 
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('content', content)
-    formData.append('filename', file.name)
-
-    const result = await aiClassifyApi(formData)
+    let result: { title: string; keywords: string[]; description: string; scope: string }
+    if (isBinaryNoText) {
+      // 音视频/压缩包走 JSON 分支，只发 content 字符串
+      result = await aiClassifyApi({ content })
+    } else {
+      // 文档类走 FormData 分支，上传文件
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('content', content)
+      formData.append('filename', file.name)
+      result = await aiClassifyApi(formData)
+    }
 
     if (result.title) {
       fileItem.title = result.title
@@ -173,10 +276,15 @@ async function classifyFile(
       fileItem.scope = result.scope === 'school' ? 'public' : 'private'
     }
 
+    // AI 解析完成，更新状态
+    fileItem.isAnalyzing = false
     triggerRef(selectedFiles)
   } catch (error) {
     console.error('[DocList] AI分类失败:', error)
     ElMessage.warning(`"${file.name}" AI 分类失败，请手动填写信息`)
+    // AI 解析失败，也更新状态
+    fileItem.isAnalyzing = false
+    triggerRef(selectedFiles)
   }
 }
 
@@ -233,14 +341,17 @@ async function handlePreviewFile(item: { file: File; docId?: number; previewCont
       showPreviewDialog.value = true
     }
   } else if (['jpg', 'jpeg', 'png', 'gif'].includes(ext || '')) {
+    previewContent.value = previewPlaceholder('图片文件请下载后使用图片查看器打开查看')
+    showPreviewDialog.value = true
+  } else if (['md', 'markdown'].includes(ext || '')) {
     const reader = new FileReader()
     reader.onload = (e) => {
       const content = e.target?.result as string
-      previewContent.value = `<img class="preview-img" src="${content}" alt="预览图片" />`
+      previewContent.value = md.render(content || '无法查看文件内容')
       showPreviewDialog.value = true
     }
-    reader.readAsDataURL(item.file)
-  } else if (['txt', 'md', 'json', 'xml', 'csv'].includes(ext || '')) {
+    reader.readAsText(item.file)
+  } else if (['txt', 'json', 'xml', 'csv'].includes(ext || '')) {
     const reader = new FileReader()
     reader.onload = (e) => {
       const content = e.target?.result as string
@@ -321,37 +432,74 @@ async function handlePreviewDoc(id: number, title: string) {
     previewContent.value = ''
     previewFileUrl.value = ''
     isOfficePreview.value = false
+    isMarkdownPreview.value = false
+    rawMarkdownContent.value = ''
     
     const result = await previewDocApi(id)
     
     const fileExtension = title.split('.').pop()?.toLowerCase() || ''
+    // 判断是否为 Markdown：文件扩展名 / 后端 preview_type / 内容智能检测
+    const isMarkdownFile = fileExtension === 'md' || fileExtension === 'markdown' || result.preview_type === 'markdown'
     
     if (result.content && result.content.startsWith('http')) {
-      if (fileExtension === 'pdf') {
-        previewFileUrl.value = result.content
-      } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExtension)) {
+      // 图片和视频不支持在线预览，提示用户下载
+      if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExtension)) {
+        previewContent.value = previewPlaceholder('图片文件暂不支持在线预览，请下载后使用图片查看器打开')
+      } else if (['mp3', 'wav', 'ogg', 'mp4', 'avi', 'mkv', 'mov'].includes(fileExtension)) {
+        previewContent.value = previewPlaceholder('视频/音频文件暂不支持在线预览，请下载后使用相应播放器打开')
+      } else if (fileExtension === 'pdf') {
         previewFileUrl.value = result.content
       } else if (result.preview_type === 'url' && result.file_type === 'document') {
+        // Office 文档使用 Office Online 预览
         previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(result.content)}`
         isOfficePreview.value = true
       } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'wps', 'et', 'dps'].includes(fileExtension)) {
+        // Office 文档使用 Office Online 预览
         previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(result.content)}`
         isOfficePreview.value = true
+      } else if (isMarkdownFile) {
+        // Markdown 文件：获取原始文本，交给 MarkdownViewer 组件渲染
+        try {
+          const response = await fetch(result.content)
+          const text = fixMojibake(await response.text())
+          isMarkdownPreview.value = true
+          rawMarkdownContent.value = text || '无法查看文件内容'
+        } catch (error) {
+          console.error('获取 Markdown 内容失败:', error)
+          previewContent.value = previewPre('无法查看文件内容')
+        }
       } else if (fileExtension === 'txt') {
         try {
           const response = await fetch(result.content)
-          const text = await response.text()
+          const text = fixMojibake(await response.text())
           previewContent.value = previewPre(text || '无法查看文件详细内容')
         } catch (error) {
           console.error('获取文本内容失败:', error)
           previewContent.value = '无法查看文件详细内容'
         }
       } else {
-        previewContent.value = '无法查看文件详细内容'
+        // 无扩展名或未知格式：先获取内容，智能检测是否为 Markdown
+        try {
+          const response = await fetch(result.content)
+          const text = fixMojibake(await response.text())
+          if (isLikelyMarkdown(text)) {
+            isMarkdownPreview.value = true
+            rawMarkdownContent.value = text
+          } else {
+            previewContent.value = previewPre(text || '无法查看文件详细内容')
+          }
+        } catch (error) {
+          console.error('获取文件内容失败:', error)
+          previewContent.value = '无法查看文件详细内容'
+        }
       }
     } else if (result.content) {
       if (result.preview_type === 'html' || result.file_type === 'pdf') {
         previewContent.value = result.content
+      } else if (isMarkdownFile || isLikelyMarkdown(result.content)) {
+        // Markdown 内容：交给 MarkdownViewer 组件渲染
+        isMarkdownPreview.value = true
+        rawMarkdownContent.value = result.content
       } else {
         previewContent.value = previewPre(result.content)
       }
@@ -373,6 +521,8 @@ function handlePreviewClose() {
   }
   previewContent.value = ''
   isOfficePreview.value = false
+  isMarkdownPreview.value = false
+  rawMarkdownContent.value = ''
 }
 
 async function handleConfirmInfo() {
@@ -979,7 +1129,7 @@ function saveFiles(files: KnowledgeFile[]) {
             @change="onUploadChange"
             drag
             multiple
-            accept=".pdf,.doc,.docx,.txt,.jpg,.png,.gif,.mp3,.wav,.mp4,.avi,.mkv,.zip,.rar"
+            accept=".pdf,.doc,.docx,.txt,.md,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
             class="upload-dragger"
           >
             <el-icon :size="300" color="#c0c4cc"><Upload /></el-icon>
@@ -987,7 +1137,7 @@ function saveFiles(files: KnowledgeFile[]) {
               将文件拖到此处，或<em>点击上传</em>
             </div>
             <div class="upload-file-formats">
-              支持 PDF、Word、TXT、图片、音视频等格式
+              支持 PDF、Word、TXT、图片、音视频、压缩包等格式（图片≤10MB，音视频≤50MB，压缩包/文档≤20MB，超大文件请压缩后上传）
             </div>
           </el-upload>
         </div>
@@ -1061,7 +1211,7 @@ function saveFiles(files: KnowledgeFile[]) {
                 ref="fileInputRef"
                 type="file"
                 multiple
-                accept=".pdf,.doc,.docx,.txt,.jpg,.png,.gif,.mp3,.wav,.mp4,.avi,.mkv,.zip,.rar"
+                accept=".pdf,.doc,.docx,.txt,.md,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
                 style="display: none"
                 @change="handleFileInputChange"
               />
@@ -1069,12 +1219,17 @@ function saveFiles(files: KnowledgeFile[]) {
           </div>
 
           <div class="upload-content-right" v-if="currentFileForm">
+            <div v-if="currentFileForm.isAnalyzing" class="analyzing-tip">
+              <el-icon class="is-loading" :size="16"><Loading /></el-icon>
+              <span>AI 正在解析文件，请稍候...</span>
+            </div>
             <div class="form-item">
               <label class="form-label">文件名</label>
               <el-input
                 v-model="currentFileForm.title"
                 placeholder="请输入文件名"
                 class="form-input"
+                :disabled="currentFileForm.isAnalyzing"
               />
             </div>
             <div class="form-item">
@@ -1083,6 +1238,7 @@ function saveFiles(files: KnowledgeFile[]) {
                 v-model="currentFileForm.keywords"
                 placeholder="关键词，用逗号或空格分隔"
                 class="form-input"
+                :disabled="currentFileForm.isAnalyzing"
               />
             </div>
             <div class="form-item">
@@ -1100,10 +1256,11 @@ function saveFiles(files: KnowledgeFile[]) {
                 :rows="3"
                 placeholder="文件描述..."
                 class="form-textarea"
+                :disabled="currentFileForm.isAnalyzing"
               />
             </div>
             <div class="form-submit">
-              <el-button type="primary" @click="handleUploadSubmit">确认上传</el-button>
+              <el-button type="primary" @click="handleUploadSubmit" :disabled="currentFileForm.isAnalyzing">确认上传</el-button>
             </div>
           </div>
         </div>
@@ -1187,6 +1344,22 @@ function saveFiles(files: KnowledgeFile[]) {
           <span class="file-count">{{ displayTotalFiles }}</span>
         </h3>
       </div>
+
+      <el-alert
+        title="图片和视频文件请下载后使用相应软件查看，暂不支持在线预览"
+        type="info"
+        :closable="false"
+        show-icon
+        class="preview-hint"
+      />
+
+      <el-alert
+        title="如需修改文档内容，请先下载文件，本地修改后再重新上传"
+        type="info"
+        :closable="false"
+        show-icon
+        class="edit-hint"
+      />
       
       <div class="search-section">
         <el-input
@@ -1196,14 +1369,6 @@ function saveFiles(files: KnowledgeFile[]) {
           class="search-input"
         />
       </div>
-
-      <el-alert
-        title="如需修改文档内容，请先下载文件，本地修改后再重新上传"
-        type="info"
-        :closable="false"
-        show-icon
-        class="edit-hint"
-      />
 
       <div v-if="filteredFiles.length === 0 && !loading">
         <div v-if="listError" class="empty-state">
@@ -1314,9 +1479,9 @@ function saveFiles(files: KnowledgeFile[]) {
       <div class="preview-content">
         <iframe v-if="isOfficePreview" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
         <iframe v-else-if="previewFileUrl && previewFileName.endsWith('.pdf')" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
-        <img v-else-if="previewFileUrl" class="preview-img" :src="previewFileUrl" loading="lazy" alt="预览图片" />
+        <MarkdownViewer v-else-if="isMarkdownPreview" :content="rawMarkdownContent" class="preview-markdown" />
         <!-- eslint-disable-next-line vue/no-v-html -->
-        <div v-else v-html="sanitizedPreviewContent" class="preview-text"></div>
+        <div v-else v-html="sanitizedPreviewContent" class="preview-text" :class="{ 'markdown-body': previewFileName.endsWith('.md') || previewFileName.endsWith('.markdown') }"></div>
       </div>
       <template #footer>
         <el-button @click="showPreviewDialog = false">关闭</el-button>
@@ -1437,6 +1602,19 @@ function saveFiles(files: KnowledgeFile[]) {
   padding: 20px;
   background: #fff;
   overflow-y: auto;
+}
+
+.analyzing-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: #f0f9ff;
+  border: 1px solid #b3d8ff;
+  border-radius: 6px;
+  color: #409eff;
+  font-size: 14px;
+  margin-bottom: 16px;
 }
 
 .file-preview-list {
@@ -1934,9 +2112,119 @@ function saveFiles(files: KnowledgeFile[]) {
   color: #66b1ff;
 }
 
+.preview-hint {
+  margin-bottom: var(--spacing-md);
+}
+
 .preview-content {
   max-height: 600px;
   overflow-y: auto;
+}
+
+/* Markdown 渲染样式 */
+.preview-text.markdown-body {
+  line-height: 1.7;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  padding: 0;
+}
+
+.preview-text.markdown-body :deep(h1),
+.preview-text.markdown-body :deep(h2),
+.preview-text.markdown-body :deep(h3),
+.preview-text.markdown-body :deep(h4) {
+  margin: 1em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.3;
+  padding-left: 0;
+}
+
+.preview-text.markdown-body :deep(h1) { font-size: 1.4em; }
+.preview-text.markdown-body :deep(h2) { font-size: 1.25em; }
+.preview-text.markdown-body :deep(h3) { font-size: 1.1em; }
+
+.preview-text.markdown-body :deep(p) {
+  margin: 0.5em 0;
+  padding-left: 0;
+}
+
+.preview-text.markdown-body :deep(ul),
+.preview-text.markdown-body :deep(ol) {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.preview-text.markdown-body :deep(li) {
+  margin: 0.25em 0;
+}
+
+.preview-text.markdown-body :deep(blockquote) {
+  margin: 0.5em 0;
+  padding: 0.25em 1em;
+  border-left: 3px solid var(--color-primary, #409eff);
+  color: var(--color-text-secondary, #606266);
+  background: rgba(64, 158, 255, 0.04);
+  border-radius: 0 4px 4px 0;
+}
+
+.preview-text.markdown-body :deep(code) {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.9em;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 3px;
+}
+
+.preview-text.markdown-body :deep(pre) {
+  margin: 0.5em 0;
+  padding: 1em;
+  background: #f6f8fa;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.preview-text.markdown-body :deep(pre code) {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+}
+
+.preview-text.markdown-body :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+}
+
+.preview-text.markdown-body :deep(th),
+.preview-text.markdown-body :deep(td) {
+  border: 1px solid var(--color-border, #e4e7ed);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.preview-text.markdown-body :deep(th) {
+  background: var(--color-bg, #f5f7fa);
+  font-weight: 600;
+}
+
+.preview-text.markdown-body :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--color-border, #e4e7ed);
+  margin: 1em 0;
+}
+
+.preview-text.markdown-body :deep(a) {
+  color: var(--color-primary, #409eff);
+  text-decoration: none;
+}
+
+.preview-text.markdown-body :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.preview-text.markdown-body :deep(img) {
+  max-width: 100%;
+  border-radius: 4px;
 }
 
 .preview-text {
@@ -1973,4 +2261,11 @@ function saveFiles(files: KnowledgeFile[]) {
   border: none;
 }
 
+/* Markdown 预览容器 */
+.preview-markdown {
+  font-size: 14px;
+  color: #303133;
+  background: #fff;
+  padding: 4px 0;
+}
 </style>

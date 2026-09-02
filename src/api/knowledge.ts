@@ -67,6 +67,8 @@ export function uploadFileApi(data: FormData): Promise<KnowledgeFile> {
       delete headers['Content-Type']
       return data
     },
+    // 大文件上传不限制超时（0 = 无超时），避免音视频等大文件上传被中断
+    timeout: 0,
   })
 }
 
@@ -121,6 +123,52 @@ export function downloadDocApi(id: number): Promise<Blob> {
   })
 }
 
+/**
+ * 修复后端双重编码导致的乱码（UTF-8 字节被错误当作 Latin-1 解码后又重新编码为 UTF-8）
+ * 典型场景：通过"创建文件"录入的中文文本，后端存储时编码出错，预览时返回乱码
+ * 修复原理：将乱码字符串按 Latin-1 编码还原为原始字节，再用 UTF-8 正确解码
+ */
+export function fixMojibake(str: string): string {
+  if (!str) return str
+
+  // 第一步：检测是否疑似乱码。乱码字符串的所有字符码点都在 0x00-0xFF 范围内
+  // （因为它们是 UTF-8 字节被当作 Latin-1 解读的结果）
+  let latin1Count = 0
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i)
+    // 如果已经存在 > 0xFF 的字符（如正常中文），说明不是这种类型的乱码
+    if (code > 0xFF) return str
+    if (code >= 0x80) latin1Count++
+  }
+
+  // Latin-1 补充区字符比例太低，不认为是乱码（避免误伤如 "Café" 这类正常文本）
+  if (latin1Count < 2 || latin1Count / str.length < 0.05) return str
+
+  // 第二步：按 Latin-1 编码还原为原始字节
+  const bytes = new Uint8Array(str.length)
+  for (let i = 0; i < str.length; i++) {
+    bytes[i] = str.charCodeAt(i)
+  }
+
+  // 第三步：用 UTF-8 解码原始字节
+  const fixed = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+
+  // 如果解码结果包含替换字符 U+FFFD，说明不是有效的 UTF-8，放弃修复
+  if (fixed.includes('\uFFFD')) return str
+
+  // 如果修复后没有产生任何非 ASCII 字符，放弃修复
+  let hasHighChar = false
+  for (let i = 0; i < fixed.length; i++) {
+    if (fixed.charCodeAt(i) > 0x7F) {
+      hasHighChar = true
+      break
+    }
+  }
+  if (!hasHighChar) return str
+
+  return fixed
+}
+
 /** 文件预览 */
 export function previewDocApi(id: number): Promise<{
   preview_type: string
@@ -128,7 +176,12 @@ export function previewDocApi(id: number): Promise<{
   file_type: string
   file_name: string
 }> {
-  return request.get(`/knowledge/docs/${id}/preview/`)
+  return request.get(`/knowledge/docs/${id}/preview/`).then((result) => {
+    if (result && result.content) {
+      result.content = fixMojibake(result.content)
+    }
+    return result
+  })
 }
 
 /** 获取一级分类列表 */
@@ -206,8 +259,13 @@ export function aiClassifyApi(data: FormData | { content: string }): Promise<{
         delete headers['Content-Type']
         return data
       },
+      // AI 分类可能耗时较长（文档提取+AI推理），给 2 分钟超时
+      timeout: 120000,
     })
   } else {
-    return request.post('/knowledge/upload/ai-classify/', data)
+    return request.post('/knowledge/upload/ai-classify/', data, {
+      // JSON 分类只发文本，但 AI 推理仍可能耗时，给 2 分钟超时
+      timeout: 120000,
+    })
   }
 }

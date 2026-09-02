@@ -10,6 +10,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   done: []
+  docLinkClick: [docId: number, title: string]
+  docDownload: [docId: number, title: string]
 }>()
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -25,7 +27,7 @@ onMounted(() => {
 
 <template>
   <div ref="containerRef" class="sse-renderer">
-    <MarkdownViewer :content="content" />
+    <MarkdownViewer :content="content" @doc-link-click="(id, title) => emit('docLinkClick', id, title)" @doc-download="(id, title) => emit('docDownload', id, title)" />
     <span v-if="showCursor && content" class="typing-cursor">▍</span>
     <span v-if="!content && streaming" class="streaming-placeholder">
       <span class="thinking-dot" />

@@ -153,17 +153,41 @@ instance.interceptors.response.use(
     let msg = ''
     const respData = error.response?.data
     if (typeof respData === 'string') {
-      msg = respData
+      // 网关超时等 HTML 错误页，不直接展示原始 HTML，给出友好提示
+      if (respData.includes('504') || respData.includes('Gateway Time-out')) {
+        msg = '服务器处理超时，文件可能过大，建议压缩后上传'
+      } else if (respData.includes('502') || respData.includes('Bad Gateway')) {
+        msg = '服务器网关错误，请稍后重试'
+      } else if (respData.includes('503') || respData.includes('Service Temporarily Unavailable')) {
+        msg = '服务器暂时不可用，请稍后重试'
+      } else if (respData.includes('<html') || respData.includes('<!DOCTYPE')) {
+        msg = `服务器错误 (${error.response?.status || '未知'})，请稍后重试`
+      } else {
+        msg = respData
+      }
     } else if (respData?.detail) {
       msg = respData.detail
     } else if (typeof respData === 'object') {
       const firstErr = Object.values(respData).find((v) => Array.isArray(v) && v.length)
       msg = firstErr ? (firstErr as string[])[0] : ''
     }
-    if (!msg) msg = error.message || '网络异常'
+    if (!msg) {
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        msg = '请求超时，文件可能过大，建议压缩后上传'
+      } else if (error.message === 'Failed to fetch' || error.message?.includes('Network Error')) {
+        msg = '网络连接失败，请检查网络后重试'
+      } else {
+        msg = error.message || '网络异常'
+      }
+    }
     error.message = msg
     if (error.response?.status !== 401) {
-      ElMessage.error(msg)
+      // 关键词已存在的错误用 info 提示，避免显示为红色错误
+      if (msg.includes('关键词') && msg.includes('已存在')) {
+        ElMessage.info(msg)
+      } else {
+        ElMessage.error(msg)
+      }
     }
     return Promise.reject(error)
   },
