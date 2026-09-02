@@ -203,7 +203,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     ? ext
     : (FILE_TYPE_FALLBACK[ext] || 'other')
 
-  // ── 第2步：获取 STS 临时凭证 ──
+  // ── 第2步：获取上传凭证 ──
   const credential = await getUploadCredentialApi({
     file_name: file.name,
     file_size: file.size,
@@ -211,33 +211,74 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     file_type: stsFileType,
   })
 
-  console.log('[OSS Upload] 后端返回的凭证:', credential)
+  // 检查是否为直接上传模式（后端返回 upload_url 而非 STS 凭证）
+  if (credential.upload_url && !credential.sts_credentials) {
+    const userStore = useUserStore()
+    const userCollegeId = userStore.userInfo?.college_id ?? null
 
-  // 字段读取（后端返回 snake_case）
-  const accessKeyId = credential.access_key_id
-  const accessKeySecret = credential.access_key_secret
-  const stsToken = credential.security_token
+    // 直接使用 upload_url 上传（使用 XMLHttpRequest 支持进度回调）
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('PUT', credential.upload_url)
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
 
-  // 安全解析 region 和 bucket，如果 endpoint 为 undefined 不会报错
-  let region = credential.region
-  let bucket = credential.bucket
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) {
+          const percent = Math.round((e.loaded / e.total) * 100)
+          onProgress(percent)
+        }
+      }
 
-  if (!region && credential.endpoint) {
-    region = parseRegionFromEndpoint(credential.endpoint)
-  }
-  if (!bucket && credential.endpoint) {
-    bucket = parseBucketFromEndpoint(credential.endpoint)
-  }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve()
+        } else {
+          reject(new Error(`文件上传失败: ${xhr.status} ${xhr.statusText}`))
+        }
+      }
 
-  const objectKey = credential.object_key
+      xhr.onerror = () => {
+        reject(new Error('文件上传失败，网络错误'))
+      }
 
-  // 凭证完整性校验
-  if (!accessKeyId || !accessKeySecret) {
-    console.error('[OSS Upload] 凭证缺失详情:', {
-      access_key_id: accessKeyId,
-      access_key_secret: accessKeySecret,
-      full_credential: credential
+      xhr.send(file)
     })
+
+    // 上传成功后调用后端回调
+    const callbackResult = await uploadCallbackApi({
+      object_key: credential.oss_key,
+      title,
+      description,
+      file_name: file.name,
+      file_type: file.name.split('.').pop() || '',
+      hash: md5,
+      size: file.size,
+      college_id: userCollegeId,
+      scope: scope === 'public' ? 'school' : 'college',
+    })
+
+    return callbackResult
+  }
+
+  // STS 模式：使用后端返回的凭证
+  const stsCreds = credential.sts_credentials || credential
+  const accessKeyId = stsCreds.access_key_id
+  const accessKeySecret = stsCreds.access_key_secret
+  const stsToken = stsCreds.security_token
+
+  let region = stsCreds.region
+  let bucket = stsCreds.bucket
+
+  if (!region && stsCreds.endpoint) {
+    region = parseRegionFromEndpoint(stsCreds.endpoint)
+  }
+  if (!bucket && stsCreds.endpoint) {
+    bucket = parseBucketFromEndpoint(stsCreds.endpoint)
+  }
+
+  const objectKey = stsCreds.object_key || credential.oss_key
+
+  if (!accessKeyId || !accessKeySecret) {
     throw new Error('STS 凭证缺少 accessKeyId 或 accessKeySecret，请检查后端返回')
   }
   if (!stsToken) {
