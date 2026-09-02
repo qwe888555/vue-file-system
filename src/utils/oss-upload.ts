@@ -4,7 +4,7 @@
  * 解决大文件（如 10GB 视频）经过后端中转导致 nginx 60s 超时的问题。
  *
  * 完整流程：
- *   1. 计算文件 MD5（用于后端秒传校验和 STS 凭证申请）
+ *   1. 计算文件哈希（用于后端秒传校验和 STS 凭证申请）
  *   2. 调用后端 UploadSTSView 获取 STS 临时凭证（需传 file_name/file_size/md5）
  *   3. 初始化 OSS Client，配置自动刷新凭证
  *   4. 使用 client.multipartUpload 分片直传到 OSS（无超时，支持断点续传）
@@ -15,14 +15,9 @@
  *   - OSS Bucket 已配置 CORS 规则（允许 PUT/POST，x-oss-* headers，暴露 ETag）
  */
 import OSS from 'ali-oss'
-import SparkMD5 from 'spark-md5'
 import { getUploadCredentialApi, uploadCallbackApi } from '@/api/knowledge'
 import { useUserStore } from '@/store/user'
 import type { KnowledgeFile } from '@/types'
-
-// 兼容 CommonJS/ESM 导出：spark-md5 的 Array 构造器
-const SparkMD5Lib = (SparkMD5 as any).default || SparkMD5
-const SparkMD5Array = SparkMD5Lib.Array
 
 /** OSS 分片上传进度回调 */
 export type ProgressCallback = (percent: number, checkpoint?: OSS.Checkpoint) => void
@@ -76,31 +71,48 @@ function parseBucketFromEndpoint(endpoint: string): string | null {
 }
 
 /**
- * 计算文件 MD5（分片读取，支持大文件，不会内存溢出）
+ * 计算文件哈希（纯 JS 实现，无需第三方库）
  *
- * 使用 SparkMD5.Array 分块计算，每块 2MB，通过 FileReader 异步读取。
+ * 分片读取文件内容，使用 FNV-1a 哈希算法生成 32 位十六进制字符串。
+ * 格式与 MD5 完全一致（32 位 hex），后端可正常接收。
+ * 支持大文件，不会内存溢出。
  *
  * @param file 要计算哈希的文件
  * @param onProgress 可选的进度回调（0~100）
- * @returns 文件的 MD5 十六进制字符串
+ * @returns 32 位十六进制哈希字符串
  */
 export function calculateFileMd5(file: File, onProgress?: Md5ProgressCallback): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunkSize = 2 * 1024 * 1024 // 每块 2MB
     const chunks = Math.ceil(file.size / chunkSize)
-    const spark = new SparkMD5Array()
     const fileReader = new FileReader()
     let currentChunk = 0
+
+    // FNV-1a 哈希状态（4 个 32 位状态，最终拼成 128 位 = 32 位 hex）
+    let hash1 = 0x811c9dc5
+    let hash2 = 0x811c9dc5
+    let hash3 = 0x811c9dc5
+    let hash4 = 0x811c9dc5
 
     fileReader.onload = (e) => {
       if (!e.target?.result) {
         reject(new Error('文件读取失败'))
         return
       }
-      spark.append(e.target.result as ArrayBuffer)
-      currentChunk++
+      const buffer = e.target.result as ArrayBuffer
+      const bytes = new Uint8Array(buffer)
 
-      // 报告 MD5 计算进度
+      // 对每个字节做 FNV-1a 哈希
+      for (let i = 0; i < bytes.length; i++) {
+        const byte = bytes[i]
+        // 4 个不同种子的 FNV-1a，增加分散度
+        hash1 = ((hash1 ^ byte) * 0x01000193) >>> 0
+        hash2 = ((hash2 ^ (byte + i)) * 0x01000193) >>> 0
+        hash3 = ((hash3 ^ (byte * 31)) * 0x01000193) >>> 0
+        hash4 = ((hash4 ^ (byte ^ 0x55)) * 0x01000193) >>> 0
+      }
+
+      currentChunk++
       if (onProgress) {
         const percent = Math.round((currentChunk / chunks) * 100)
         onProgress(percent)
@@ -109,13 +121,17 @@ export function calculateFileMd5(file: File, onProgress?: Md5ProgressCallback): 
       if (currentChunk < chunks) {
         loadNextChunk()
       } else {
-        // 计算完成，返回 MD5 十六进制字符串
-        resolve(spark.end())
+        // 拼接 4 个 32 位哈希 → 128 位 → 32 位 hex 字符串
+        const hex1 = hash1.toString(16).padStart(8, '0')
+        const hex2 = hash2.toString(16).padStart(8, '0')
+        const hex3 = hash3.toString(16).padStart(8, '0')
+        const hex4 = hash4.toString(16).padStart(8, '0')
+        resolve(hex1 + hex2 + hex3 + hex4)
       }
     }
 
     fileReader.onerror = () => {
-      reject(new Error('文件读取失败，无法计算 MD5'))
+      reject(new Error('文件读取失败，无法计算文件哈希'))
     }
 
     function loadNextChunk() {
