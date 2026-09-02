@@ -558,10 +558,60 @@ async function loadXlsxLib(): Promise<any> {
   }
 }
 
-async function loadZipBuf(buf: ArrayBuffer): Promise<any> {
-  const m: any = await import('jszip')
-  const JSZip = m && m.default ? m.default : m
-  return JSZip.loadAsync(buf)
+async function inflateRaw(u8: Uint8Array): Promise<Uint8Array> {
+  const ds = new (DecompressionStream as any)('deflate-raw')
+  const stream = new Blob([u8]).stream().pipeThrough(ds)
+  const ab = await new Response(stream).arrayBuffer()
+  return new Uint8Array(ab)
+}
+
+/** 按中央目录读取 zip 中满足正则的条目文本（仅支持 method 0/8，够 pptx 用） */
+async function zipEntryTexts(buf: ArrayBuffer, want: RegExp): Promise<Map<string, string>> {
+  const u8 = new Uint8Array(buf)
+  const dv = new DataView(buf)
+  const decoder = new TextDecoder('utf-8')
+
+  let eocd = -1
+  for (let i = u8.length - 22; i >= 0; i--) {
+    if (u8[i] === 0x50 && u8[i + 1] === 0x4b && u8[i + 2] === 0x05 && u8[i + 3] === 0x06) {
+      eocd = i
+      break
+    }
+  }
+  if (eocd < 0) throw new Error('不是有效的 zip 文件')
+
+  const count = dv.getUint16(eocd + 10, true)
+  let off = dv.getUint32(eocd + 16, true)
+  const out = new Map<string, string>()
+
+  for (let n = 0; n < count; n++) {
+    if (off + 46 > buf.byteLength || dv.getUint32(off, true) !== 0x02014b50) break
+    const method = dv.getUint16(off + 10, true)
+    const compSize = dv.getUint32(off + 20, true)
+    const nameLen = dv.getUint16(off + 28, true)
+    const extraLen = dv.getUint16(off + 30, true)
+    const commentLen = dv.getUint16(off + 32, true)
+    const localOff = dv.getUint32(off + 42, true)
+    const name = decoder.decode(u8.subarray(off + 46, off + 46 + nameLen))
+
+    if (want.test(name)) {
+      if (method !== 0 && method !== 8) continue
+      const lNameLen = dv.getUint16(localOff + 26, true)
+      const lExtraLen = dv.getUint16(localOff + 28, true)
+      const dataStart = localOff + 30 + lNameLen + lExtraLen
+      if (dataStart + compSize > buf.byteLength) continue
+      const comp = u8.subarray(dataStart, dataStart + compSize)
+      let text: string
+      if (method === 0) {
+        text = decoder.decode(comp)
+      } else {
+        text = decoder.decode(await inflateRaw(comp))
+      }
+      out.set(name, text)
+    }
+    off += 46 + nameLen + extraLen + commentLen
+  }
+  return out
 }
 
 async function renderPdfBlob(buf: ArrayBuffer) {
@@ -618,20 +668,18 @@ function slideTextOf(xml: string): string[] {
   return lines
 }
 
-async function renderPptxHtml(zip: any, names: string[]) {
-  const slideFiles = names
-    .filter((n) => /^ppt\/slides\/slide\d+\.xml$/i.test(n))
-    .sort((a, b) => {
-      const na = Number(/slide(\d+)\.xml/i.exec(a)?.[1] || 0)
-      const nb = Number(/slide(\d+)\.xml/i.exec(b)?.[1] || 0)
-      return na - nb
-    })
+async function renderPptxHtml(buf: ArrayBuffer) {
+  const entries = await zipEntryTexts(buf, /^ppt\/slides\/slide\d+\.xml$/i)
+  const slideFiles = [...entries.keys()].sort((a, b) => {
+    const na = Number(/slide(\d+)\.xml/i.exec(a)?.[1] || 0)
+    const nb = Number(/slide(\d+)\.xml/i.exec(b)?.[1] || 0)
+    return na - nb
+  })
   if (!slideFiles.length) throw new Error('未找到幻灯片')
   const blocks: string[] = []
   for (const name of slideFiles) {
     const num = /slide(\d+)\.xml/i.exec(name)?.[1] || ''
-    const xml = await zip.file(name).async('string')
-    const lines = slideTextOf(xml)
+    const lines = slideTextOf(entries.get(name) || '')
     if (!lines.length) continue
     const body = lines.map((l) => escapeHtml(l)).join('<br/>')
     blocks.push(`<section class="pptx-slide"><h4 class="pptx-slide-title">第 ${num} 页</h4><div class="pptx-slide-body">${body}</div></section>`)
@@ -676,28 +724,23 @@ async function renderLocalBytes(id: number, extHint: string) {
       return
     }
     if (isZipMagic(u8)) {
-      let zip: any = null
-      const names: string[] = []
-      try {
-        zip = await loadZipBuf(buf)
-        zip.forEach((_p: string, entry: any) => {
-          if (entry && entry.name) names.push(entry.name)
-        })
-      } catch (e) {
-        console.error('ZIP 结构解析失败:', e)
+      const hint = (extHint || '').toLowerCase()
+      const attempts: Array<() => Promise<void>> = []
+      if (hint === 'docx' || hint === 'doc' || hint === 'wps') attempts.push(() => renderDocxHtml(buf))
+      else if (hint === 'xls' || hint === 'xlsx' || hint === 'et') attempts.push(() => renderXlsxHtml(buf))
+      else if (hint === 'ppt' || hint === 'pptx') attempts.push(() => renderPptxHtml(buf))
+      else {
+        attempts.push(() => renderDocxHtml(buf))
+        attempts.push(() => renderXlsxHtml(buf))
+        attempts.push(() => renderPptxHtml(buf))
       }
-      if (names.some((n) => n.toLowerCase().startsWith('word/'))) {
-        await renderDocxHtml(buf)
-        return
-      }
-      if (names.some((n) => n.toLowerCase().startsWith('xl/'))) {
-        await renderXlsxHtml(buf)
-        return
-      }
-      if (names.some((n) => n.toLowerCase().startsWith('ppt/'))) {
-        if (!zip) throw new Error('ZIP 解析失败')
-        await renderPptxHtml(zip, names)
-        return
+      for (const attempt of attempts) {
+        try {
+          await attempt()
+          return
+        } catch (e) {
+          console.error('解析失败，尝试下一种格式:', e)
+        }
       }
       previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
       return
@@ -1686,13 +1729,17 @@ function saveFiles(files: KnowledgeFile[]) {
       </div>
 
       <el-alert
-        title="点击资料名可以在线预览；图片/音视频/PDF/Office 等格式均支持，也可下载到本地查看。如需修改文档内容，请先下载文件，本地修改后再重新上传。"
+        title="点击资料名可在线预览；支持 Markdown/文本、图片、音视频、PDF、Word(.docx)、Excel(.xls/.xlsx)、PPT(.pptx) 在线查看内容，其余格式请下载后查看。如需修改文档内容，请先下载文件，本地修改后再重新上传。"
         type="success"
         :closable="false"
         show-icon
         class="preview-hint"
       />
-      
+
+      <div class="offline-download-tip">
+        以下类型暂不支持在线查看内容，请下载后查看：Word 旧格式(.doc)、PPT 旧格式(.ppt)、压缩包(.zip/.rar/.7z)、设计源文件(.psd/.ai)、3D 模型(.stl/.obj/.fbx)、电子书(.epub/.pub)。若 .docx/.xlsx/.pptx 等仍无法正常预览，同样请下载后使用本地软件查看。
+      </div>
+
       <div class="search-section">
         <el-input
           v-model="searchQuery"
@@ -2506,6 +2553,17 @@ function saveFiles(files: KnowledgeFile[]) {
 
 .preview-hint {
   margin-bottom: var(--spacing-md);
+}
+
+.offline-download-tip {
+  margin-bottom: var(--spacing-md);
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #e6a23c;
+  background: #fdf6ec;
+  border: 1px solid #faecd8;
+  border-radius: 4px;
 }
 
 .preview-content {
