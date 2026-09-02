@@ -4,22 +4,27 @@
  * 解决大文件（如 10GB 视频）经过后端中转导致 nginx 60s 超时的问题。
  *
  * 完整流程：
- *   1. 调用后端 UploadSTSView 获取 STS 临时凭证（小请求，毫秒级）
- *   2. 初始化 OSS Client，配置自动刷新凭证
- *   3. 使用 client.multipartUpload 分片直传到 OSS（无超时，支持断点续传）
- *   4. 上传成功后调用后端 UploadCallbackView 注册文件信息
+ *   1. 计算文件 MD5（用于后端秒传校验和 STS 凭证申请）
+ *   2. 调用后端 UploadSTSView 获取 STS 临时凭证（需传 file_name/file_size/md5）
+ *   3. 初始化 OSS Client，配置自动刷新凭证
+ *   4. 使用 client.multipartUpload 分片直传到 OSS（无超时，支持断点续传）
+ *   5. 上传成功后调用后端 UploadCallbackView 注册文件信息
  *
  * 前置条件（必须满足）：
  *   - 后端 /knowledge/upload/sts/ 接口返回完整 STS 凭证
  *   - OSS Bucket 已配置 CORS 规则（允许 PUT/POST，x-oss-* headers，暴露 ETag）
  */
 import OSS from 'ali-oss'
+import SparkMD5 from 'spark-md5'
 import { getUploadCredentialApi, uploadCallbackApi } from '@/api/knowledge'
 import { useUserStore } from '@/store/user'
 import type { KnowledgeFile } from '@/types'
 
 /** OSS 分片上传进度回调 */
 export type ProgressCallback = (percent: number, checkpoint?: OSS.Checkpoint) => void
+
+/** MD5 计算进度回调 */
+export type Md5ProgressCallback = (percent: number) => void
 
 /** OSS 分片上传选项 */
 export interface OssUploadOptions {
@@ -39,6 +44,8 @@ export interface OssUploadOptions {
   parallel?: number
   /** 进度回调函数 */
   onProgress?: ProgressCallback
+  /** MD5 计算进度回调 */
+  onMd5Progress?: Md5ProgressCallback
   /** 断点续传 checkpoint（上次中断时保存的） */
   checkpoint?: OSS.Checkpoint
 }
@@ -65,6 +72,59 @@ function parseBucketFromEndpoint(endpoint: string): string | null {
 }
 
 /**
+ * 计算文件 MD5（分片读取，支持大文件，不会内存溢出）
+ *
+ * 使用 SparkMD5.Array 分块计算，每块 2MB，通过 FileReader 异步读取。
+ *
+ * @param file 要计算哈希的文件
+ * @param onProgress 可选的进度回调（0~100）
+ * @returns 文件的 MD5 十六进制字符串
+ */
+export function calculateFileMd5(file: File, onProgress?: Md5ProgressCallback): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunkSize = 2 * 1024 * 1024 // 每块 2MB
+    const chunks = Math.ceil(file.size / chunkSize)
+    const spark = new SparkMD5.Array()
+    const fileReader = new FileReader()
+    let currentChunk = 0
+
+    fileReader.onload = (e) => {
+      if (!e.target?.result) {
+        reject(new Error('文件读取失败'))
+        return
+      }
+      spark.append(e.target.result as ArrayBuffer)
+      currentChunk++
+
+      // 报告 MD5 计算进度
+      if (onProgress) {
+        const percent = Math.round((currentChunk / chunks) * 100)
+        onProgress(percent)
+      }
+
+      if (currentChunk < chunks) {
+        loadNextChunk()
+      } else {
+        // 计算完成，返回 MD5 十六进制字符串
+        resolve(spark.end())
+      }
+    }
+
+    fileReader.onerror = () => {
+      reject(new Error('文件读取失败，无法计算 MD5'))
+    }
+
+    function loadNextChunk() {
+      const start = currentChunk * chunkSize
+      const end = Math.min(start + chunkSize, file.size)
+      fileReader.readAsArrayBuffer(file.slice(start, end))
+    }
+
+    loadNextChunk()
+  })
+}
+
+/**
  * 执行 OSS 分片直传大文件
  *
  * @param options 上传选项
@@ -80,13 +140,21 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     partSize = 5 * 1024 * 1024, // 默认 5MB 分片
     parallel = 4, // 默认 4 个并发上传
     onProgress,
+    onMd5Progress,
     checkpoint,
   } = options
 
-  // ── 第1步：获取 STS 临时凭证 ──
-  const credential = await getUploadCredentialApi()
+  // ── 第1步：计算文件 MD5（后端 STS 接口必填参数） ──
+  const md5 = await calculateFileMd5(file, onMd5Progress)
 
-  // 字段读取（后端返回 snake_case，兼容 camelCase）
+  // ── 第2步：获取 STS 临时凭证 ──
+  const credential = await getUploadCredentialApi({
+    file_name: file.name,
+    file_size: file.size,
+    md5,
+  })
+
+  // 字段读取（后端返回 snake_case）
   const accessKeyId = credential.access_key_id
   const accessKeySecret = credential.access_key_secret
   const stsToken = credential.security_token
@@ -105,7 +173,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     throw new Error('无法确定 OSS bucket，请检查后端返回的 endpoint 或 bucket 字段')
   }
 
-  // ── 第2步：初始化 OSS Client ──
+  // ── 第3步：初始化 OSS Client ──
   const client = new OSS({
     region,
     bucket,
@@ -119,7 +187,11 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
      * 当凭证快过期时，ali-oss 会自动调用此函数获取新凭证
      */
     refreshSTSToken: async () => {
-      const newCred = await getUploadCredentialApi()
+      const newCred = await getUploadCredentialApi({
+        file_name: file.name,
+        file_size: file.size,
+        md5,
+      })
       return {
         accessKeyId: newCred.access_key_id,
         accessKeySecret: newCred.access_key_secret,
@@ -130,9 +202,9 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     refreshSTSTokenInterval: 10 * 60 * 1000,
   })
 
-  // ── 第3步：multipartUpload 分片直传 ──
+  // ── 第4步：multipartUpload 分片直传 ──
   try {
-    const uploadResult = await client.multipartUpload(objectKey, file, {
+    await client.multipartUpload(objectKey, file, {
       partSize,
       parallel,
       // 断点续传：传入上次中断时保存的 checkpoint，跳过已上传分片
@@ -153,7 +225,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
       },
     })
 
-    // ── 第4步：调用后端回调，注册文件信息到知识库 ──
+    // ── 第5步：调用后端回调，注册文件信息到知识库 ──
     const userStore = useUserStore()
     // super_admin 可能没有 college_id，传 null 让后端处理默认值
     const userCollegeId = userStore.userInfo?.college_id ?? null
@@ -164,7 +236,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
       description,
       file_name: file.name,
       file_type: file.name.split('.').pop() || '',
-      hash: '', // 可选：前端可计算 MD5 实现秒传，此处留空
+      hash: md5, // 传入计算好的 MD5，支持秒传
       size: file.size,
       college_id: userCollegeId,
       scope: scope === 'public' ? 'school' : 'college',

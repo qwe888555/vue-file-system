@@ -39,7 +39,11 @@ export function uploadDocApi(data: FormData): Promise<KnowledgeFile> {
 }
 
 /** 获取 OSS 上传凭证（STS 临时凭证，用于前端直传） */
-export function getUploadCredentialApi(): Promise<{
+export function getUploadCredentialApi(data: {
+  file_name: string
+  file_size: number
+  md5: string
+}): Promise<{
   // PostObject 凭证（兼容旧接口）
   file_name: string
   file_type: string
@@ -56,7 +60,7 @@ export function getUploadCredentialApi(): Promise<{
   bucket: string
   object_key: string
 }> {
-  return request.post('/knowledge/upload/sts/')
+  return request.post('/knowledge/upload/sts/', data)
 }
 
 /** MD5 秒传校验 */

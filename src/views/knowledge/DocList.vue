@@ -723,14 +723,16 @@ async function handleUploadSubmit() {
 
         if (file.size > LARGE_FILE_THRESHOLD) {
           // ── 大文件：走 OSS 分片直传（无超时，支持断点续传） ──
-          loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}（OSS 分片直传）`)
-
           result = await uploadFileToOss({
             file,
             title: item.title || fileName,
             description: item.description,
             scope: item.scope,
             keywords: uploadKeywords,
+            // MD5 计算进度回调
+            onMd5Progress: (percent) => {
+              loadingInstance.setText(`正在校验文件... ${i + 1}/${totalCount}：${file.name}（MD5 ${percent}%）`)
+            },
             // 分片上传进度回调，实时更新 loading 文字
             onProgress: (percent) => {
               loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}（${percent}%）`)
