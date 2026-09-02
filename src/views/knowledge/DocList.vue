@@ -166,20 +166,6 @@ async function extractTextFromFile(file: File): Promise<string> {
   }
 }
 
-/** 根据文件类型获取大小限制（MB），返回 0 表示无限制 */
-function getFileSizeLimit(ext: string): number {
-  const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp']
-  const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv']
-  const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma']
-  const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz']
-
-  if (imageExts.includes(ext)) return 10 // 图片 10MB
-  if (videoExts.includes(ext)) return 0 // 视频无限制（走 OSS 分片直传）
-  if (audioExts.includes(ext)) return 0 // 音频无限制（走 OSS 分片直传）
-  if (archiveExts.includes(ext)) return 0 // 压缩包无限制（走 OSS 分片直传）
-  return 20 // 文档/其他 20MB
-}
-
 /** 获取文件类型的中文描述 */
 function getExtTypeName(ext: string): string {
   const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv']
@@ -196,7 +182,7 @@ function getExtTypeName(ext: string): string {
 
 /** 支持的扩展名白名单 */
 const SUPPORTED_EXTENSIONS = [
-  'pdf', 'doc', 'docx', 'txt', 'md',
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'md',
   'jpg', 'jpeg', 'png', 'gif', 'webp',
   'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma',
   'mp4', 'avi', 'mkv', 'mov', 'webm', 'flv', 'wmv',
@@ -207,20 +193,9 @@ const SUPPORTED_EXTENSIONS = [
 function validateFile(file: File): string | null {
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
 
-  // 格式校验
+  // 仅做格式校验，大小限制完全由后端控制
   if (!ext || !SUPPORTED_EXTENSIONS.includes(ext)) {
-    return `不支持的文件格式 ".${ext || '未知'}"，支持：PDF、Word、TXT、Markdown、图片、音视频、压缩包`
-  }
-
-  // 大小校验
-  const sizeLimit = getFileSizeLimit(ext)
-  const fileSizeMB = file.size / (1024 * 1024)
-  if (sizeLimit > 0 && fileSizeMB > sizeLimit) {
-    const typeName = getExtTypeName(ext)
-    const isMedia = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv',
-      'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma'].includes(ext)
-    const tip = isMedia ? `，建议压缩后打包成 ZIP/RAR 压缩包上传` : ''
-    return `${file.name} 文件过大（${fileSizeMB.toFixed(1)}MB），${typeName}文件限制 ${sizeLimit}MB 以内${tip}`
+    return `不支持的文件格式 ".${ext || '未知'}"，支持：PDF、Word、Excel、CSV、TXT、Markdown、图片、音视频、压缩包`
   }
 
   return null
@@ -729,9 +704,9 @@ async function handleUploadSubmit() {
             description: item.description,
             scope: item.scope,
             keywords: uploadKeywords,
-            // MD5 计算进度回调
+            // 文件哈希计算进度回调
             onMd5Progress: (percent) => {
-              loadingInstance.setText(`正在校验文件... ${i + 1}/${totalCount}：${file.name}（MD5 ${percent}%）`)
+              loadingInstance.setText(`正在校验文件... ${i + 1}/${totalCount}：${file.name}（${percent}%）`)
             },
             // 分片上传进度回调，实时更新 loading 文字
             onProgress: (percent) => {
@@ -831,6 +806,10 @@ async function fetchFiles(keyword?: string) {
       }
       if (file.uploader_name && !file.author) {
         file.author = file.uploader_name
+      }
+      // 文件大小映射（后端 file_size → 前端 fileSize）
+      if (file.file_size != null && file.fileSize == null) {
+        file.fileSize = file.file_size
       }
       // 后端可能返回 description 或 summary，统一映射确保数据不丢失
       const rawDesc = (file as any).description
@@ -1441,6 +1420,14 @@ function saveFiles(files: KnowledgeFile[]) {
         show-icon
         class="edit-hint"
       />
+
+      <el-alert
+        title="点击资料名可以查看该资料的内容"
+        type="success"
+        :closable="false"
+        show-icon
+        class="preview-hint"
+      />
       
       <div class="search-section">
         <el-input
@@ -1479,7 +1466,7 @@ function saveFiles(files: KnowledgeFile[]) {
       >
         <el-table-column type="selection" width="55" align="center" />
         
-        <el-table-column prop="title" label="资料名" min-width="200" show-overflow-tooltip>
+        <el-table-column prop="title" label="资料名" min-width="160" align="center" show-overflow-tooltip>
           <template #default="scope">
             <div class="file-name-cell">
               <el-icon 
@@ -1511,7 +1498,13 @@ function saveFiles(files: KnowledgeFile[]) {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="240" align="center" fixed="right">
+        <el-table-column prop="fileSize" label="文件大小" min-width="110" align="center">
+          <template #default="scope">
+            {{ formatFileSize(scope.row.fileSize) }}
+          </template>
+        </el-table-column>
+
+        <el-table-column label="操作" width="280" align="center" fixed="right">
           <template #default="scope">
             <div class="action-buttons">
               <el-button size="small" type="primary" plain :icon="Download" @click.stop="handleDownload(scope.row)">
@@ -2065,16 +2058,38 @@ function saveFiles(files: KnowledgeFile[]) {
   border-bottom: 1px solid var(--color-border);
 }
 
+/* fixed 右侧操作列：增加内边距，防止按钮边框被截断 */
+.file-table :deep(.el-table__fixed-right .el-table__body td) {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
 .action-buttons {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   justify-content: center;
+  flex-wrap: nowrap;
+}
+
+/* 操作按钮更紧凑，防止两边溢出 */
+.action-buttons :deep(.el-button) {
+  padding: 5px 8px;
+  font-size: 12px;
+  --el-button-size: 24px;
+}
+
+.action-buttons :deep(.el-button .el-icon) {
+  margin-right: 3px;
+  font-size: 12px;
 }
 
 .file-name-cell {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  min-width: 0; /* flex 容器需要此属性，子元素才能正确省略文本 */
+  width: 100%;
 }
 
 .file-icon {
@@ -2082,10 +2097,15 @@ function saveFiles(files: KnowledgeFile[]) {
 }
 
 .file-title {
+  min-width: 0;
+  max-width: calc(100% - 28px); /* 留出图标空间，防止文字过长挤压 */
   font-size: 14px;
   color: var(--color-text);
   font-weight: 500;
   transition: color 0.2s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .file-title:hover {
   color: var(--color-primary, #409eff);

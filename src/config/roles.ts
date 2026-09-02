@@ -12,8 +12,6 @@ export interface RoleMeta {
 export const ROLE_CONFIG: Record<UserRole, RoleMeta> = {
   user:          { label: '普通用户',   tagType: 'info' },
   admin:         { label: '管理员',     tagType: 'warning' },
-  admin_csic:    { label: '平台管理员', tagType: 'warning' },
-  admin_dept:    { label: '部门管理员', tagType: 'warning' },
   college_admin: { label: '学院管理员', tagType: 'warning' },
   dept_admin:    { label: '部门管理员', tagType: 'warning' },
   super_admin:   { label: '超级管理员', tagType: 'danger' },
@@ -26,7 +24,7 @@ export const ROLE_OPTIONS = Object.entries(ROLE_CONFIG).map(([value, meta]) => (
 }))
 
 /** 管理员角色全集（与 roleMenuMap 中拥有知识库/管理访问权的角色对齐） */
-export const ADMIN_ROLES: UserRole[] = ['super_admin', 'admin', 'admin_csic', 'admin_dept', 'college_admin', 'dept_admin']
+export const ADMIN_ROLES: UserRole[] = ['super_admin', 'admin', 'college_admin', 'dept_admin']
 
 /** 角色是否为管理员（登录后跳转 / 侧边栏渲染 / 欢迎语统一走此判定） */
 export function isAdminRole(role?: UserRole | string | null): boolean {

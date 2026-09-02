@@ -272,7 +272,7 @@ async function sendMessage() {
   }
 }
 
-function handleFeedback(messageId: number, type: 'like' | 'dislike') {
+function handleFeedback(messageId: number, type: 'like' | 'dislike' | 'none') {
   chat.submitFeedback(messageId, type)
 }
 

@@ -43,6 +43,7 @@ export function getUploadCredentialApi(data: {
   file_name: string
   file_size: number
   md5: string
+  file_type?: string
 }): Promise<{
   // PostObject 凭证（兼容旧接口）
   file_name: string
@@ -65,6 +66,9 @@ export function getUploadCredentialApi(data: {
   formData.append('file_name', data.file_name)
   formData.append('file_size', String(data.file_size))
   formData.append('md5', data.md5)
+  if (data.file_type) {
+    formData.append('file_type', data.file_type)
+  }
   return request.post('/knowledge/upload/sts/', formData)
 }
 

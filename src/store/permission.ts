@@ -11,22 +11,22 @@ const permissionActionMap: Record<string, UserRole[]> = {
   'department-manage': ['super_admin'],
 
   // ── 用户管理 ──
-  create: ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
-  edit: ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
-  delete: ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
-  'batch-delete': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
-  'reset-password': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
-  'batch-reset-password': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+  create: ['super_admin', 'admin', 'college_admin', 'dept_admin'],
+  edit: ['super_admin', 'admin', 'college_admin', 'dept_admin'],
+  delete: ['super_admin', 'admin', 'college_admin', 'dept_admin'],
+  'batch-delete': ['super_admin', 'admin', 'college_admin', 'dept_admin'],
+  'reset-password': ['super_admin', 'admin', 'college_admin', 'dept_admin'],
+  'batch-reset-password': ['super_admin', 'admin', 'college_admin', 'dept_admin'],
 
   // ── 知识库管理 ──
-  'knowledge-create': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
-  'knowledge-edit': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
-  'knowledge-delete': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+  'knowledge-create': ['super_admin', 'admin', 'college_admin', 'dept_admin'],
+  'knowledge-edit': ['super_admin', 'admin', 'college_admin', 'dept_admin'],
+  'knowledge-delete': ['super_admin', 'admin', 'college_admin', 'dept_admin'],
 
   // ── FAQ 管理 ──
-  'faq-create': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
-  'faq-edit': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
-  'faq-delete': ['super_admin', 'admin', 'admin_csic', 'college_admin', 'dept_admin', 'admin_dept'],
+  'faq-create': ['super_admin', 'admin', 'college_admin', 'dept_admin'],
+  'faq-edit': ['super_admin', 'admin', 'college_admin', 'dept_admin'],
+  'faq-delete': ['super_admin', 'admin', 'college_admin', 'dept_admin'],
 }
 
 export const usePermissionStore = defineStore('permission', () => {
