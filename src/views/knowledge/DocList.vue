@@ -7,9 +7,9 @@ import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, batchDeleteDocsApi, addKeywordsApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getKeywordsApi, uploadTextApi, uploadFileApi, aiClassifyApi, previewDocApi, downloadDocApi, batchDeleteDocsApi, addKeywordsApi } from '@/api/knowledge'
 import { uploadFileToOss } from '@/utils/oss-upload'
-import { classifyDocPreview, resolvePreviewMediaUrl } from '@/utils/filePreview'
+import { classifyDocPreview } from '@/utils/filePreview'
 import DOMPurify from 'dompurify'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 import MarkdownViewer from '@/components/chat/MarkdownViewer.vue'
@@ -513,8 +513,86 @@ function handlePreviewMediaError() {
     releasePreviewObjectUrl()
     previewMediaKind.value = ''
     previewFileUrl.value = ''
-    previewContent.value = previewPlaceholder('图片在线预览失败，可能是预览地址已过期，请下载后查看')
+    previewContent.value = previewPlaceholder('该文件类型暂不支持在线预览，请下载后查看')
   }
+}
+
+function extFromUrl(url: string): string {
+  try {
+    const name = new URL(url).pathname.split('/').pop() || ''
+    const dot = name.lastIndexOf('.')
+    return dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * 二进制文档在线预览：通过同源下载接口取原始字节，前端本地解析渲染。
+ * 规避 OSS 跨域/签名地址以及微软 Office Online（私有文件其服务器无法访问）导致的预览失败。
+ * pdf → Blob；docx → mammoth；xls/xlsx → SheetJS；其余类型提示下载。
+ */
+async function renderBinaryPreview(id: number, ext: string, content: string) {
+  const hintExt = (ext || '').toLowerCase() || extFromUrl(content)
+  // 前端无法解析的类型，不下载直接提示
+  if (hintExt === 'ppt' || hintExt === 'pptx' || hintExt === 'doc') {
+    previewContent.value = previewPlaceholder('该文件类型暂不支持在线预览，请下载后查看')
+    return
+  }
+
+  let buf: ArrayBuffer
+  try {
+    const blob = await downloadDocApi(id)
+    buf = await blob.arrayBuffer()
+  } catch (e) {
+    console.error('获取文件内容失败:', e)
+    previewContent.value = previewPlaceholder('在线预览失败，请下载后查看')
+    return
+  }
+
+  const u8 = new Uint8Array(buf)
+  let realExt = hintExt
+  // 后端 file_name/title 可能不带扩展名，按魔数兜底识别实际格式
+  if (!realExt) {
+    if (u8[0] === 0x25 && u8[1] === 0x50 && u8[2] === 0x44 && u8[3] === 0x46) {
+      realExt = 'pdf'
+    } else if (u8[0] === 0x50 && u8[1] === 0x4b) {
+      const names = new TextDecoder('latin1').decode(u8)
+      if (names.includes('word/')) realExt = 'docx'
+      else if (names.includes('xl/')) realExt = 'xlsx'
+    }
+  }
+
+  if (realExt === 'pdf') {
+    previewFileUrl.value = URL.createObjectURL(new Blob([buf], { type: 'application/pdf' }))
+    previewMediaKind.value = 'pdf'
+    return
+  }
+  if (realExt === 'docx' || realExt === 'doc' || realExt === 'wps' || realExt === 'et' || realExt === 'dps') {
+    try {
+      const mammoth = await import('mammoth')
+      const extracted = await mammoth.extractRawText({ arrayBuffer: buf })
+      previewContent.value = previewPre(extracted.value || '无法提取文档文字内容')
+    } catch (e) {
+      console.error('Word 解析失败:', e)
+      previewContent.value = previewPlaceholder('Word 在线预览失败，请下载后查看')
+    }
+    return
+  }
+  if (realExt === 'xls' || realExt === 'xlsx') {
+    try {
+      const XLSX = await import('xlsx')
+      const workbook = XLSX.read(buf, { type: 'array' })
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const html = XLSX.utils.sheet_to_html(sheet, { editable: false })
+      previewContent.value = `<div class="excel-preview">${html}</div>`
+    } catch (e) {
+      console.error('Excel 解析失败:', e)
+      previewContent.value = previewPlaceholder('Excel 在线预览失败，请下载后查看')
+    }
+    return
+  }
+  previewContent.value = previewPlaceholder('该文件类型暂不支持在线预览，请下载后查看')
 }
 
 /**
@@ -562,64 +640,35 @@ async function handlePreviewDoc(id: number, title: string) {
     case 'image':
     case 'audio':
     case 'video':
-    case 'pdf': {
       if (!content) {
         previewContent.value = previewPlaceholder('无法获取在线预览地址，请下载后查看')
-        break
-      }
-      const { url, isBlob } = await resolvePreviewMediaUrl(kind, content)
-      if (kind === 'pdf' && !isBlob) {
-        // blob 化失败说明 OSS 原始地址也拿不到文件（Content-Type/签名覆盖报错），
-        // 直接展示友好提示，避免 iframe 里露出 OSS 的 XML 报错
-        previewContent.value = previewPlaceholder('PDF 在线预览失败，请下载后使用 PDF 阅读器打开查看')
         break
       }
       previewMediaKind.value = kind
-      previewFileUrl.value = url
+      previewFileUrl.value = content
       break
-    }
-    case 'office': {
-      // Office 文档在线预览。docx/xls/xlsx 用浏览器本地解析渲染，
-      // 不依赖微软 Office Online——私有 OSS 的签名地址微软服务器访问不到会报 File not found。
+    case 'pdf':
+    case 'office':
       if (!content) {
         previewContent.value = previewPlaceholder('无法获取在线预览地址，请下载后查看')
         break
       }
-      if (ext === 'docx' || ext === 'wps' || ext === 'et' || ext === 'dps') {
-        // Word 系：mammoth 前端解析文本
-        try {
-          const resp = await fetch(content)
-          const arrayBuffer = await resp.arrayBuffer()
-          const mammoth = await import('mammoth')
-          const extracted = await mammoth.extractRawText({ arrayBuffer })
-          previewContent.value = previewPre(extracted.value || '无法提取文档文字内容')
-        } catch (err) {
-          console.error('Word 在线预览失败:', err)
-          previewContent.value = previewPlaceholder('在线预览失败，请下载后使用 Word 打开查看')
-        }
-      } else if (ext === 'xlsx' || ext === 'xls') {
-        // Excel：前端解析首个工作表为 HTML 表格
-        try {
-          const resp = await fetch(content)
-          const arrayBuffer = await resp.arrayBuffer()
-          const XLSX = await import('xlsx')
-          const workbook = XLSX.read(arrayBuffer, { type: 'array' })
-          const sheet = workbook.Sheets[workbook.SheetNames[0]]
-          const html = XLSX.utils.sheet_to_html(sheet, { editable: false })
-          previewContent.value = `<div class="excel-preview">${html}</div>`
-        } catch (err) {
-          console.error('Excel 在线预览失败:', err)
-          previewContent.value = previewPlaceholder('在线预览失败，请下载后使用 Excel 打开查看')
-        }
-      } else {
-        // doc / ppt / pptx：无前端解析库；OSS 非公网可访问时 Office Online 必定失败，直接提示下载
-        previewContent.value = previewPlaceholder('该文件暂不支持在线预览，请下载后使用对应 Office 软件打开查看')
+      await renderBinaryPreview(id, ext, content)
+      break
+    default: {
+      if (!content) {
+        previewContent.value = previewPlaceholder('该文件类型暂不支持在线预览，请下载后查看')
+        break
       }
+      const hint = (ext || '').toLowerCase() || extFromUrl(content)
+      const parseable = ['pdf', 'docx', 'doc', 'xls', 'xlsx', 'wps', 'et', 'dps', 'ppt', 'pptx', ''].includes(hint)
+      if (!parseable) {
+        previewContent.value = previewPlaceholder('该文件类型暂不支持在线预览，请下载后查看')
+        break
+      }
+      await renderBinaryPreview(id, ext, content)
       break
     }
-    default:
-      previewContent.value = previewPlaceholder('该文件类型暂不支持在线预览，请下载后查看')
-      break
   }
 }
 
@@ -1291,7 +1340,7 @@ function saveFiles(files: KnowledgeFile[]) {
             @change="onUploadChange"
             drag
             multiple
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.md,.pub,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.md,.html,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tiff,.tif,.mp3,.wav,.ogg,.flac,.aac,.m4a,.amr,.mp4,.webm,.mov,.avi,.mkv,.flv,.m4v,.zip,.rar,.7z,.psd,.ai,.stl,.obj,.fbx,.epub,.pub"
             class="upload-dragger"
           >
             <el-icon :size="300" color="#c0c4cc"><Upload /></el-icon>
@@ -1377,7 +1426,7 @@ function saveFiles(files: KnowledgeFile[]) {
                 ref="fileInputRef"
                 type="file"
                 multiple
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.md,.pub,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.ogg,.aac,.m4a,.flac,.wma,.mp4,.avi,.mkv,.mov,.webm,.flv,.wmv,.zip,.rar,.7z,.tar,.gz"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.md,.html,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tiff,.tif,.mp3,.wav,.ogg,.flac,.aac,.m4a,.amr,.mp4,.webm,.mov,.avi,.mkv,.flv,.m4v,.zip,.rar,.7z,.psd,.ai,.stl,.obj,.fbx,.epub,.pub"
                 style="display: none"
                 @change="handleFileInputChange"
               />

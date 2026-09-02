@@ -175,7 +175,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
   const BACKEND_SUPPORTED_TYPES = [
     // 文档类
-    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'md', 'html',
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'md', 'html',
     // 图片类
     'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif',
     // 音频类
@@ -193,15 +193,9 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     // 兜底类型
     'other',
   ]
-  // 不支持扩展名的映射规则
-  const FILE_TYPE_FALLBACK: Record<string, string> = {
-    // PPT 虽然后端支持，但旧代码可能需要映射
-    ppt: 'other',
-    pptx: 'other',
-  }
   const stsFileType = BACKEND_SUPPORTED_TYPES.includes(ext)
     ? ext
-    : (FILE_TYPE_FALLBACK[ext] || 'other')
+    : 'other'
 
   // ── 第2步：获取上传凭证 ──
   const credential = await getUploadCredentialApi({
