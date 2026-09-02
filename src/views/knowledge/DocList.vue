@@ -507,98 +507,221 @@ function releasePreviewObjectUrl() {
   }
 }
 
-/** 图片加载失败（签名过期/防盗链等）时改为下载提示，避免对话框留空白 */
+/** 媒体加载失败（签名过期/防盗链/CORS 等）时改为下载提示，避免对话框留空白 */
 function handlePreviewMediaError() {
-  if (previewMediaKind.value === 'image') {
+  if (previewMediaKind.value) {
     releasePreviewObjectUrl()
     previewMediaKind.value = ''
     previewFileUrl.value = ''
-    previewContent.value = previewPlaceholder('该文件类型暂不支持在线预览，请下载后查看')
+    previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
   }
 }
 
-function extFromUrl(url: string): string {
+const UNSUPPORTED_TIP = '该文件类型暂不支持在线预览，请下载后查看'
+const OFFICE_PDF_EXTS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'wps', 'et', 'dps']
+const BINARY_EXT_SET = new Set([
+  ...OFFICE_PDF_EXTS,
+  'zip', 'rar', '7z', 'tar', 'gz',
+  'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'svg',
+  'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'amr', 'wma',
+  'mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'm4v', 'wmv',
+  'psd', 'ai', 'stl', 'obj', 'fbx', 'epub', 'pub',
+])
+
+function isPdfMagic(u8: Uint8Array): boolean {
+  return u8[0] === 0x25 && u8[1] === 0x50 && u8[2] === 0x44 && u8[3] === 0x46
+}
+function isZipMagic(u8: Uint8Array): boolean {
+  return u8[0] === 0x50 && u8[1] === 0x4b
+}
+function isOleMagic(u8: Uint8Array): boolean {
+  return u8[0] === 0xd0 && u8[1] === 0xcf && u8[2] === 0x11 && u8[3] === 0xe0
+}
+
+async function loadMammothLib(): Promise<any> {
   try {
-    const name = new URL(url).pathname.split('/').pop() || ''
-    const dot = name.lastIndexOf('.')
-    return dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
+    const m: any = await import('mammoth')
+    return m && m.default ? m.default : m
   } catch {
-    return ''
+    const m: any = await import('mammoth/mammoth.browser.js')
+    return m && m.default ? m.default : m
   }
+}
+
+async function loadXlsxLib(): Promise<any> {
+  try {
+    const m: any = await import('xlsx/xlsx.mjs')
+    return m && m.default && m.default.read ? m.default : m
+  } catch {
+    const m: any = await import('xlsx')
+    return m && m.default ? m.default : m
+  }
+}
+
+async function loadZipBuf(buf: ArrayBuffer): Promise<any> {
+  const m: any = await import('jszip')
+  const JSZip = m && m.default ? m.default : m
+  return JSZip.loadAsync(buf)
+}
+
+async function renderPdfBlob(buf: ArrayBuffer) {
+  previewFileUrl.value = URL.createObjectURL(new Blob([buf], { type: 'application/pdf' }))
+  previewMediaKind.value = 'pdf'
+}
+
+async function renderDocxHtml(buf: ArrayBuffer) {
+  const mammoth = await loadMammothLib()
+  const out = await mammoth.convertToHtml({ arrayBuffer: buf })
+  const html: string = (out && out.value) || ''
+  if (!html.replace(/<[^>]+>/g, '').trim()) {
+    previewContent.value = previewPlaceholder('未提取到文档内容，请下载后查看')
+    return
+  }
+  previewContent.value = `<div class="word-preview">${html}</div>`
+}
+
+async function renderXlsxHtml(buf: ArrayBuffer) {
+  const XLSX = await loadXlsxLib()
+  const workbook = XLSX.read(buf, { type: 'array' })
+  const sheetName: string = (workbook.SheetNames || [])[0]
+  if (!sheetName || !workbook.Sheets[sheetName]) throw new Error('空工作表')
+  const html = XLSX.utils.sheet_to_html(workbook.Sheets[sheetName], { editable: false })
+  previewContent.value = `<div class="excel-preview">${html}</div>`
+}
+
+function decodeXmlEntities(s: string): string {
+  return s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+}
+
+/** 提取 pptx 单个 slide XML 的逐段文字（<a:p> 为一段，段落内合并 <a:t>） */
+function slideTextOf(xml: string): string[] {
+  const tRe = /<a:t\b[^>]*>([\s\S]*?)<\/a:t>/g
+  const textsIn = (part: string): string => {
+    const chunks: string[] = []
+    let m: RegExpExecArray | null
+    while ((m = tRe.exec(part)) !== null) {
+      if (m[1]) chunks.push(decodeXmlEntities(m[1]))
+    }
+    return chunks.join('').replace(/\s+/g, ' ').trim()
+  }
+  const parts = xml.split('</a:p>')
+  const lines: string[] = []
+  for (const part of parts) {
+    const line = textsIn(part)
+    if (line) lines.push(line)
+  }
+  return lines
+}
+
+async function renderPptxHtml(zip: any, names: string[]) {
+  const slideFiles = names
+    .filter((n) => /^ppt\/slides\/slide\d+\.xml$/i.test(n))
+    .sort((a, b) => {
+      const na = Number(/slide(\d+)\.xml/i.exec(a)?.[1] || 0)
+      const nb = Number(/slide(\d+)\.xml/i.exec(b)?.[1] || 0)
+      return na - nb
+    })
+  if (!slideFiles.length) throw new Error('未找到幻灯片')
+  const blocks: string[] = []
+  for (const name of slideFiles) {
+    const num = /slide(\d+)\.xml/i.exec(name)?.[1] || ''
+    const xml = await zip.file(name).async('string')
+    const lines = slideTextOf(xml)
+    if (!lines.length) continue
+    const body = lines.map((l) => escapeHtml(l)).join('<br/>')
+    blocks.push(`<section class="pptx-slide"><h4 class="pptx-slide-title">第 ${num} 页</h4><div class="pptx-slide-body">${body}</div></section>`)
+  }
+  if (!blocks.length) throw new Error('幻灯片无文字内容')
+  previewContent.value = `<div class="pptx-preview">${blocks.join('')}</div>`
 }
 
 /**
- * 二进制文档在线预览：通过同源下载接口取原始字节，前端本地解析渲染。
- * 规避 OSS 跨域/签名地址以及微软 Office Online（私有文件其服务器无法访问）导致的预览失败。
- * pdf → Blob；docx → mammoth；xls/xlsx → SheetJS；其余类型提示下载。
+ * 已上传文档本地渲染：通过同源下载接口取原始字节，再按文件真实格式解析渲染。
+ * 不依赖后端 preview 接口的 URL/文本，也不受 OSS 跨域与微软 Office Online 限制。
+ * pdf → Blob；docx → mammoth 转 HTML；xls/xlsx → SheetJS 转表格；pptx → 逐页文字；
+ * doc/ppt 旧二进制、压缩包、设计源/3D/电子书等 → 提示不支持在线预览。
  */
-async function renderBinaryPreview(id: number, ext: string, content: string) {
-  const hintExt = (ext || '').toLowerCase() || extFromUrl(content)
-  // 前端无法解析的类型，不下载直接提示
-  if (hintExt === 'ppt' || hintExt === 'pptx' || hintExt === 'doc') {
-    previewContent.value = previewPlaceholder('该文件类型暂不支持在线预览，请下载后查看')
+async function renderLocalBytes(id: number, extHint: string) {
+  let blob: Blob
+  try {
+    blob = await downloadDocApi(id)
+  } catch (e) {
+    console.error('获取文件内容失败:', e)
+    previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
+    return
+  }
+  if (!blob || blob.size === 0) {
+    previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
     return
   }
 
   let buf: ArrayBuffer
   try {
-    const blob = await downloadDocApi(id)
     buf = await blob.arrayBuffer()
   } catch (e) {
-    console.error('获取文件内容失败:', e)
-    previewContent.value = previewPlaceholder('在线预览失败，请下载后查看')
+    console.error('读取文件字节失败:', e)
+    previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
     return
   }
-
   const u8 = new Uint8Array(buf)
-  let realExt = hintExt
-  // 后端 file_name/title 可能不带扩展名，按魔数兜底识别实际格式
-  if (!realExt) {
-    if (u8[0] === 0x25 && u8[1] === 0x50 && u8[2] === 0x44 && u8[3] === 0x46) {
-      realExt = 'pdf'
-    } else if (u8[0] === 0x50 && u8[1] === 0x4b) {
-      const names = new TextDecoder('latin1').decode(u8)
-      if (names.includes('word/')) realExt = 'docx'
-      else if (names.includes('xl/')) realExt = 'xlsx'
-    }
-  }
 
-  if (realExt === 'pdf') {
-    previewFileUrl.value = URL.createObjectURL(new Blob([buf], { type: 'application/pdf' }))
-    previewMediaKind.value = 'pdf'
-    return
-  }
-  if (realExt === 'docx' || realExt === 'doc' || realExt === 'wps' || realExt === 'et' || realExt === 'dps') {
-    try {
-      const mammoth = await import('mammoth')
-      const extracted = await mammoth.extractRawText({ arrayBuffer: buf })
-      previewContent.value = previewPre(extracted.value || '无法提取文档文字内容')
-    } catch (e) {
-      console.error('Word 解析失败:', e)
-      previewContent.value = previewPlaceholder('Word 在线预览失败，请下载后查看')
+  try {
+    if (isPdfMagic(u8)) {
+      await renderPdfBlob(buf)
+      return
     }
-    return
-  }
-  if (realExt === 'xls' || realExt === 'xlsx') {
-    try {
-      const XLSX = await import('xlsx')
-      const workbook = XLSX.read(buf, { type: 'array' })
-      const sheet = workbook.Sheets[workbook.SheetNames[0]]
-      const html = XLSX.utils.sheet_to_html(sheet, { editable: false })
-      previewContent.value = `<div class="excel-preview">${html}</div>`
-    } catch (e) {
-      console.error('Excel 解析失败:', e)
-      previewContent.value = previewPlaceholder('Excel 在线预览失败，请下载后查看')
+    if (isZipMagic(u8)) {
+      let zip: any = null
+      const names: string[] = []
+      try {
+        zip = await loadZipBuf(buf)
+        zip.forEach((_p: string, entry: any) => {
+          if (entry && entry.name) names.push(entry.name)
+        })
+      } catch (e) {
+        console.error('ZIP 结构解析失败:', e)
+      }
+      if (names.some((n) => n.toLowerCase().startsWith('word/'))) {
+        await renderDocxHtml(buf)
+        return
+      }
+      if (names.some((n) => n.toLowerCase().startsWith('xl/'))) {
+        await renderXlsxHtml(buf)
+        return
+      }
+      if (names.some((n) => n.toLowerCase().startsWith('ppt/'))) {
+        if (!zip) throw new Error('ZIP 解析失败')
+        await renderPptxHtml(zip, names)
+        return
+      }
+      previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
+      return
     }
-    return
+    if (isOleMagic(u8)) {
+      const hint = (extHint || '').toLowerCase()
+      if (hint === 'doc' || hint === 'ppt' || hint === 'wps' || hint === 'dps') {
+        previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
+        return
+      }
+      // 旧版二进制 Excel（.xls）可被 SheetJS 读取
+      await renderXlsxHtml(buf)
+      return
+    }
+  } catch (e) {
+    console.error('文件解析失败:', e)
   }
-  previewContent.value = previewPlaceholder('该文件类型暂不支持在线预览，请下载后查看')
+  previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
 }
 
 /**
- * 预览已上传文档（按 doc id 调后端预览接口）。
- * 文件类型以后端返回的 file_name / file_type / preview_type 为准，
- * 不能依赖 title 扩展名（title 多为「文件名去后缀」，不含扩展名）。
+ * 预览已上传文档。
+ * 文件真实类型以后端返回的 file_name 扩展名为第一依据（title 多为「文件名去后缀」不含扩展名），
+ * office/pdf 类一律走同源下载字节 + 本地解析；文本类用后端原文；其余类型提示不支持在线预览。
  */
 async function handlePreviewDoc(id: number, title: string) {
   releasePreviewObjectUrl()
@@ -610,66 +733,68 @@ async function handlePreviewDoc(id: number, title: string) {
   isMarkdownPreview.value = false
   rawMarkdownContent.value = ''
 
-  let result: Awaited<ReturnType<typeof previewDocApi>>
+  let result: Awaited<ReturnType<typeof previewDocApi>> | undefined
   try {
     result = await previewDocApi(id)
   } catch (error) {
     console.error('获取文件预览失败:', error)
-    previewContent.value = previewPlaceholder('获取预览失败，请重试')
-    showPreviewDialog.value = true
-    return
   }
   showPreviewDialog.value = true
 
-  const { kind, ext, fileName } = classifyDocPreview(result, title)
-  if (fileName) previewFileName.value = fileName // 用真实文件名（含扩展名）作为标题
-  const content = result?.content || ''
+  // 预览接口异常时无法获知类型，直接用同源字节嗅探渲染
+  if (!result) {
+    await renderLocalBytes(id, '')
+    return
+  }
 
-  switch (kind) {
-    case 'markdown':
+  const { kind, ext, fileName } = classifyDocPreview(result, title)
+  if (fileName) previewFileName.value = fileName
+  const content = result?.content || ''
+  const realExt = (ext || '').toLowerCase()
+
+  // 1. 二进制 Office / PDF：一律同源取字节本地解析，规避后端 preview_type 误标 text 造成乱码
+  if (OFFICE_PDF_EXTS.includes(realExt)) {
+    await renderLocalBytes(id, realExt)
+    return
+  }
+
+  // 2. 图片/音视频：直接展示后端签名地址
+  if (kind === 'image' || kind === 'audio' || kind === 'video') {
+    if (!content) {
+      previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
+      return
+    }
+    previewMediaKind.value = kind
+    previewFileUrl.value = content
+    return
+  }
+
+  // 3. 文本类（md/txt/html/csv/json 等，后端回原文可正常预览）
+  if (kind === 'markdown' || kind === 'html' || kind === 'text') {
+    if (BINARY_EXT_SET.has(realExt)) {
+      previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
+      return
+    }
+    if (kind === 'markdown') {
       isMarkdownPreview.value = true
       rawMarkdownContent.value = content || '无法查看文件内容'
-      break
-    case 'html':
-      // HTML 原文交给弹窗 v-html 渲染（模板处经 DOMPurify 净化）
-      previewContent.value = content || '无法查看文件内容'
-      break
-    case 'text':
-      previewContent.value = previewPre(content || '无法查看文件详细内容')
-      break
-    case 'image':
-    case 'audio':
-    case 'video':
-      if (!content) {
-        previewContent.value = previewPlaceholder('无法获取在线预览地址，请下载后查看')
-        break
-      }
-      previewMediaKind.value = kind
-      previewFileUrl.value = content
-      break
-    case 'pdf':
-    case 'office':
-      if (!content) {
-        previewContent.value = previewPlaceholder('无法获取在线预览地址，请下载后查看')
-        break
-      }
-      await renderBinaryPreview(id, ext, content)
-      break
-    default: {
-      if (!content) {
-        previewContent.value = previewPlaceholder('该文件类型暂不支持在线预览，请下载后查看')
-        break
-      }
-      const hint = (ext || '').toLowerCase() || extFromUrl(content)
-      const parseable = ['pdf', 'docx', 'doc', 'xls', 'xlsx', 'wps', 'et', 'dps', 'ppt', 'pptx', ''].includes(hint)
-      if (!parseable) {
-        previewContent.value = previewPlaceholder('该文件类型暂不支持在线预览，请下载后查看')
-        break
-      }
-      await renderBinaryPreview(id, ext, content)
-      break
+      return
     }
+    if (kind === 'html') {
+      previewContent.value = content || '无法查看文件内容'
+      return
+    }
+    previewContent.value = previewPre(content || '无法查看文件详细内容')
+    return
   }
+
+  // 4. 其余二进制（pdf/office 在第 1 步已拦截，此处兜底再按字节嗅探一次）
+  if (kind === 'pdf' || kind === 'office' || (realExt && BINARY_EXT_SET.has(realExt))) {
+    await renderLocalBytes(id, realExt)
+    return
+  }
+
+  previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
 }
 
 function handlePreviewClose() {
@@ -1697,8 +1822,8 @@ function saveFiles(files: KnowledgeFile[]) {
           class="preview-media preview-media-image"
           @error="handlePreviewMediaError"
         />
-        <video v-else-if="previewMediaKind === 'video'" :src="previewFileUrl" controls class="preview-media preview-media-video"></video>
-        <audio v-else-if="previewMediaKind === 'audio'" :src="previewFileUrl" controls class="preview-media preview-media-audio"></audio>
+        <video v-else-if="previewMediaKind === 'video'" :src="previewFileUrl" controls class="preview-media preview-media-video" @error="handlePreviewMediaError"></video>
+        <audio v-else-if="previewMediaKind === 'audio'" :src="previewFileUrl" controls class="preview-media preview-media-audio" @error="handlePreviewMediaError"></audio>
         <iframe v-else-if="previewMediaKind === 'pdf'" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
         <iframe v-else-if="isOfficePreview" class="preview-iframe" :src="previewFileUrl" frameborder="0"></iframe>
         <MarkdownViewer v-else-if="isMarkdownPreview" :content="rawMarkdownContent" class="preview-markdown" />
@@ -2408,6 +2533,45 @@ function saveFiles(files: KnowledgeFile[]) {
 }
 .excel-preview tr:hover {
   background: #ecf5ff;
+}
+
+/* Word 预览样式 */
+.word-preview {
+  line-height: 1.7;
+}
+.word-preview img {
+  max-width: 100%;
+  height: auto;
+}
+.word-preview table {
+  border-collapse: collapse;
+}
+.word-preview td,
+.word-preview th {
+  border: 1px solid #dcdfe6;
+  padding: 4px 8px;
+}
+.word-preview ul,
+.word-preview ol {
+  padding-left: 1.5em;
+}
+
+/* PPTX 预览样式 */
+.pptx-slide {
+  padding: 12px 0;
+  border-bottom: 1px solid #ebeef5;
+}
+.pptx-slide:last-child {
+  border-bottom: none;
+}
+.pptx-slide-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--color-primary, #409eff);
+}
+.pptx-slide-body {
+  line-height: 1.7;
+  word-break: break-word;
 }
 
 /* Markdown 渲染样式 */
