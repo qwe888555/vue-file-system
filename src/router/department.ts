@@ -10,7 +10,7 @@ const departmentRoutes: RouteRecordRaw[] = [
     meta: {
       title: '部门管理',
       icon: 'OfficeBuilding',
-      roles: ['super_admin', 'admin', 'admin_csic', 'admin_dept', 'college_admin', 'dept_admin'],
+      roles: ['super_admin', 'admin', 'college_admin', 'dept_admin'],
     },
     children: [
       {

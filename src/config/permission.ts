@@ -5,8 +5,6 @@ import type { UserRole, MenuItem } from '@/types'
 export const roleMenuMap: Record<UserRole, string[]> = {
   user: ['/chat', '/faq'],
   admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/departments'],
-  admin_csic: ['/chat', '/faq-manage', '/knowledge', '/admin', '/departments'],
-  admin_dept: ['/chat', '/faq-manage', '/knowledge', '/departments'],
   college_admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/departments'],
   dept_admin: ['/chat', '/faq-manage', '/knowledge', '/departments'],
   super_admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/logs', '/departments'],
@@ -52,7 +50,7 @@ export const allMenus: MenuItem[] = [
         name: 'OrgManage',
         title: '所属单位',
         // 平台级组织架构维护权限：学院/部门仅平台管理员可操作
-        meta: { roles: ['super_admin', 'admin', 'admin_csic'] },
+        meta: { roles: ['super_admin', 'admin'] },
       },
     ],
   },

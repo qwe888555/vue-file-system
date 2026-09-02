@@ -19,7 +19,7 @@ const faqRoutes: RouteRecordRaw[] = [
     path: '/faq-manage',
     name: 'FaqManage',
     component: () => import('@/views/layouts/Layout.vue'),
-    meta: { title: 'FAQ 管理', icon: 'ChatDotSquare', roles: ['super_admin', 'admin', 'admin_csic', 'admin_dept', 'college_admin', 'dept_admin'] },
+    meta: { title: 'FAQ 管理', icon: 'ChatDotSquare', roles: ['super_admin', 'admin', 'college_admin', 'dept_admin'] },
     children: [
       {
         path: '',

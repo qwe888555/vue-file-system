@@ -20,7 +20,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  feedback: [messageId: number, type: 'like' | 'dislike']
+  feedback: [messageId: number, type: 'like' | 'dislike' | 'none']
   quickQuestion: [text: string]
 }>()
 
@@ -38,13 +38,12 @@ const rawMarkdownContent = ref('')
 const previewFileUrl = ref('')
 const isOfficePreview = ref(false)
 
+// 点击已选中的按钮 = 取消反馈（rating: none）；点击另一个按钮 = 切换
 function handleLike() {
-  if (props.message.feedback === 'like') return
-  emit('feedback', props.message.id, 'like')
+  emit('feedback', props.message.id, props.message.feedback === 'like' ? 'none' : 'like')
 }
 function handleDislike() {
-  if (props.message.feedback === 'dislike') return
-  emit('feedback', props.message.id, 'dislike')
+  emit('feedback', props.message.id, props.message.feedback === 'dislike' ? 'none' : 'dislike')
 }
 
 /** 智能检测文本是否为 Markdown */

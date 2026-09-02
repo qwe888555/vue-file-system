@@ -85,10 +85,10 @@ const props = withDefaults(defineProps<Props>(), {
   hideCollege: false,
 })
 
-/** 角色下拉选项（排除 admin 和 super_admin，UI 上不允许创建超级管理员） */
+/** 角色下拉选项（排除 super_admin，UI 上不允许创建超级管理员） */
 const roleOptions = computed(() =>
   (Object.keys(ROLE_CONFIG) as UserRole[])
-    .filter((role) => role !== 'admin' && role !== 'super_admin')
+    .filter((role) => role !== 'super_admin')
     .map((role) => ({ value: role, label: ROLE_CONFIG[role].label })),
 )
 

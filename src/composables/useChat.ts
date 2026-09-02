@@ -194,9 +194,11 @@ export function useChat() {
     return msg
   }
 
-  /** 添加 AI 回复消息（SSE 完成后调用） */
-  function appendAssistantMessage(content: string, references?: KnowledgeFile[], realId?: number, suggested?: string[]): Message {
-    const id = currentConversationId.value
+  /** 添加 AI 回复消息（SSE 完成后调用）
+   *  convId 用于后台流式场景：发起提问的会话可能已不是当前会话，
+   *  需按发起 convId 落库，避免 AI 回答串到其他会话 */
+  function appendAssistantMessage(content: string, references?: KnowledgeFile[], realId?: number, suggested?: string[], convId?: number): Message {
+    const id = convId ?? currentConversationId.value
     if (!id) throw new Error('No active conversation')
     const msg: Message = {
       id: realId || Date.now() + 1,
@@ -220,12 +222,12 @@ export function useChat() {
     return msg
   }
 
-  async function submitFeedback(messageId: number, type: 'like' | 'dislike') {
+  async function submitFeedback(messageId: number, type: 'like' | 'dislike' | 'none') {
     try { await rateMessageApi(messageId, type) } catch (e) { console.warn('评分提交失败', e) }
     const id = currentConversationId.value
     if (!id) return
     const msg = messagesMap.value[id]?.find(m => m.id === messageId)
-    if (msg) msg.feedback = type
+    if (msg) msg.feedback = type === 'none' ? null : type
   }
 
   function refreshConversation(conversationId: number) {
