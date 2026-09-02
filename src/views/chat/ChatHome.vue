@@ -7,7 +7,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
 import { isAdminRole } from '@/config/roles'
-import type { KnowledgeFile } from '@/types'
+import type { KnowledgeFile, SuggestedItem } from '@/types'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
 import AppRail from '@/components/chat/AppRail.vue'
@@ -36,7 +36,7 @@ const chatScrollRef = ref<HTMLElement | null>(null)
 interface StreamingState {
   content: string
   references: KnowledgeFile[]
-  suggested: string[]
+  suggested: SuggestedItem[]
   streaming: boolean
   messageId: number | null
   error: string | null
