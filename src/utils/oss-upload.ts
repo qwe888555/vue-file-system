@@ -211,6 +211,8 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     file_type: stsFileType,
   })
 
+  console.log('[OSS Upload] 后端返回的凭证:', credential)
+
   // 字段读取（后端返回 snake_case）
   const accessKeyId = credential.access_key_id
   const accessKeySecret = credential.access_key_secret
@@ -231,6 +233,11 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
 
   // 凭证完整性校验
   if (!accessKeyId || !accessKeySecret) {
+    console.error('[OSS Upload] 凭证缺失详情:', {
+      access_key_id: accessKeyId,
+      access_key_secret: accessKeySecret,
+      full_credential: credential
+    })
     throw new Error('STS 凭证缺少 accessKeyId 或 accessKeySecret，请检查后端返回')
   }
   if (!stsToken) {
