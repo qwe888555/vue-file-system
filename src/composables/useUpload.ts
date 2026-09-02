@@ -48,6 +48,7 @@ export function useUpload() {
         file_name: file.name,
         file_size: file.size,
         md5: fileHash,
+        file_type: file.name.split('.').pop()?.toLowerCase() || '',
       })
       // TODO: 使用 OSS SDK 直传文件到阿里云 OSS，监听进度
       // const ossClient = new OSS(credential)
