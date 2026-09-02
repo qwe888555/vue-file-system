@@ -805,21 +805,38 @@ async function handleUploadSubmit() {
 
         if (file.size > LARGE_FILE_THRESHOLD) {
           // ── 大文件：走 OSS 分片直传（无超时，支持断点续传） ──
-          result = await uploadFileToOss({
-            file,
-            title: item.title || fileName,
-            description: item.description,
-            scope: item.scope,
-            keywords: uploadKeywords,
-            // 文件哈希计算进度回调
-            onMd5Progress: (percent) => {
-              loadingInstance.setText(`正在校验文件... ${i + 1}/${totalCount}：${file.name}（${percent}%）`)
-            },
-            // 分片上传进度回调，实时更新 loading 文字
-            onProgress: (percent) => {
-              loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}（${percent}%）`)
-            },
-          })
+          try {
+            result = await uploadFileToOss({
+              file,
+              title: item.title || fileName,
+              description: item.description,
+              scope: item.scope,
+              keywords: uploadKeywords,
+              // 文件哈希计算进度回调
+              onMd5Progress: (percent) => {
+                loadingInstance.setText(`正在校验文件... ${i + 1}/${totalCount}：${file.name}（${percent}%）`)
+              },
+              // 分片上传进度回调，实时更新 loading 文字
+              onProgress: (percent) => {
+                loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}（${percent}%）`)
+              },
+            })
+          } catch (ossError) {
+            // OSS 上传失败（如 CORS 错误），降级到后端中转上传
+            console.warn('[DocList] OSS 上传失败，降级到后端中转:', ossError)
+            loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}（后端中转）`)
+
+            const formData = new FormData()
+            formData.append('file', file)
+            formData.append('title', item.title || fileName)
+            if (item.description) {
+              formData.append('description', item.description)
+            }
+            uploadKeywords.forEach((kw: string) => formData.append('keywords', kw))
+            formData.append('scope', item.scope === 'public' ? 'school' : 'college')
+
+            result = await uploadFileApi(formData)
+          }
         } else {
           // ── 小文件：走原有 FormData 后端中转上传 ──
           loadingInstance.setText(`正在上传中... ${i + 1}/${totalCount}：${file.name}`)

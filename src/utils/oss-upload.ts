@@ -216,11 +216,9 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     const userStore = useUserStore()
     const userCollegeId = userStore.userInfo?.college_id ?? null
 
-    // 直接使用 upload_url 上传（使用 XMLHttpRequest 支持进度回调）
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       xhr.open('PUT', credential.upload_url)
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
 
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) {
@@ -238,13 +236,12 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
       }
 
       xhr.onerror = () => {
-        reject(new Error('文件上传失败，网络错误'))
+        reject(new Error('OSS CORS 配置错误，请联系管理员配置 OSS Bucket 的 CORS 规则'))
       }
 
       xhr.send(file)
     })
 
-    // 上传成功后调用后端回调
     const callbackResult = await uploadCallbackApi({
       object_key: credential.oss_key,
       title,
