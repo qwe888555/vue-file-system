@@ -20,6 +20,10 @@ import { getUploadCredentialApi, uploadCallbackApi } from '@/api/knowledge'
 import { useUserStore } from '@/store/user'
 import type { KnowledgeFile } from '@/types'
 
+// 兼容 CommonJS/ESM 导出：spark-md5 的 Array 构造器
+const SparkMD5Lib = (SparkMD5 as any).default || SparkMD5
+const SparkMD5Array = SparkMD5Lib.Array
+
 /** OSS 分片上传进度回调 */
 export type ProgressCallback = (percent: number, checkpoint?: OSS.Checkpoint) => void
 
@@ -84,7 +88,7 @@ export function calculateFileMd5(file: File, onProgress?: Md5ProgressCallback): 
   return new Promise((resolve, reject) => {
     const chunkSize = 2 * 1024 * 1024 // 每块 2MB
     const chunks = Math.ceil(file.size / chunkSize)
-    const spark = new SparkMD5.Array()
+    const spark = new SparkMD5Array()
     const fileReader = new FileReader()
     let currentChunk = 0
 
