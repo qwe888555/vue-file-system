@@ -1,7 +1,7 @@
 // ── 智能问答状态管理 Composable ──
 // 功能：管理对话列表/消息缓存/增删改查/刷新
 import { ref, computed } from 'vue'
-import type { Conversation, Message, KnowledgeFile } from '@/types'
+import type { Conversation, Message, KnowledgeFile, SuggestedItem } from '@/types'
 import {
   getConversationsApi,
   getConversationDetailApi,
@@ -192,7 +192,7 @@ export function useChat() {
   /** 添加 AI 回复消息（SSE 完成后调用）
    *  convId 用于后台流式场景：发起提问的会话可能已不是当前会话，
    *  需按发起 convId 落库，避免 AI 回答串到其他会话 */
-  function appendAssistantMessage(content: string, references?: KnowledgeFile[], realId?: number, suggested?: string[], convId?: number): Message {
+  function appendAssistantMessage(content: string, references?: KnowledgeFile[], realId?: number, suggested?: SuggestedItem[], convId?: number): Message {
     const id = convId ?? currentConversationId.value
     if (!id) throw new Error('No active conversation')
     const msg: Message = {

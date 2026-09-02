@@ -112,6 +112,12 @@ export interface KnowledgeFile {
   oss_key?: string           // OSS 对象键（UUID）
 }
 
+// ── 追问建议 ──
+export interface SuggestedItem {
+  display: string   // 引导式问句，前端展示用
+  question: string  // 干净问句，用户点击后实际发送
+}
+
 // ── 会话消息 ──
 export interface Message {
   id: number
@@ -121,7 +127,7 @@ export interface Message {
   references?: KnowledgeFile[]
   feedback?: 'like' | 'dislike' | null
   createdAt: string
-  suggested?: string[]
+  suggested?: SuggestedItem[]
 }
 
 export interface Conversation {

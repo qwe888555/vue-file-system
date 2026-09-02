@@ -2,7 +2,7 @@
 // 功能：通过 POST /api/chat/ask/ 连接 AI 接口，解析 SSE 事件流
 import { ref, onUnmounted } from 'vue'
 import { askQuestionApi } from '@/api/chat'
-import type { KnowledgeFile } from '@/types'
+import type { KnowledgeFile, SuggestedItem } from '@/types'
 
 export interface SSEResult {
   content: ReturnType<typeof ref<string>>
@@ -10,7 +10,7 @@ export interface SSEResult {
   done: ReturnType<typeof ref<boolean>>
   error: ReturnType<typeof ref<string | null>>
   references: ReturnType<typeof ref<KnowledgeFile[]>>
-  suggested: ReturnType<typeof ref<string[]>>
+  suggested: ReturnType<typeof ref<SuggestedItem[]>>
   messageId: ReturnType<typeof ref<number | null>>
   close: () => void
 }
@@ -27,7 +27,7 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
   const done = ref(false)
   const error = ref<string | null>(null)
   const references = ref<KnowledgeFile[]>([])
-  const suggested = ref<string[]>([])
+  const suggested = ref<SuggestedItem[]>([])
   const messageId = ref<number | null>(null)
 
   let abortController: AbortController | null = null

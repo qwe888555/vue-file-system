@@ -2,7 +2,7 @@
 // ── 消息气泡组件（豆包风格）──
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import type { Message, KnowledgeFile, UserRole } from '@/types'
+import type { Message, KnowledgeFile, UserRole, SuggestedItem } from '@/types'
 import MarkdownViewer from './MarkdownViewer.vue'
 import SseRenderer from './SseRenderer.vue'
 import ReferencesPopover from './ReferencesPopover.vue'
@@ -15,7 +15,7 @@ const props = defineProps<{
   message: Message
   streaming?: boolean
   streamContent?: string
-  suggestedQuestions?: string[]
+  suggestedQuestions?: SuggestedItem[]
   userRole?: UserRole
 }>()
 
@@ -216,8 +216,8 @@ function downloadBlob(blob: Blob, fileName: string) {
           v-for="(q, idx) in suggestedQuestions"
           :key="idx"
           class="suggested-btn"
-          @click="emit('quickQuestion', q)"
-        >{{ q }}</button>
+          @click="emit('quickQuestion', q.question)"
+        >{{ q.display }}</button>
       </div>
 
       <!-- 反馈（仅 AI 已完成消息） -->
