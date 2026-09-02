@@ -235,25 +235,36 @@ async function handleSSOSelect(code: string) {
         <button class="tab-btn" :class="{ active: loginMode === 'qrcode' }" @click="loginMode = 'qrcode'">扫码登录</button>
       </div>
 
-      <!-- 账号密码登录 -->
-      <AccountLoginForm
-        v-if="loginMode === 'account'"
-        :loading="loading"
-        :error-msg="errorMsg"
-        :sso-loading="ssoLoading"
-        @login="handleLogin"
-        @sso-login="handleSSOLogin"
-      />
+      <!-- 账号 / 扫码双视图：同格堆叠、定高，切换仅淡入淡出（外框恒定不跳动） -->
+      <div class="login-views">
+        <div
+          class="login-view"
+          :class="{ 'is-visible': loginMode === 'account' }"
+          :inert="loginMode !== 'account'"
+        >
+          <AccountLoginForm
+            :loading="loading"
+            :error-msg="errorMsg"
+            :sso-loading="ssoLoading"
+            @login="handleLogin"
+            @sso-login="handleSSOLogin"
+          />
+        </div>
 
-      <!-- 钉钉扫码登录 -->
-      <DingTalkQRLogin
-        v-if="loginMode === 'qrcode'"
-        :qr-code-data-url="qrCodeDataUrl"
-        :qr-loading="qrLoading"
-        :qr-error="qrError"
-        :login-success="loginSuccess"
-        @refresh="loadDingTalkQr"
-      />
+        <div
+          class="login-view"
+          :class="{ 'is-visible': loginMode === 'qrcode' }"
+          :inert="loginMode !== 'qrcode'"
+        >
+          <DingTalkQRLogin
+            :qr-code-data-url="qrCodeDataUrl"
+            :qr-loading="qrLoading"
+            :qr-error="qrError"
+            :login-success="loginSuccess"
+            @refresh="loadDingTalkQr"
+          />
+        </div>
+      </div>
 
       <!-- SSO 弹窗 -->
       <el-dialog v-model="ssoDialogVisible" title="选择测试账号" width="400px" destroy-on-close>
@@ -352,6 +363,29 @@ async function handleSSOSelect(code: string) {
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 .tab-btn:hover:not(.active) { color: #1e293b; }
+
+/* ── 登录视图切换：双视图同格堆叠，高度恒为较高者，切换仅淡入淡出 ──
+   网格同格（grid-area: 1/1）让两视图始终同时在布局中，
+   行高由较高的账号视图撑住 → 外框高度恒定、扫码视图垂直居中 */
+.login-views {
+  display: grid;
+}
+.login-view {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease;
+}
+.login-view.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
 
 /* ── 扫码登录 ── */
 .qrcode-wrap {

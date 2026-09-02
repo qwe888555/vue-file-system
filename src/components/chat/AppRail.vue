@@ -15,6 +15,7 @@ import {
   Document,
   OfficeBuilding,
 } from '@element-plus/icons-vue'
+import sealBlue from '@/assets/images/logo-seal-blue.png'
 import { useUserStore } from '@/store/user'
 import { usePermissionStore } from '@/store/permission'
 import { useChatUiStore } from '@/store/chatUi'
@@ -95,13 +96,13 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocMousedown))
 
 <template>
   <nav class="app-rail" aria-label="主导航">
-    <!-- Logo -->
-    <div class="rail-logo" title="NeuHub 资源系统">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
-        <path d="M12 2l8.2 4.7v9.4L12 21.6 3.8 16.1V6.7z" />
-        <path d="M12 8.5l3.6 2.1v3.9L12 16.6l-3.6-2.1v-3.9z" fill="currentColor" stroke="none" opacity=".35" />
-      </svg>
+    <!-- Logo（校徽 · 浅蓝底蓝徽，下边距对齐 Layout 菜单起点 85px） -->
+    <div class="rail-logo" title="成都东软学院">
+      <img :src="sealBlue" alt="校徽" />
     </div>
+
+    <!-- 顶部空白带装饰（点阵水印，两端渐隐） -->
+    <div class="rail-deco" aria-hidden="true" />
 
     <!-- 主导航（悬停浮层显示文字，问答项后台生成完毕亮红点） -->
     <div class="rail-menu">
@@ -174,31 +175,56 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocMousedown))
   align-items: center;
   padding: 10px 0 12px;
   z-index: 30;
+  position: relative; /* 顶部图案带绝对定位基准 */
 }
 
+/* 校徽 logo：10(pad) + 38 + 37 = 85px，菜单起点与 Layout 侧边栏对齐 */
 .rail-logo {
   width: 38px;
   height: 38px;
-  margin-bottom: 14px;
+  margin-bottom: 37px;
+  border-radius: 50%;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-primary-deep, #2563eb);
-  background: rgba(37, 99, 235, 0.08);
-  border-radius: 10px;
+  background: linear-gradient(135deg, #eef3fe, #e6edfe);
+  border: 1px solid #d9e4f8;
   cursor: default;
+}
+.rail-logo img {
+  width: 76%;
+  height: 76%;
+  object-fit: contain;
+  display: block;
+}
+
+/* 顶部空白带装饰（点阵水印，两端渐隐） */
+.rail-deco {
+  position: absolute;
+  top: 50px;
+  left: 0;
+  width: 64px;
+  height: 30px;
+  overflow: hidden;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(64, 158, 255, 0.28) 1.4px, transparent 1.6px);
+  background-size: 9px 9px;
+  background-position: 4px 4px;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 30%, #000 70%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 30%, #000 70%, transparent);
 }
 
 .rail-menu {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .rail-item {
   position: relative;
   width: 40px;
-  height: 40px;
+  height: 48px;
   border-radius: 10px;
   display: flex;
   align-items: center;
