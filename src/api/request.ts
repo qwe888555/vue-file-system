@@ -64,7 +64,8 @@ const noAuthPaths = [
   '/auth/dingtalk/qr/',
   '/auth/dingtalk/callback/',
   '/auth/dingtalk/status/',
-  '/admin/logs/dashboard/',
+  // 首页公开统计：完全不认证（auth 白名单去掉后原超管 dashboard 接口改为需携带 Token）
+  '/platform/stats/',
 ]
 
 instance.interceptors.request.use(
