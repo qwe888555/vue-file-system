@@ -166,20 +166,6 @@ async function extractTextFromFile(file: File): Promise<string> {
   }
 }
 
-/** 根据文件类型获取大小限制（MB），返回 0 表示无限制 */
-function getFileSizeLimit(ext: string): number {
-  const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp']
-  const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv']
-  const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma']
-  const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz']
-
-  if (imageExts.includes(ext)) return 10 // 图片 10MB
-  if (videoExts.includes(ext)) return 0 // 视频无限制（走 OSS 分片直传）
-  if (audioExts.includes(ext)) return 0 // 音频无限制（走 OSS 分片直传）
-  if (archiveExts.includes(ext)) return 0 // 压缩包无限制（走 OSS 分片直传）
-  return 20 // 文档/其他 20MB
-}
-
 /** 获取文件类型的中文描述 */
 function getExtTypeName(ext: string): string {
   const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv']
@@ -196,7 +182,7 @@ function getExtTypeName(ext: string): string {
 
 /** 支持的扩展名白名单 */
 const SUPPORTED_EXTENSIONS = [
-  'pdf', 'doc', 'docx', 'txt', 'md',
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'md',
   'jpg', 'jpeg', 'png', 'gif', 'webp',
   'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma',
   'mp4', 'avi', 'mkv', 'mov', 'webm', 'flv', 'wmv',
@@ -207,20 +193,9 @@ const SUPPORTED_EXTENSIONS = [
 function validateFile(file: File): string | null {
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
 
-  // 格式校验
+  // 仅做格式校验，大小限制完全由后端控制
   if (!ext || !SUPPORTED_EXTENSIONS.includes(ext)) {
-    return `不支持的文件格式 ".${ext || '未知'}"，支持：PDF、Word、TXT、Markdown、图片、音视频、压缩包`
-  }
-
-  // 大小校验
-  const sizeLimit = getFileSizeLimit(ext)
-  const fileSizeMB = file.size / (1024 * 1024)
-  if (sizeLimit > 0 && fileSizeMB > sizeLimit) {
-    const typeName = getExtTypeName(ext)
-    const isMedia = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv',
-      'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma'].includes(ext)
-    const tip = isMedia ? `，建议压缩后打包成 ZIP/RAR 压缩包上传` : ''
-    return `${file.name} 文件过大（${fileSizeMB.toFixed(1)}MB），${typeName}文件限制 ${sizeLimit}MB 以内${tip}`
+    return `不支持的文件格式 ".${ext || '未知'}"，支持：PDF、Word、Excel、CSV、TXT、Markdown、图片、音视频、压缩包`
   }
 
   return null
