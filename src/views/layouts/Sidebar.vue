@@ -15,6 +15,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
 import { usePermissionStore } from '@/store/permission'
+import { useChatUiStore } from '@/store/chatUi'
 import { isAdminRole } from '@/config/roles'
 import SidebarUser from '@/components/common/SidebarUser.vue'
 
@@ -22,6 +23,7 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const permissionStore = usePermissionStore()
+const chatUi = useChatUiStore()
 
 const isAdmin = computed(() => isAdminRole(userStore.role))
 
@@ -72,6 +74,7 @@ function handleSelect(path: string) {
           <component :is="item.icon" />
         </el-icon>
         <span class="menu-label">{{ item.label }}</span>
+        <span v-if="item.path === '/chat' && chatUi.unread" class="menu-badge-dot" title="有新的问答结果" />
       </el-menu-item>
     </el-menu>
 
@@ -174,6 +177,18 @@ function handleSelect(path: string) {
 
 .sidebar-menu .el-menu-item.is-active .menu-icon {
   color: var(--color-primary-deep, #2563eb);
+}
+
+/* ── 问答未读红点（后台生成完毕，与问答页 rail 同步）── */
+.menu-badge-dot {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-danger, #f56c6c);
+  box-shadow: 0 0 0 2px #fff;
 }
 
 /* ── 个人中心 ── */

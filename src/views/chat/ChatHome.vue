@@ -2,7 +2,7 @@
 // ── 智能问答主页面 ──
 // 豆包风格：简洁、留白、圆润
 
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
@@ -10,13 +10,18 @@ import { isAdminRole } from '@/config/roles'
 import type { KnowledgeFile } from '@/types'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
+import AppRail from '@/components/chat/AppRail.vue'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ChatLoginDialog from '@/components/chat/ChatLoginDialog.vue'
 import SidebarUser from '@/components/common/SidebarUser.vue'
+import { useChatUiStore } from '@/store/chatUi'
+
+defineOptions({ name: 'ChatHome' })
 
 const userStore = useUserStore()
 const router = useRouter()
 const chat = useChat()
+const chatUi = useChatUiStore()
 
 const sidebarOpen = ref(true)
 const showLoginDialog = ref(false)
@@ -40,6 +45,14 @@ const isLoggedIn = computed(() => !!userStore.token)
 // 单一数据源：凡拥有知识库访问权的角色均视为管理员口径（与 config/roles.ts 对齐）
 const isAdminUser = computed(() => isAdminRole(userStore.role))
 const hasActiveConversation = computed(() => chat.currentConversationId.value !== null)
+
+// 顶栏标题：有会话显示会话标题，否则显示页面名（与演示方案一致）
+const topbarTitle = computed(() => {
+  if (hasActiveConversation.value) {
+    return chat.currentConversation.value?.title || '新对话'
+  }
+  return isAdminUser.value ? '教研问答' : '智能问答'
+})
 
 // ── 热点问题（API）──
 const hotQuestions = ref<Array<{ question: string; count: number }>>([])
@@ -135,7 +148,6 @@ async function handleSelectConversation(id: number) {
   await chat.selectConversation(id)
 }
 async function handleDeleteConversation(id: number) { await chat.deleteConversation(id) }
-function handleBackToList() { chat.currentConversationId.value = null }
 
 async function sendMessage() {
   const text = inputText.value.trim()
@@ -183,6 +195,11 @@ async function sendMessage() {
     chat.appendAssistantMessage(content, streamingReferences.value, realId || undefined)
     streamingContent.value = ''
     streamingReferences.value = []
+    // Q4A/Q10A：切走页面时后台生成完毕 → 左侧 rail / Layout 侧边栏亮红点
+    if (router.currentRoute.value.name !== 'Chat') {
+      chatUi.setUnread(true)
+      ElMessage.success(`回答已生成，点击左侧「${isAdminUser.value ? '教研问答' : '智能问答'}」查看`)
+    }
   })
   // 清除前一轮的 watcher，防止累积；仅最新流的内容写入 streamingContent
   stopContentWatch?.()
@@ -386,6 +403,32 @@ onUnmounted(() => {
   streamSeq++ // 使在途 SSE 回调失效
   currentSSE?.close()
 })
+
+// ── KeepAlive 生命周期（App.vue 已缓存本组件）──
+onActivated(() => {
+  // 切回问答页即清除未读红点
+  chatUi.setUnread(false)
+})
+onDeactivated(() => {
+  // 切走时仅停止录音/语音识别；SSE 保持后台继续生成（不关闭）
+  cleanupRecording()
+})
+
+// 登出时重置问答状态（keep-alive 下组件不销毁，需手动清空避免账号数据残留）
+watch(
+  () => userStore.token,
+  (token) => {
+    if (!token) {
+      streamSeq++
+      currentSSE?.close()
+      isStreaming.value = false
+      streamingContent.value = ''
+      chat.reset()
+      inputText.value = ''
+      chatUi.setUnread(false)
+    }
+  },
+)
 </script>
 
 <template>
@@ -396,6 +439,8 @@ onUnmounted(() => {
         <div></div><div></div><div></div><div></div><div></div><div></div><div></div>
       </div>
     </div>
+    <!-- 左侧常驻 rail（主导航，Q1B/Q9A：64px 收起态 + hover 浮层） -->
+    <AppRail />
     <!-- ═══ 左侧边栏（对话列表）═══ -->
     <aside class="chat-sidebar" :class="{ collapsed: !sidebarOpen }">
       <!-- 顶部 -->
@@ -468,28 +513,19 @@ onUnmounted(() => {
     </aside>
     <!-- ═══ 右侧主区域 ═══ -->
     <div class="chat-main" :class="{ 'sidebar-collapsed': !sidebarOpen }">
-      <!-- 顶部栏 -->
+      <!-- 顶部栏（Q2A：原「退出问答」已移除，出口交给左侧常驻 rail） -->
       <header class="chat-topbar">
         <div class="topbar-left">
-          <button class="topbar-btn" @click="toggleSidebar" title="切换侧边栏">
+          <button class="topbar-btn" @click="toggleSidebar" title="收起 / 展开会话列表">
             <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
               <path d="M3 4h14v1.5H3V4zm0 5h14v1.5H3V9zm0 5h14v1.5H3v-1.5z" />
             </svg>
           </button>
-          <h1 v-if="!hasActiveConversation" class="topbar-title">{{ isAdminUser ? '教研问答' : '智能问答' }}</h1>
-          <button v-else class="topbar-btn" @click="handleBackToList" title="返回">
-            <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor">
-              <path d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"/>
-            </svg>
-          </button>
+          <h1 class="topbar-title">{{ topbarTitle }}</h1>
+          <span v-if="isStreaming" class="chip-stream"><i></i>正在回答…</span>
         </div>
-        <div v-if="isLoggedIn" class="topbar-right">
-          <button v-if="isAdminUser" class="topbar-exit-btn" @click="router.push('/knowledge/list')" title="退出问答">
-            <span>退出问答</span>
-          </button>
-          <button v-else class="topbar-exit-btn" @click="router.push('/faq')" title="常见问题">
-            <span>退出问答</span>
-          </button>
+        <div class="topbar-right">
+          <span class="kb-chip"><i></i>教研知识库 · RAG</span>
         </div>
       </header>
 
@@ -908,6 +944,9 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
 }
+.topbar-left {
+  min-width: 0;
+}
 .topbar-btn {
   position: relative;
   width: 32px; height: 32px;
@@ -919,16 +958,59 @@ onUnmounted(() => {
 /* 触控热区扩展到 44×44（视觉不变，满足移动端触控目标） */
 .topbar-btn::before { content: ""; position: absolute; inset: -6px; }
 .topbar-btn:hover { background: #ecf5ff; color: #409eff; }
-.topbar-title { font-size: 16px; font-weight: 600; margin: 0; color: #1f1f1f; }
-.topbar-exit-btn {
-  height: 33px; padding: 0 12px;
-  display: flex; align-items: center; gap: 4px;
-  background: transparent; border: none; border-radius: 6px;
-  font-size: 15px; font-weight: 600; cursor: pointer; color: #1f1f1f;
-  transition: background-color 0.15s, color 0.15s;
+.topbar-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  color: #1f1f1f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 420px;
 }
-.topbar-exit-btn:hover { background: #fef0f0; color: #e74c3c; }
-.topbar-conv-title { font-size: 13px; color: var(--color-text-secondary, #64748b); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── 正在回答 chip（Q4A：SSE 进行中）── */
+.chip-stream {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #b45309;
+  background: #fff8eb;
+  padding: 3px 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.chip-stream i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  animation: chipPulse 1.2s ease infinite;
+}
+@keyframes chipPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ── 知识库标签 ── */
+.kb-chip {
+  font-size: 11px;
+  color: var(--color-text-secondary, #64748b);
+  border: 1px solid var(--color-border, #e8ecf1);
+  padding: 4px 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.kb-chip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success, #67c23a);
+}
 
 
 /* 对话消息区 */

@@ -250,6 +250,15 @@ export function useChat() {
     messagesMap.value[conv.id] = messages
   }
 
+  /** 清空全部状态（keep-alive 下组件不销毁，登出时调用避免账号数据残留） */
+  function reset() {
+    conversations.value = []
+    currentConversationId.value = null
+    messagesMap.value = {}
+    searchKeyword.value = ''
+    sessionStorage.removeItem(CACHE_KEY)
+  }
+
   return {
     // 状态
     conversations,
@@ -271,5 +280,6 @@ export function useChat() {
     submitFeedback,
     refreshConversation,
     setMockData,
+    reset,
   }
 }
