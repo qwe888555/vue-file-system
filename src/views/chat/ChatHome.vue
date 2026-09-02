@@ -215,7 +215,7 @@ async function sendMessage() {
   stopSuggestedWatch = watch(currentSSE.suggested, (val) => { if (seq === streamSeq) streamingSuggested.value = val })
 }
 
-function handleFeedback(messageId: number, type: 'like' | 'dislike') {
+function handleFeedback(messageId: number, type: 'like' | 'dislike' | 'none') {
   chat.submitFeedback(messageId, type)
 }
 
