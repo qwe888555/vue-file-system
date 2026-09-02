@@ -53,12 +53,12 @@ export interface OssUploadOptions {
  * 从 endpoint URL 解析 region
  * 例：https://oss-cn-beijing.aliyuncs.com → oss-cn-beijing
  */
-function parseRegionFromEndpoint(endpoint: string): string {
-  const match = endpoint.match(/oss-[a-z0-9-]+/)
-  if (!match) {
-    throw new Error(`无法从 endpoint 解析 region: ${endpoint}`)
+function parseRegionFromEndpoint(endpoint: string): string | null {
+  if (!endpoint || typeof endpoint !== 'string') {
+    return null
   }
-  return match[0]
+  const match = endpoint.match(/oss-[a-z0-9-]+/)
+  return match ? match[0] : null
 }
 
 /**
@@ -66,6 +66,9 @@ function parseRegionFromEndpoint(endpoint: string): string {
  * 例：https://my-bucket.oss-cn-beijing.aliyuncs.com → my-bucket
  */
 function parseBucketFromEndpoint(endpoint: string): string | null {
+  if (!endpoint || typeof endpoint !== 'string') {
+    return null
+  }
   const match = endpoint.match(/\/\/([^.]+)\./)
   return match ? match[1] : null
 }
@@ -212,8 +215,18 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
   const accessKeyId = credential.access_key_id
   const accessKeySecret = credential.access_key_secret
   const stsToken = credential.security_token
-  const region = credential.region || parseRegionFromEndpoint(credential.endpoint)
-  const bucket = credential.bucket || parseBucketFromEndpoint(credential.endpoint)
+
+  // 安全解析 region 和 bucket，如果 endpoint 为 undefined 不会报错
+  let region = credential.region
+  let bucket = credential.bucket
+
+  if (!region && credential.endpoint) {
+    region = parseRegionFromEndpoint(credential.endpoint)
+  }
+  if (!bucket && credential.endpoint) {
+    bucket = parseBucketFromEndpoint(credential.endpoint)
+  }
+
   const objectKey = credential.object_key
 
   // 凭证完整性校验
