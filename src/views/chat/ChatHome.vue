@@ -1321,9 +1321,10 @@ watch(
   100%      { transform: scale(1) translateY(-190px); }
 }
 
-/* ═══ 欢迎页永久蜂巢图标（SVG 严格六重对称，缓慢顺时旋转） ═══ */
+/* ═══ 欢迎页永久蜂巢图标（SVG 严格六重对称，缓慢顺时旋转） ═══
+   尺寸 80×80：内容约 69×79.5px，与改造前 CSS 版蜂巢（7×24px 块、-28..28 / -22..22 → 约 80×68）视觉大小保持一致 */
 .wi-honeycomb {
-  width: 30px; height: 30px;
+  width: 80px; height: 80px;
   animation: slowSpin 12s linear infinite;
   animation-delay: 2.6s; /* 等待入场动画完成 */
 }
