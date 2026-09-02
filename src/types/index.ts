@@ -118,6 +118,14 @@ export interface SuggestedItem {
   question: string  // 干净问句，用户点击后实际发送
 }
 
+// ── 问答图片 ──
+export interface ImageItem {
+  doc_id: number
+  doc_title: string
+  description: string
+  preview_url: string
+}
+
 // ── 会话消息 ──
 export interface Message {
   id: number
@@ -128,6 +136,7 @@ export interface Message {
   feedback?: 'like' | 'dislike' | null
   createdAt: string
   suggested?: SuggestedItem[]
+  images?: ImageItem[]
 }
 
 export interface Conversation {

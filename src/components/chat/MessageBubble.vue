@@ -16,6 +16,7 @@ const props = defineProps<{
   streaming?: boolean
   streamContent?: string
   suggestedQuestions?: SuggestedItem[]
+  images?: ImageItem[]
   userRole?: UserRole
 }>()
 
@@ -28,6 +29,7 @@ const isUser = computed(() => props.message.role === 'user')
 const isStreaming = computed(() => props.streaming && !isUser.value)
 const hasReferences = computed(() => !isUser.value && (props.message.references?.length ?? 0) > 0)
 const hasSuggested = computed(() => !isUser.value && (props.suggestedQuestions?.length ?? 0) > 0)
+const hasImages = computed(() => !isUser.value && (props.images?.length ?? 0) > 0)
 
 // 预览对话框状态（用于消息正文中的知识库文档链接）
 const showPreview = ref(false)
@@ -220,6 +222,14 @@ function downloadBlob(blob: Blob, fileName: string) {
         >{{ q.display }}</button>
       </div>
 
+      <!-- 相关图片 -->
+      <div v-if="hasImages" class="msg-images">
+        <div v-for="img in images" :key="img.doc_id" class="msg-image-item">
+          <img :src="img.preview_url" :alt="img.doc_title" loading="lazy" />
+          <span class="msg-image-title">{{ img.doc_title }}</span>
+        </div>
+      </div>
+
       <!-- 反馈（仅 AI 已完成消息） -->
       <div v-if="!isUser && !streaming && message.content" class="msg-feedback">
         <button class="fb-btn fb-like" :class="{ active: message.feedback === 'like' }" @click="handleLike" title="有帮助">
@@ -405,6 +415,37 @@ function downloadBlob(blob: Blob, fileName: string) {
 .suggested-btn:hover {
   background: #dbe4f5;
   border-color: #2563eb;
+}
+
+/* 相关图片 */
+.msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+.msg-image-item {
+  width: 160px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f5f7fa;
+  border: 1px solid #e4e7ed;
+}
+.msg-image-item img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  display: block;
+}
+.msg-image-title {
+  display: block;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #606266;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 预览对话框样式 */

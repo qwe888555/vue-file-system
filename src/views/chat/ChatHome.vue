@@ -7,7 +7,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
 import { isAdminRole } from '@/config/roles'
-import type { KnowledgeFile, SuggestedItem } from '@/types'
+import type { KnowledgeFile, SuggestedItem, ImageItem } from '@/types'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
 import AppRail from '@/components/chat/AppRail.vue'
@@ -37,6 +37,7 @@ interface StreamingState {
   content: string
   references: KnowledgeFile[]
   suggested: SuggestedItem[]
+  images: ImageItem[]
   streaming: boolean
   messageId: number | null
   error: string | null
@@ -46,7 +47,7 @@ interface StreamingState {
 const streamingMap = ref<Record<number, StreamingState>>({})
 // 非响应式：按 convId 索引的 SSE 实例与 watcher 清理函数
 const sseMap: Record<number, ReturnType<typeof useSSE> | null> = {}
-const stopWatchMap: Record<number, { content?: () => void; refs?: () => void; suggested?: () => void }> = {}
+const stopWatchMap: Record<number, { content?: () => void; refs?: () => void; suggested?: () => void; images?: () => void }> = {}
 
 // 当前会话的流式态（切换会话时自动反映新会话的流式内容）
 const currentStreaming = computed(() => {
@@ -57,6 +58,7 @@ const isStreaming = computed(() => !!currentStreaming.value?.streaming)
 const streamingContent = computed(() => currentStreaming.value?.content ?? '')
 const streamingReferences = computed(() => currentStreaming.value?.references ?? [])
 const streamingSuggested = computed(() => currentStreaming.value?.suggested ?? [])
+const streamingImages = computed(() => currentStreaming.value?.images ?? [])
 
 const isLoggedIn = computed(() => !!userStore.token)
 // 单一数据源：凡拥有知识库访问权的角色均视为管理员口径（与 config/roles.ts 对齐）
@@ -225,6 +227,7 @@ async function sendMessage() {
     content: '',
     references: [],
     suggested: [],
+    images: [],
     streaming: true,
     messageId: null,
     error: null,
@@ -255,7 +258,7 @@ async function sendMessage() {
     const realId = sse.messageId?.value
     // st.content 来自 SSE 流，为空时取 sse.content（后端返回的错误消息如敏感词拦截）
     const content = st.content || sse.content?.value || ''
-    chat.appendAssistantMessage(content, st.references, realId || undefined, st.suggested, convId)
+    chat.appendAssistantMessage(content, st.references, realId || undefined, st.suggested, st.images, convId)
     // 落库后清掉流式状态，下次该会话显示正式消息
     delete streamingMap.value[convId]
     delete sseMap[convId]
@@ -278,6 +281,7 @@ async function sendMessage() {
   stopWatchMap[convId]?.content?.()
   stopWatchMap[convId]?.refs?.()
   stopWatchMap[convId]?.suggested?.()
+  stopWatchMap[convId]?.images?.()
   stopWatchMap[convId] = {
     content: watch(sse.content, (val) => {
       const st = streamingMap.value[convId]
@@ -290,6 +294,10 @@ async function sendMessage() {
     suggested: watch(sse.suggested, (val) => {
       const st = streamingMap.value[convId]
       if (st && st.seq === seq) st.suggested = val
+    }),
+    images: watch(sse.images, (val) => {
+      const st = streamingMap.value[convId]
+      if (st && st.seq === seq) st.images = val
     }),
   }
 }
@@ -622,6 +630,7 @@ watch(
               :key="msg.id"
               :message="msg"
               :suggested-questions="msg.suggested"
+              :images="msg.images"
               :user-role="userStore.role ?? undefined"
               @feedback="handleFeedback"
               @quick-question="quickQuestion"
@@ -638,6 +647,7 @@ watch(
               :streaming="true"
               :stream-content="streamingContent"
               :suggested-questions="streamingSuggested"
+              :images="streamingImages"
               :user-role="userStore.role ?? undefined"
               @quick-question="quickQuestion"
             />
