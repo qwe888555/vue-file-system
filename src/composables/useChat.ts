@@ -24,12 +24,7 @@ function summaryTitle(text: string): string {
   let s = t.replace(/^(请问|我想问一下|你好|帮我|请教一下|我想|如何|怎么|怎样|哪里|什么是|哪个)\s*/g, '')
   // 去除末尾标点
   s = s.replace(/[？?。，,！!]$/g, '')
-  // 提取关键部分：取前 8 个字，适应侧边栏宽度
-  if (s.length <= 8) return s
-  // 尝试按标点/连词拆分，取前半段
-  const split = s.split(/[，,、；;]/, 1)[0]
-  if (split.length <= 8) return split
-  return split.slice(0, 8) + '…'
+  return s
 }
 
 interface CacheData {
