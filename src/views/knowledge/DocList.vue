@@ -137,7 +137,6 @@ const uploadForm = ref({
 })
 
 function resetUploadForm() {
-  createMode.value = true
   selectedFiles.value = []
   showCreateForm.value = false
   uploadForm.value = {

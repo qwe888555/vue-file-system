@@ -607,7 +607,7 @@ watch(
               <path d="M3 4h14v1.5H3V4zm0 5h14v1.5H3V9zm0 5h14v1.5H3v-1.5z" />
             </svg>
           </button>
-          <h1 class="topbar-title">{{ topbarTitle }}</h1>
+          <h1 class="topbar-title" :title="topbarTitle">{{ topbarTitle }}</h1>
           <span v-if="isStreaming" class="chip-stream"><i></i>正在回答…</span>
         </div>
       </header>
