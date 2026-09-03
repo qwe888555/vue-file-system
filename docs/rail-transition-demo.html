@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>rail 切换过渡 demo · 明确滑动</title>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-light: #409eff;
+    --primary-deep: #2563eb;
+    --bg: #f5f7fa;
+    --border: #e8ecf1;
+    --text: #1f1f1f;
+    --text-2: #64748b;
+    --rail-bg: #fff;
+    --duration: 0.3s;
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+  }
+
+  /* ═══ 整体布局：rail + 内容区 ═══ */
+  .app {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* ═══ 左侧 rail（64px） ═══ */
+  .rail {
+    width: 64px;
+    flex-shrink: 0;
+    background: var(--rail-bg);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 0 12px;
+    position: relative;
+    z-index: 30;
+  }
+  .rail-logo {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #eef3fe, #e6edfe);
+    border: 1px solid #d9e4f8;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 37px;
+    font-size: 13px; font-weight: 700; color: var(--primary);
+  }
+  .rail-menu {
+    display: flex; flex-direction: column; gap: 4px;
+    position: relative;
+  }
+  /* 激活指示条 —— 平滑滑动 */
+  .rail-indicator {
+    position: absolute;
+    left: 0; top: 0;
+    width: 40px; height: 48px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #eef3fe, #e6edfe);
+    transition: transform var(--duration) var(--ease);
+    z-index: 0;
+  }
+  .rail-item {
+    position: relative;
+    width: 40px; height: 48px;
+    border-radius: 10px;
+    border: none; background: none;
+    display: flex; align-items: center; justify-content: center;
+    color: #8e95a6;
+    cursor: pointer;
+    z-index: 1;
+    transition: color 0.18s ease;
+  }
+  .rail-item:hover { color: #5a7cf0; }
+  .rail-item.is-active { color: var(--primary-deep); }
+  .rail-item svg { width: 20px; height: 20px; }
+  /* hover 浮层 */
+  .rail-pop {
+    position: absolute;
+    left: calc(100% + 12px); top: 50%;
+    transform: translateY(-50%) translateX(-6px);
+    background: #fff;
+    padding: 7px 13px;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(15,23,42,.12), 0 2px 8px rgba(37,99,235,.08);
+    border: 1px solid rgba(37,99,235,.08);
+    font-size: 13px; font-weight: 500;
+    white-space: nowrap;
+    opacity: 0; pointer-events: none;
+    transition: opacity .15s ease, transform .15s ease;
+    z-index: 50;
+  }
+  .rail-item:hover .rail-pop {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+  .rail-user {
+    margin-top: auto;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: rgba(64,158,255,.15);
+    color: var(--primary-light);
+    font-size: 14px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ═══ 内容区：多页叠放 + 滑动过渡（统一从左滑入）═══ */
+  .pages {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .page {
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    opacity: 0;
+    transform: translateX(-100%);
+    pointer-events: none;
+    transition: transform var(--duration) var(--ease), opacity var(--duration) var(--ease);
+    will-change: transform, opacity;
+  }
+  .page.active {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+    z-index: 2;
+  }
+  /* 旧页退场：统一向右退场并淡出 */
+  .page.exit-right {
+    transform: translateX(32%);
+    opacity: 0;
+    z-index: 1;
+    pointer-events: none;
+  }
+  /* 预备态：统一在左侧待命 */
+  .page.stage-left { transform: translateX(-100%); opacity: 0; }
+
+  /* ═══ 各页面内容样式 ═══ */
+  .page-inner { padding: 28px 36px; }
+  .page-header { margin-bottom: 22px; }
+  .page-title { font-size: 22px; font-weight: 700; }
+  .page-sub { font-size: 13px; color: var(--text-2); margin-top: 4px; }
+  .card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 2px rgba(15,23,42,.03);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-2); font-weight: 600; font-size: 12px; }
+  .tag { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11px; background: #eef3fe; color: var(--primary-deep); }
+  .tag.green { background: #ecfdf3; color: #0c9444; }
+  .tag.gray { background: #f1f5f9; color: #64748b; }
+
+  /* 教研问答页专用 */
+  .chat-layout { display: flex; height: calc(100vh - 0px); }
+  .chat-sidebar {
+    width: 260px; flex-shrink: 0;
+    background: #fff; border-right: 1px solid var(--border);
+    padding: 18px 12px; overflow: auto;
+  }
+  .chat-sidebar h3 { font-size: 13px; color: var(--text-2); margin: 6px 8px 12px; }
+  .conv-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 10px; border-radius: 8px; cursor: pointer;
+    margin-bottom: 2px; transition: background .15s;
+  }
+  .conv-item:hover { background: #f5f5f5; }
+  .conv-item.active { background: #f0f0f0; }
+  .conv-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary-light); flex-shrink: 0; }
+  .conv-title { font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-main { flex: 1; display: flex; flex-direction: column; }
+  .chat-msgs { flex: 1; padding: 24px 36px; overflow: auto; }
+  .bubble { max-width: 70%; padding: 12px 16px; border-radius: 14px; margin-bottom: 14px; font-size: 14px; line-height: 1.6; }
+  .bubble.user { background: var(--primary); color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
+  .bubble.ai { background: #fff; border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .chat-input {
+    border-top: 1px solid var(--border);
+    padding: 14px 36px;
+    background: #fff;
+  }
+  .chat-input-box {
+    display: flex; align-items: center; gap: 10px;
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 10px 14px; background: #fff;
+  }
+  .chat-input-box input { flex: 1; border: none; outline: none; font-size: 14px; }
+  .send-btn {
+    background: var(--primary); color: #fff; border: none;
+    border-radius: 8px; padding: 7px 16px; font-size: 13px; cursor: pointer;
+  }
+
+  /* 控制条（demo 专用，调参用） */
+  .ctrl {
+    position: fixed; right: 16px; bottom: 16px; z-index: 100;
+    background: #fff; border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 14px; box-shadow: 0 8px 24px rgba(15,23,42,.12);
+    font-size: 12px; display: flex; flex-direction: column; gap: 8px;
+    min-width: 200px;
+  }
+  .ctrl label { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
+  .ctrl input[type=range] { flex: 1; }
+  .ctrl .val { font-weight: 600; color: var(--text); min-width: 40px; text-align: right; }
+  .ctrl .hint { color: #94a3b8; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ══ rail ══ -->
+  <nav class="rail">
+    <div class="rail-logo">东软</div>
+    <div class="rail-menu" id="railMenu">
+      <div class="rail-indicator" id="indicator"></div>
+      <!-- rail-item 由 JS 生成 -->
+    </div>
+    <div class="rail-user">S</div>
+  </nav>
+
+  <!-- ══ 内容区 ══ -->
+  <div class="pages" id="pages">
+    <!-- 各 page 由 JS 生成 -->
+  </div>
+</div>
+
+<!-- demo 调参控制条 -->
+<div class="ctrl">
+  <label>时长 <input type="range" id="dur" min="0.15" max="0.6" step="0.01" value="0.3"><span class="val" id="durVal">0.30s</span></label>
+  <label>退场位移 <input type="range" id="shift" min="10" max="60" step="1" value="32"><span class="val" id="shiftVal">32%</span></label>
+  <div class="hint">点左侧 rail 任意项切换，观察滑动方向与指示条。</div>
+</div>
+
+<script>
+  // ── rail 菜单数据（图标用内联 SVG，模拟项目图标）──
+  const ITEMS = [
+    { key: 'kb',  label: '知识库管理', svg: '<svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M128 192v640h768V320H485.76L357.504 192zm-32-64h287.872l128.384 128H928a32 32 0 0 1 32 32v576a32 32 0 0 1-32 32H96a32 32 0 0 1-32-32V160a32 32 0 0 1 32-32"/></svg>' },
+    { key: 'chat', label: '教研问答', svg: '<svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M160 826.88 273.536 736H800a64 64 0 0 0 64-64V256a64 64 0 0 0-64-64H224a64 64 0 0 0-64 64zM296 800 147.968 918.4A32 32 0 0 1 96 893.44V256a128 128 0 0 1 128-128h576a128 128 0 0 1 128 128v416a128 128 0 0 1-128 128z"/><path d="M352 512h320q32 0 32 32t-32 32H352q-32 0-32-32t32-32m0-192h320q32 0 32 32t-32 32H352q-32 0-32-32t32-32"/></svg>' },
+    { key: 'faq', label: 'FAQ 管理', svg: '<svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M273.536 736H800a64 64 0 0 0 64-64V256a64 64 0 0 0-64-64H224a64 64 0 0 0-64 64v570.88zM296 800 147.968 918.4A32 32 0 0 1 96 893.44V256a128 128 0 0 1 128-128h576a128 128 0 0 1 128 128v416a128 128 0 0 1-128 128z"/><path d="M512 499.2a51.2 51.2 0 1 1 0-102.4 51.2 51.2 0 0 1 0 102.4m192 0a51.2 51.2 0 1 1 0-102.4 51.2 51.2 0 0 1 0 102.4m-384 0a51.2 51.2 0 1 1 0-102.4 51.2 51.2 0 0 1 0 102.4"/></svg>' },
+    { key: 'acc', label: '账号管理', svg: '<svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M600.704 64a32 32 0 0 1 30.464 22.208l35.2 109.376c14.784 7.232 28.928 15.36 42.432 24.512l112.384-24.192a32 32 0 0 1 34.432 15.36L944.32 364.8a32 32 0 0 1-4.032 37.504l-77.12 85.12a357 357 0 0 1 0 49.024l77.12 85.248a32 32 0 0 1 4.032 37.504l-88.704 153.6a32 32 0 0 1-34.432 15.296L708.8 803.904c-13.44 9.088-27.648 17.28-42.368 24.512l-35.264 109.376A32 32 0 0 1 600.704 960H423.296a32 32 0 0 1-30.464-22.208L357.696 828.48a352 352 0 0 1-42.56-24.64l-112.32 24.256a32 32 0 0 1-34.432-15.36L79.68 659.2a32 32 0 0 1 4.032-37.504l77.12-85.248a357 357 0 0 1 0-48.896l-77.12-85.248A32 32 0 0 1 79.68 364.8l88.704-153.6a32 32 0 0 1 34.432-15.296l112.32 24.256c13.568-9.152 27.776-17.408 42.56-24.64l35.2-109.312A32 32 0 0 1 423.232 64H600.64z"/><path d="M512 320a192 192 0 1 1 0 384 192 192 0 0 1 0-384m0 64a128 128 0 1 0 0 256 128 128 0 0 0 0-256"/></svg>' },
+    { key: 'dept', label: '部门管理', svg: '<svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M192 128v704h384V128zm-32-64h448a32 32 0 0 1 32 32v768a32 32 0 0 1-32 32H160a32 32 0 0 1-32-32V96a32 32 0 0 1 32-32"/><path d="M256 256h256v64H256zm0 192h256v64H256zm0 192h256v64H256zm384-128h128v64H640zm0 128h128v64H640zM64 832h896v64H64z"/><path d="M640 384v448h192V384zm-32-64h256a32 32 0 0 1 32 32v512a32 32 0 0 1-32 32H608a32 32 0 0 1-32-32V352a32 32 0 0 1 32-32"/></svg>' },
+  ];
+
+  // ── 各页面占位内容 ──
+  const PAGES = {
+    kb: `
+      <div class="page-inner">
+        <div class="page-header"><div class="page-title">知识库管理</div><div class="page-sub">文档入库 · 分块 · 向量化状态</div></div>
+        <div class="card">
+          <table><thead><tr><th>文档名</th><th>分类</th><th>状态</th><th>更新时间</th></tr></thead><tbody>
+            <tr><td>2026 教学管理办法.pdf</td><td>教务</td><td><span class="tag green">已向量化</span></td><td>09-01</td></tr>
+            <tr><td>学院突发事件预案.docx</td><td>行政</td><td><span class="tag green">已向量化</span></td><td>08-30</td></tr>
+            <tr><td>新生入学指南.pdf</td><td>招生</td><td><span class="tag gray">解析中</span></td><td>09-02</td></tr>
+            <tr><td>科研经费管理办法.xlsx</td><td>科研</td><td><span class="tag green">已向量化</span></td><td>08-28</td></tr>
+          </tbody></table>
+        </div>
+      </div>`,
+    chat: `
+      <div class="chat-layout">
+        <aside class="chat-sidebar">
+          <h3>对话列表</h3>
+          <div class="conv-item active"><span class="conv-dot"></span><span class="conv-title">该学校有多少个学院？</span></div>
+          <div class="conv-item"><span class="conv-dot"></span><span class="conv-title">新生报到流程</span></div>
+          <div class="conv-item"><span class="conv-dot"></span><span class="conv-title">科研经费报销规定</span></div>
+          <div class="conv-item"><span class="conv-dot"></span><span class="conv-title">选课时间安排</span></div>
+        </aside>
+        <div class="chat-main">
+          <div class="chat-msgs">
+            <div class="bubble user">该学校有多少个学院？</div>
+            <div class="bubble ai">成都东软学院共设有 13 个二级学院，涵盖计算机、软件、信息工程、数字艺术、商管等多个领域……</div>
+          </div>
+          <div class="chat-input"><div class="chat-input-box"><input placeholder="输入问题…" /><button class="send-btn">发送</button></div></div>
+        </div>
+      </div>`,
+    faq: `
+      <div class="page-inner">
+        <div class="page-header"><div class="page-title">FAQ 管理</div><div class="page-sub">高频问题 · 兜底回答</div></div>
+        <div class="card"><strong>Q：</strong>开学时间？<br><strong>A：</strong>2026 级新生 9 月 8 日报到。</div>
+        <div class="card"><strong>Q：</strong>学费怎么交？<br><strong>A：</strong>登录缴费平台，支持微信/支付宝。</div>
+        <div class="card"><strong>Q：</strong>宿舍几人间？<br><strong>A：</strong>标准 4-6 人间，上床下桌。</div>
+      </div>`,
+    acc: `
+      <div class="page-inner">
+        <div class="page-header"><div class="page-title">账号管理</div><div class="page-sub">用户 · 角色 · 权限</div></div>
+        <div class="card">
+          <table><thead><tr><th>姓名</th><th>角色</th><th>所属学院</th><th>状态</th></tr></thead><tbody>
+            <tr><td>张老师</td><td><span class="tag">管理员</span></td><td>计算机学院</td><td>启用</td></tr>
+            <tr><td>李同学</td><td><span class="tag gray">用户</span></td><td>软件学院</td><td>启用</td></tr>
+            <tr><td>王处长</td><td><span class="tag">超管</span></td><td>行政</td><td>启用</td></tr>
+          </tbody></table>
+        </div>
+      </div>`,
+    dept: `
+      <div class="page-inner">
+        <div class="page-header"><div class="page-title">部门管理</div><div class="page-sub">学院 · 部门 · 层级</div></div>
+        <div class="card"><strong>计算机学院</strong> —— 软件工程、网络工程、数据科学</div>
+        <div class="card"><strong>信息工程学院</strong> —— 通信、物联网、人工智能</div>
+        <div class="card"><strong>数字艺术学院</strong> —— 动画、视觉传达、数字媒体</div>
+        <div class="card"><strong>商学院</strong> —— 工商管理、财务管理、市场营销</div>
+      </div>`,
+  };
+
+  // ── 渲染 rail ──
+  const railMenu = document.getElementById('railMenu');
+  const indicator = document.getElementById('indicator');
+  ITEMS.forEach((it, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'rail-item' + (i === 1 ? ' is-active' : '');
+    btn.dataset.idx = i;
+    btn.innerHTML = it.svg + `<span class="rail-pop">${it.label}</span>`;
+    btn.addEventListener('click', () => switchTo(i));
+    railMenu.appendChild(btn);
+  });
+  // 指示条初始位置：第 1 项（教研问答）
+  const ITEM_H = 48, GAP = 4;
+  function moveIndicator(idx) {
+    indicator.style.transform = `translateY(${idx * (ITEM_H + GAP)}px)`;
+  }
+  moveIndicator(1);
+
+  // ── 渲染 pages ──
+  const pagesWrap = document.getElementById('pages');
+  ITEMS.forEach((it, i) => {
+    const pg = document.createElement('section');
+    pg.className = 'page' + (i === 1 ? ' active' : ' stage-right');
+    pg.dataset.idx = i;
+    pg.innerHTML = PAGES[it.key];
+    pagesWrap.appendChild(pg);
+  });
+  // 非 active 的页面统一预置到左侧待命
+  function restageAll(activeIdx) {
+    [...pagesWrap.children].forEach(p => {
+      const i = +p.dataset.idx;
+      p.classList.remove('stage-left','exit-right');
+      if (i === activeIdx) return;
+      p.classList.add('stage-left');
+      p.classList.remove('active');
+    });
+  }
+  restageAll(1);
+
+  let current = 1;
+  let animating = false;
+
+  function switchTo(idx) {
+    if (idx === current || animating) return;
+    animating = true;
+    const oldPage = pagesWrap.children[current];
+    const newPage = pagesWrap.children[idx];
+
+    // rail 激活态 + 指示条滑动
+    [...railMenu.querySelectorAll('.rail-item')].forEach(b => b.classList.remove('is-active'));
+    railMenu.children[idx + 1].classList.add('is-active'); // +1 跳过 indicator
+    moveIndicator(idx);
+
+    // 新页统一从左侧预备，强制重排后滑入
+    newPage.classList.remove('stage-left','exit-right');
+    newPage.classList.add('stage-left');
+    void newPage.offsetWidth;
+    newPage.classList.add('active');
+
+    // 旧页统一向右退场并淡出
+    oldPage.classList.remove('active');
+    oldPage.classList.add('exit-right');
+
+    const cleanup = () => {
+      oldPage.classList.remove('exit-right');
+      oldPage.classList.add('stage-left'); // 退场后回到左侧待命
+      animating = false;
+      newPage.removeEventListener('transitionend', onEnd);
+    };
+    const onEnd = (e) => {
+      if (e.target !== newPage) return;
+      if (e.propertyName !== 'transform' && e.propertyName !== 'opacity') return;
+      cleanup();
+    };
+    newPage.addEventListener('transitionend', onEnd);
+    // 兜底：超时清理
+    setTimeout(() => { if (animating) cleanup(); }, 900);
+
+    current = idx;
+  }
+
+  // ── 调参控制 ──
+  const dur = document.getElementById('dur');
+  const durVal = document.getElementById('durVal');
+  const shift = document.getElementById('shift');
+  const shiftVal = document.getElementById('shiftVal');
+  function applyVars() {
+    document.documentElement.style.setProperty('--duration', dur.value + 's');
+    durVal.textContent = parseFloat(dur.value).toFixed(2) + 's';
+    document.documentElement.style.setProperty('--shift', shift.value + '%');
+    shiftVal.textContent = shift.value + '%';
+    // 退场位移通过 CSS 变量注入（需选择器使用 var）
+    // 这里直接改样式表规则
+    shiftVal.textContent = shift.value + '%';
+  }
+  dur.addEventListener('input', () => {
+    document.documentElement.style.setProperty('--duration', dur.value + 's');
+    durVal.textContent = parseFloat(dur.value).toFixed(2) + 's';
+  });
+  shift.addEventListener('input', () => {
+    const v = shift.value;
+    shiftVal.textContent = v + '%';
+    // 动态改退场位移（旧页向右退）
+    const css = `.page.exit-right{transform:translateX(${v}%) !important;opacity:0;}`;
+    let st = document.getElementById('shiftStyle');
+    if (!st) { st = document.createElement('style'); st.id = 'shiftStyle'; document.head.appendChild(st); }
+    st.textContent = css;
+  });
+</script>
+</body>
+</html>

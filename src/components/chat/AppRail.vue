@@ -55,6 +55,14 @@ const activePath = computed(() => {
   return matched ? matched.path : route.path
 })
 
+// 激活项索引 → 指示条 translateY（每项 48px 高 + 4px gap = 52px）
+const activeIndex = computed(() =>
+  items.value.findIndex((i) => i.path === activePath.value),
+)
+const indicatorY = computed(() =>
+  activeIndex.value >= 0 ? activeIndex.value * 52 : 0,
+)
+
 // ── 用户浮层 ──
 const showUserMenu = ref(false)
 const showPersonalCenter = ref(false)
@@ -106,6 +114,12 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocMousedown))
 
     <!-- 主导航（悬停浮层显示文字，问答项后台生成完毕亮红点） -->
     <div class="rail-menu">
+      <!-- 激活态滑动指示条：沿轨道平滑滑动到当前激活项 -->
+      <div
+        v-if="activeIndex >= 0"
+        class="rail-indicator"
+        :style="{ transform: `translateY(${indicatorY}px)` }"
+      />
       <button
         v-for="item in items"
         :key="item.path"
@@ -219,6 +233,21 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocMousedown))
   display: flex;
   flex-direction: column;
   gap: 4px;
+  position: relative;
+}
+
+/* 激活态滑动指示条：沿轨道平滑滑动到当前激活项 */
+.rail-indicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 40px;
+  height: 48px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #eef3fe, #e6edfe);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+  pointer-events: none;
 }
 
 .rail-item {
@@ -231,6 +260,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocMousedown))
   justify-content: center;
   color: #8e95a6;
   transition: background 0.18s ease, color 0.18s ease;
+  z-index: 1;
 }
 
 .rail-item:hover {
@@ -239,7 +269,6 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocMousedown))
 }
 
 .rail-item.is-active {
-  background: linear-gradient(135deg, #eef3fe, #e6edfe);
   color: var(--color-primary-deep, #2563eb);
 }
 
