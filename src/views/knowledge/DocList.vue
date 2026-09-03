@@ -54,6 +54,7 @@ const isDragOver = ref(false)
 let dragCounter = 0
 // 稳定的空数组引用，避免每次渲染传新 [] 导致 el-upload 内部状态重置
 const emptyFileList = ref<never[]>([])
+const uploadRef = ref()
 const showCreateForm = ref(false)
 const showPreviewDialog = ref(false)
 const previewContent = ref('')
@@ -120,6 +121,7 @@ const uploadForm = ref({
 
 function resetUploadForm() {
   selectedFiles.value = []
+  uploadRef.value?.clearFiles()
   showCreateForm.value = false
   uploadForm.value = {
     title: '',
@@ -352,6 +354,7 @@ function handleRemove(item: { file: File; docId?: number; previewContent?: strin
   
   if (selectedFiles.value.length === 0) {
     selectedFileIndex.value = 0
+    uploadRef.value?.clearFiles()
   } else if (selectedFileIndex.value >= selectedFiles.value.length) {
     selectedFileIndex.value = selectedFiles.value.length - 1
   }
@@ -1503,6 +1506,7 @@ function saveFiles(files: KnowledgeFile[]) {
 
         <div v-show="selectedFiles.length === 0" class="upload-center-empty">
           <el-upload
+            ref="uploadRef"
             :auto-upload="false"
             :file-list="emptyFileList"
             @change="onUploadChange"
