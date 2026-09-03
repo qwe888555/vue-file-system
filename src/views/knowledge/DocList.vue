@@ -1807,16 +1807,12 @@ function saveFiles(files: KnowledgeFile[]) {
       </div>
 
       <el-alert
-        title="点击资料名可在线预览；支持 Markdown/文本、图片、音视频、PDF、Word(.docx)、Excel(.xls/.xlsx)、PPT(.pptx) 在线查看内容，其余格式请下载后查看。如需修改文档内容，请先下载文件，本地修改后再重新上传。"
+        title="可在线预览：Markdown/文本、图片、音视频、PDF、Word(.docx)、Excel(.xls/.xlsx)、PPT(.pptx)；不支持在线预览需下载：Word(.doc)、PPT(.ppt)、压缩包(.zip/.rar/.7z)、设计源(.psd/.ai)、3D模型(.stl/.obj/.fbx)、电子书(.epub/.pub)。预览失败或需修改内容时，请下载后本地查看，修改完成再重新上传。"
         type="success"
         :closable="false"
         show-icon
         class="preview-hint"
       />
-
-      <div class="offline-download-tip">
-        以下类型暂不支持在线查看内容，请下载后查看：Word 旧格式(.doc)、PPT 旧格式(.ppt)、压缩包(.zip/.rar/.7z)、设计源文件(.psd/.ai)、3D 模型(.stl/.obj/.fbx)、电子书(.epub/.pub)。若 .docx/.xlsx/.pptx 等仍无法正常预览，同样请下载后使用本地软件查看。
-      </div>
 
       <div class="search-section">
         <el-input
@@ -2661,17 +2657,6 @@ function saveFiles(files: KnowledgeFile[]) {
 
 .preview-hint {
   margin-bottom: var(--spacing-md);
-}
-
-.offline-download-tip {
-  margin-bottom: var(--spacing-md);
-  padding: 6px 12px;
-  font-size: 12px;
-  line-height: 1.7;
-  color: #e6a23c;
-  background: #fdf6ec;
-  border: 1px solid #faecd8;
-  border-radius: 4px;
 }
 
 .preview-content {
