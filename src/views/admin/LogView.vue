@@ -17,6 +17,13 @@ function onTabClick(key: TabType) {
 const dashboardData = ref<any>(null)
 const dashboardPeriod = ref<'day' | 'week' | 'month'>('day')
 
+/** 概览周期 Tab 选项：切换后整页统计口径随之刷新 */
+const periodOptions: Array<{ value: 'day' | 'week' | 'month'; label: string }> = [
+  { value: 'day', label: '今天' },
+  { value: 'week', label: '本周' },
+  { value: 'month', label: '本月' },
+]
+
 async function fetchDashboard() {
   try {
     const res = await request.get('/admin/logs/dashboard/', { params: { period: dashboardPeriod.value } })
@@ -87,12 +94,18 @@ const logTabs = [
 
     <!-- ══════ 概览 Dashboard ══════ -->
     <div v-if="activeTab === 'dashboard'" class="db-wrap">
-      <div class="db-period">
-        <el-radio-group v-model="dashboardPeriod" size="small">
-          <el-radio-button value="day">今天</el-radio-button>
-          <el-radio-button value="week">本周</el-radio-button>
-          <el-radio-button value="month">本月</el-radio-button>
-        </el-radio-group>
+      <!-- 周期 Tab 栏：今天/本周/本月，点击切换整页统计口径 -->
+      <div class="db-period" role="tablist" aria-label="统计周期">
+        <button
+          v-for="p in periodOptions"
+          :key="p.value"
+          role="tab"
+          :aria-selected="dashboardPeriod === p.value"
+          :class="{ active: dashboardPeriod === p.value }"
+          @click="dashboardPeriod = p.value"
+        >
+          {{ p.label }}
+        </button>
       </div>
       <div v-if="!dashboardData" class="db-empty">加载中...</div>
       <div v-else class="db-blocks">
@@ -150,24 +163,21 @@ const logTabs = [
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
-/* ── Period 选择器 ── */
-.db-period { margin-bottom: 20px; }
-.db-period :deep(.el-radio-group) {
-  background: #f1f5f9; border-radius: 10px; padding: 3px; border: none;
-  display: inline-flex;
+/* ── 概览周期 Tab 栏（与顶部 Tab 同款胶囊式，点击切换更直观） ── */
+.db-period {
+  display: inline-flex; gap: 4px; margin-bottom: 20px;
+  background: #f1f5f9; border-radius: 10px; padding: 4px; border: none;
 }
-.db-period :deep(.el-radio-button__inner) {
-  border: none !important; background: transparent !important;
-  border-radius: 8px !important; padding: 6px 16px;
+.db-period button {
+  padding: 6px 16px; border: none; border-radius: 8px;
   font-size: 13px; font-weight: 500; color: #64748b;
-  box-shadow: none !important; transition: all 0.2s ease;
+  background: transparent; cursor: pointer;
+  transition: all 0.2s ease;
 }
-.db-period :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-  background: #fff !important; color: rgba(64, 158, 255, 0.76) !important; font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
-}
-.db-period :deep(.el-radio-button:not(:first-child) .el-radio-button__inner) {
-  border-left: none !important;
+.db-period button:hover { color: #334155; }
+.db-period button.active {
+  background: #fff; color: var(--color-primary-deep, #2563eb); font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
 /* ── Dashboard 卡片 ── */
