@@ -245,7 +245,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocMousedown))
   height: 48px;
   border-radius: 10px;
   background: linear-gradient(135deg, #eef3fe, #e6edfe);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.42s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 0;
   pointer-events: none;
 }
