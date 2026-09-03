@@ -56,6 +56,17 @@ router.beforeEach(async (to, _from, next) => {
   // 公开路由白名单：首页、异常页、移动端登录页（用显式 meta.public，而非 meta.hidden）
   // meta.hidden 仅用于「不出现在菜单」，与鉴权无关
   if (to.meta.public) {
+    // 已登录用户直接刷新公开页（如 /faq —— Layout 外壳带侧栏）时，守卫提前返回会跳过下方
+    // getUserInfo 初始化，role 为空 → 侧栏菜单空白。此处补一次初始化；游客（无 token）直接放行。
+    if (userStore.token && !userStore.role && !pageInitialized) {
+      try {
+        await userStore.getUserInfo()
+      } catch {
+        // token 失效等情况不阻塞公开页访问；后续跳非公开页时下方仍有兜底逻辑
+      } finally {
+        pageInitialized = true
+      }
+    }
     next()
     return
   }
