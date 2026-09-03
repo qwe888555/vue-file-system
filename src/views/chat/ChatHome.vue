@@ -10,10 +10,8 @@ import { isAdminRole } from '@/config/roles'
 import type { KnowledgeFile, SuggestedItem, ImageItem } from '@/types'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
-import AppRail from '@/components/chat/AppRail.vue'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ChatLoginDialog from '@/components/chat/ChatLoginDialog.vue'
-import SidebarUser from '@/components/common/SidebarUser.vue'
 import { useChatUiStore } from '@/store/chatUi'
 
 defineOptions({ name: 'ChatHome' })
@@ -56,7 +54,6 @@ const currentStreaming = computed(() => {
 })
 const isStreaming = computed(() => !!currentStreaming.value?.streaming)
 const streamingContent = computed(() => currentStreaming.value?.content ?? '')
-const streamingReferences = computed(() => currentStreaming.value?.references ?? [])
 const streamingSuggested = computed(() => currentStreaming.value?.suggested ?? [])
 const streamingImages = computed(() => currentStreaming.value?.images ?? [])
 
@@ -532,8 +529,6 @@ watch(
         <div></div><div></div><div></div><div></div><div></div><div></div><div></div>
       </div>
     </div>
-    <!-- 左侧常驻 rail（主导航，Q1B/Q9A：64px 收起态 + hover 浮层） -->
-    <AppRail />
     <!-- ═══ 左侧边栏（对话列表）═══ -->
     <aside class="chat-sidebar" :class="{ collapsed: !sidebarOpen }">
       <!-- 顶部 -->
@@ -603,11 +598,10 @@ watch(
           暂无对话
         </div>
       </div>
-      <SidebarUser @login="showLoginDialog = true" />
     </aside>
     <!-- ═══ 右侧主区域 ═══ -->
     <div class="chat-main" :class="{ 'sidebar-collapsed': !sidebarOpen }">
-      <!-- 顶部栏（Q2A：原「退出问答」已移除，出口交给左侧常驻 rail） -->
+      <!-- 顶部栏（Q2A：原「退出问答」已移除，主导航/退出入口统一在 App.vue 全局 rail） -->
       <header class="chat-topbar">
         <div class="topbar-left">
           <button class="topbar-btn" @click="toggleSidebar" title="收起 / 展开会话列表">
@@ -752,8 +746,8 @@ watch(
 /* ═══════════════════ 全局 ═══════════════════ */
 .chat-app {
   display: flex;
-  height: 100vh;
-  width: 100vw;
+  height: 100%;
+  width: 100%;
   overflow: hidden;
   background: #f5f5f5;
   font-family: var(--font-sans);
@@ -818,24 +812,6 @@ watch(
   color: #8e95a6;
   letter-spacing: 4px;
 }
-/* 退出按钮 */
-.sidebar-exit {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  margin: 0 8px 4px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--color-text-secondary, #64748b);
-  transition: background-color 0.15s, color 0.15s;
-}
-.sidebar-exit:hover {
-  background: rgba(64, 158, 255, 0.06);
-  color: #409eff;
-}
-
 /* 搜索 */
 .sidebar-search {
   display: flex;
@@ -981,45 +957,6 @@ watch(
 }
 .sidebar-empty { text-align: center; padding: 24px; font-size: 13px; color: var(--color-text-secondary, #64748b); }
 
-/* 底部用户 */
-.sidebar-user {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
-  border-top: 1px solid #f0f0f0;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.sidebar-user-area { position: relative; }
-.sidebar-user:hover { background: #f0f4fe; }
-.user-popup {
-  position: absolute; bottom: calc(100% + 4px); left: 8px; right: 8px;
-  background: #fff; border-radius: 10px;
-  box-shadow: 0 -2px 16px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.06);
-  overflow: hidden; z-index: 20;
-}
-.user-popup-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 12px 16px; cursor: pointer; font-size: 14px; color: #1a2332;
-  transition: background 0.15s;
-}
-.user-popup-item:hover { background: #f0f4fe; color: var(--color-primary-deep, #2563eb); }
-.user-popup-item:first-child { border-bottom: 1px solid #f0f0f0; }
-.menu-up-enter-active, .menu-up-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
-.menu-up-enter-from, .menu-up-leave-to { opacity: 0; transform: translateY(8px); }
-.su-avatar {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: rgba(64, 158, 255, 0.15);
-  display: flex; align-items: center; justify-content: center;
-  color: #409eff; flex-shrink: 0; font-size: 15px; font-weight: 600;
-}
-.su-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.su-name { font-size: 13px; font-weight: 600; color: #1f1f1f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.su-role { font-size: 11px; color: var(--color-text-secondary, #64748b); }
-.su-status { font-size: 11px; color: #67c23a; background: #f0f9eb; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
-.su-avatar-text { font-size: 16px; font-weight: 700; color: #333; }
-.su-name { font-size: 15px; font-weight: 500; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* ═══════════════════ 右侧主区域 ═══════════════════ */
 .chat-main {
   flex: 1;

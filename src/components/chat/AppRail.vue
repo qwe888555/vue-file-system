@@ -1,8 +1,9 @@
 <script setup lang="ts">
-// ── 问答页左侧常驻 rail（64px 收起态 + hover 浮层）──
-// 对应演示方案 Q1B/Q9A：主导航常驻 rail，悬停浮层显示菜单文字；
-// 原顶栏「退出问答」（Q2A）移除后，出口统一交给本 rail。
-// 菜单数据与 Layout 侧边栏同源（permissionMenus，按角色动态过滤）。
+// ── 全局主导航 rail（64px 收起态 + hover 浮层）──
+// 对应演示方案 Q1B/Q9A：已登录用户在模块内时，本 rail 由 App.vue 常驻左侧，
+// 跨模块路由切换时 rail 不动、仅右侧内容舞台滑动。悬停浮层显示菜单文字；
+// 用户出口（个人中心 / 退出登录）统一在本 rail 底部。
+// 菜单数据与权限配置同源（permissionMenus，按角色动态过滤）。
 
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import type { Component } from 'vue'
@@ -43,15 +44,21 @@ const iconMap: Record<string, Component> = {
 
 const items = computed(() =>
   permissionStore.permissionMenus.map((item) => ({
+    // 归属根路径：用于判断「当前页属于哪个模块」（子页/详情页也高亮所属模块）
+    rootPath: item.path,
+    // 点击跳转目标：顶层项落到其默认子页（如 知识库 → /knowledge/list）
     path: item.children?.[0]?.path ?? item.path,
     label: item.title === '智能问答' && isAdmin.value ? '教研问答' : item.title,
-    icon: iconMap[item.icon] || Folder,
+    icon: (item.icon && iconMap[item.icon]) || Folder,
   })),
 )
 
-// 当前路由高亮（rail 仅在问答页可见，命中即高亮对应项）
+// 当前路由高亮：按模块根路径命中并高亮对应项
+// （/knowledge/list、/knowledge/detail/:id 均高亮「知识库管理」）
 const activePath = computed(() => {
-  const matched = items.value.find((i) => route.path.startsWith(i.path))
+  const matched = items.value.find(
+    (i) => route.path === i.rootPath || route.path.startsWith(i.rootPath + '/'),
+  )
   return matched ? matched.path : route.path
 })
 

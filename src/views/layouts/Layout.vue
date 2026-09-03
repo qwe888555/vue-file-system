@@ -1,23 +1,14 @@
 <script setup lang="ts">
-// ── Layout 布局外壳 ──
-// 人员 A 实现
+// ── Layout 模块内容外壳 ──
 //
-// 功能：侧边栏 Sidebar + 顶部 Header + 面包屑 + 主体容器 <router-view />
-// 样式统一使用全局 Design Token，禁止硬编码色值
-
-import Sidebar from './Sidebar.vue'
-
+// 原 222px 文字侧边栏 Sidebar 已由 App.vue 的全局常驻 rail 取代，
+// 此处仅保留模块内容的灰底 + 内边距 + 滚动容器（各模块子页依赖这层观感）。
+// 高度从 100vh 改为 100%：填充全局 rail 外壳右侧的内容舞台。
 </script>
 
 <template>
   <div class="layout-container">
-    <!-- 左侧边栏 -->
-    <Sidebar />
-
     <div class="layout-main">
-
-     
-
       <!-- 主体内容 -->
       <main class="layout-content">
         <router-view />
@@ -29,7 +20,7 @@ import Sidebar from './Sidebar.vue'
 <style scoped>
 .layout-container {
   display: flex;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
 }
 
