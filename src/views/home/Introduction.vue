@@ -5,43 +5,33 @@ import request from '@/api/request'
 import logodark from '@/assets/images/logo2.jpg'
 import heroBg from '@/assets/images/hero3.jpg'
 
-/* Dashboard 聚合接口 v1.7 — AllowAny（首页数据概览对所有人开放）+ totals + period=all */
-interface DashboardBlock {
-  total?: number; total_size?: number; error?: string
-  [key: string]: unknown
-}
-interface DashboardTotals { users: number; upload_total_size: number; error?: string }
-interface DashboardResponse {
-  period: string; start_at: string; end_at: string
-  totals?: DashboardTotals
-  blocks: {
-    upload: DashboardBlock; query: DashboardBlock
-    sensitive: DashboardBlock; login: DashboardBlock; operation: DashboardBlock
-  }
+/* 首页公开统计 v1.0 — GET /api/platform/stats/（AllowAny、完全不认证、无参数、全量累计）
+   字段：users 用户总数 / storage_bytes 存储总量(字节) / docs 资料总数
+        queries 查询总数 / avg_response_sec 平均响应时长(秒) / sensitive_blocks 敏感拦截 / logins 登录次数
+   单项计算失败 → 该项为 null（其余照常）；整库不可用（全部为 null）→ HTTP 503 */
+interface PublicStats {
+  users: number | null
+  storage_bytes: number | null
+  docs: number | null
+  queries: number | null
+  avg_response_sec: number | null
+  sensitive_blocks: number | null
+  logins: number | null
 }
 
-/* ── 7 项统计指标：字段不可删减 ── */
+/* ── 7 项统计指标（index 0~6）：存储总量为左上主打大数字，其余 6 项入次级网格 ── */
 const stats = ref([
-  { key: 'users_total',   label: '用户总数', caption: '注册师生账号',       value: 0, suffix: '' },
-  { key: 'total_storage', label: '存储总量', caption: '文档与附件占用空间', value: 0, suffix: 'GB' },
-  { key: 'upload_total',  label: '资料总数', caption: '知识库收录文档',     value: 0, suffix: '' },
-  { key: 'query_total',   label: '查询总数', caption: 'AI 问答累计次数',    value: 0, suffix: '' },
-  { key: 'sensitive',     label: '敏感拦截', caption: '命中敏感词拦截',     value: 0, suffix: '' },
-  { key: 'login_total',   label: '登录次数', caption: '平台累计登录',       value: 0, suffix: '' },
-  { key: 'operation',     label: '访问次数', caption: '页面访问 PV',        value: 0, suffix: '' },
+  { key: 'users',        label: '用户总数',   caption: '注册师生账号',        value: 0, suffix: '' },
+  { key: 'storage',      label: '存储总量',   caption: '文档与附件占用空间',  value: 0, suffix: 'GB' },
+  { key: 'docs',         label: '资料总数',   caption: '知识库收录文档',      value: 0, suffix: '' },
+  { key: 'queries',      label: '查询总数',   caption: 'AI 问答累计次数',     value: 0, suffix: '' },
+  { key: 'avg_resp',     label: '平均响应时长', caption: 'AI 问答平均响应时长', value: 0, suffix: 's' },
+  { key: 'sensitive',    label: '敏感拦截',   caption: '命中敏感词拦截',      value: 0, suffix: '' },
+  { key: 'logins',       label: '登录次数',   caption: '平台累计登录',        value: 0, suffix: '' },
 ])
 
-/** 统计区间（官方口径标注） */
-const statPeriodLabel = ref('全部')
-function periodLabel(p?: string): string {
-  switch (p) {
-    case 'today': return '今日'
-    case '7d': return '近 7 天'
-    case '30d': return '近 30 天'
-    case 'all': return '全部'
-    default: return p || '全部'
-  }
-}
+/** 右上角口径标注：公开统计为全平台累计，无周期概念 */
+const statPeriodLabel = '全平台累计'
 
 // ── 数字滚动动画（尊重 prefers-reduced-motion） ──
 const displayVals = ref<number[]>([])
@@ -77,32 +67,31 @@ function fmtSize(b: number) {
   const gb = mb / 1024
   return gb < 1024 ? { v: Math.round(gb * 10) / 10, s: 'GB' } : { v: Math.round(gb / 1024 * 10) / 10, s: 'TB' }
 }
-function ok(b: { error?: string } | undefined) { return !!b && !('error' in b) }
-
-function applyStatsVals(users: number, sizeBytes: number, upload: number, query: number, sensitive: number, login: number, operation: number) {
+function applyStatsVals(users: number, sizeBytes: number, docs: number, queries: number, avgSec: number, sensitive: number, logins: number) {
   const f = fmtSize(sizeBytes)
-  const vals = [users, f.v, upload, query, sensitive, login, operation]
+  const vals = [users, f.v, docs, queries, avgSec, sensitive, logins]
   stats.value = stats.value.map((s, i) => ({ ...s, value: vals[i], suffix: i === 1 ? f.s : s.suffix }))
-  animateNumbers([users, f.v, upload, query, sensitive, login, operation])
+  animateNumbers([users, f.v, docs, queries, avgSec, sensitive, logins])
 }
 
 /** 统计数据状态：loading 加载中 / ready 已就绪 / error 获取失败 */
 const statsState = ref<'loading' | 'ready' | 'error'>('loading')
 
 async function fetchStats() {
-  // 首页「平台数据概览」对所有人开放（含游客）：后端 dashboard 接口已改为 AllowAny，
-  // 不再做管理员角色限制；请求失败时才显示错误态
+  // 首页「平台数据概览」对所有人开放（含游客）：走独立公开接口 /api/platform/stats/
+  // （公开白名单强制不携带 Token）。单项为 null 时按 0 展示其余照常；
+  // 整库不可用返回 503 → 仅展示「加载失败」错误态
   try {
-    const dash = await request.get('/admin/logs/dashboard/', { params: { period: 'all' } }) as DashboardResponse
-    statPeriodLabel.value = periodLabel(dash?.period)
-    const t = dash?.totals && ok(dash.totals) ? dash.totals : null
-    const b = dash?.blocks
-    const up = b && ok(b.upload) ? b.upload : null
-    const qy = b && ok(b.query) ? b.query : null
-    const sn = b && ok(b.sensitive) ? b.sensitive : null
-    const lg = b && ok(b.login) ? b.login : null
-    const op = b && ok(b.operation) ? b.operation : null
-    applyStatsVals(t?.users ?? 0, t?.upload_total_size ?? 0, up?.total ?? 0, qy?.total ?? 0, sn?.total ?? 0, lg?.total ?? 0, op?.total ?? 0)
+    const s = await request.get('/platform/stats/') as PublicStats
+    applyStatsVals(
+      s.users ?? 0,
+      s.storage_bytes ?? 0,
+      s.docs ?? 0,
+      s.queries ?? 0,
+      s.avg_response_sec ?? 0,
+      s.sensitive_blocks ?? 0,
+      s.logins ?? 0,
+    )
     statsState.value = 'ready'
   } catch {
     statsState.value = 'error'
@@ -141,7 +130,7 @@ onMounted(() => {
               <h2 class="stats-title">
                 <span class="title-tick" aria-hidden="true"></span>平台数据概览
               </h2>
-              <span v-if="statsState === 'ready'" class="stats-meta">统计区间：{{ statPeriodLabel }} · 平台数据</span>
+              <span class="stats-meta">{{ statPeriodLabel }} · 平台数据</span>
             </div>
 
             <template v-if="statsState === 'ready'">

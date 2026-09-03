@@ -180,7 +180,7 @@ function handleClose() {
             :on-change="(file) => { if (file.raw) handleFileChange(file.raw) }"
             :on-remove="handleRemove"
             drag
-            accept=".pdf,.doc,.docx,.txt,.jpg,.png,.gif,.mp3,.wav,.mp4,.avi,.mkv,.zip,.rar"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.md,.html,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tiff,.tif,.mp3,.wav,.ogg,.flac,.aac,.m4a,.amr,.mp4,.webm,.mov,.avi,.mkv,.flv,.m4v,.zip,.rar,.7z,.psd,.ai,.stl,.obj,.fbx,.epub,.pub"
             class="upload-dragger"
           >
             <el-icon :size="48" color="#c0c4cc"><Upload /></el-icon>
