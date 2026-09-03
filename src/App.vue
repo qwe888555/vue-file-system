@@ -18,10 +18,17 @@ import { useRoute } from 'vue-router'
 const route = useRoute()
 const transitionName = ref('page-slide')
 
-// 进入问答页时方向反转（新页从右滑入、旧页向左退），其余正向
+// 路由切换过渡方向：
+//   - 涉及登录页（Login）的跳转 → 不加动画（name 置空）
+//   - 从其他模块切进问答页 → 反向（新页从右滑入、旧页向左退）
+//   - 其余 → 正向（新页从左滑入、旧页向右退）
 watch(
   () => route.name,
   (newName, oldName) => {
+    if (newName === 'Login' || oldName === 'Login') {
+      transitionName.value = ''
+      return
+    }
     const isEnteringChat = newName === 'Chat'
     const wasOnChat = oldName === 'Chat'
     transitionName.value = isEnteringChat && !wasOnChat
