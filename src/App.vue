@@ -25,6 +25,12 @@ const transitionName = ref('')
 watch(
   () => route.name,
   (newName, oldName) => {
+    // 涉及首页/登录页（Home，内嵌登录卡）的切换一律不加滑动动画：
+    // 登录后进入问答页、退出登录回到登录页均直切，恢复原有效果
+    if (newName === 'Home' || oldName === 'Home') {
+      transitionName.value = ''
+      return
+    }
     const isEnteringChat = newName === 'Chat'
     const isLeavingChat = oldName === 'Chat'
     if (isEnteringChat && !isLeavingChat) {
