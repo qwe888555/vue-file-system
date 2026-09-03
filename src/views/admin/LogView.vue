@@ -184,7 +184,7 @@ const logTabs = [
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 .db-block h4 {
-  margin: 0 0 16px; font-size: 13px; font-weight: 600;
+  margin: 0 0 16px; font-size: 15px; font-weight: 600;
   color: #64748b; letter-spacing: 0.05em;
 }
 
