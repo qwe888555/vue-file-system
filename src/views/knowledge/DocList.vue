@@ -15,6 +15,9 @@ import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 import MarkdownViewer from '@/components/chat/MarkdownViewer.vue'
 
 const searchQuery = ref('')
+const formatFilter = ref('')
+const collegeFilter = ref('')
+const uploaderFilter = ref('')
 // 本地描述缓存：后端列表接口不返回 description 字段，持久化到 localStorage 防刷新丢失
 const DESC_CACHE_KEY = 'doc_description_cache'
 const KW_CACHE_KEY = 'doc_keywords_cache'
@@ -1206,7 +1209,7 @@ onMounted(() => {
   fetchFiles()
 })
 
-watch(searchQuery, () => {
+watch([searchQuery, formatFilter, collegeFilter, uploaderFilter], () => {
   currentPage.value = 1
 })
 
@@ -1229,8 +1232,39 @@ function normalizeSearchText(text: string): string {
     .trim()
 }
 
-const filteredFiles = computed(() => {
-  if (!searchQuery.value) return allFiles.value
+/** 文件格式 → 中文标签（兼容扩展名与后端分组类型） */
+const FORMAT_LABELS: Record<string, string> = {
+  pdf: 'PDF',
+  doc: 'Word', docx: 'Word', wps: 'Word', word: 'Word',
+  xls: 'Excel', xlsx: 'Excel', et: 'Excel', csv: 'Excel', excel: 'Excel',
+  ppt: 'PPT', pptx: 'PPT', dps: 'PPT',
+  txt: '文本', md: 'Markdown', markdown: 'Markdown', html: '网页', htm: '网页',
+  jpg: '图片', jpeg: '图片', png: '图片', gif: '图片', webp: '图片', bmp: '图片', tiff: '图片', tif: '图片', svg: '图片', image: '图片',
+  mp3: '音频', wav: '音频', ogg: '音频', flac: '音频', aac: '音频', m4a: '音频', amr: '音频', audio: '音频',
+  mp4: '视频', webm: '视频', mov: '视频', avi: '视频', mkv: '视频', flv: '视频', m4v: '视频', video: '视频',
+  zip: '压缩包', rar: '压缩包', '7z': '压缩包', archive: '压缩包',
+  psd: '设计源', ai: '设计源',
+  stl: '3D模型', obj: '3D模型', fbx: '3D模型',
+  epub: '电子书', pub: '电子书', publisher: '电子书',
+}
+
+function rowExt(file: KnowledgeFile): string {
+  const name = (file.file_name || '').trim()
+  const dot = name.lastIndexOf('.')
+  return (dot > 0 ? name.slice(dot + 1) : (file.fileType || '')).toLowerCase()
+}
+function formatLabelOf(file: KnowledgeFile): string {
+  return FORMAT_LABELS[rowExt(file)] || '其他'
+}
+function collegeOf(file: KnowledgeFile): string {
+  return file.collegeName && String(file.collegeName).trim() ? String(file.collegeName).trim() : '未归属'
+}
+function uploaderOf(file: KnowledgeFile): string {
+  return file.author && String(file.author).trim() ? String(file.author).trim() : '未知'
+}
+
+/** 关键词搜索后的结果（文件格式/单位/上传者选项以此为数据源，随搜索实时更新） */
+const keywordResults = computed(() => {
   const query = normalizeSearchText(searchQuery.value)
   if (!query) return allFiles.value
 
@@ -1268,6 +1302,18 @@ const filteredFiles = computed(() => {
     )
     return searchText.includes(query)
   })
+})
+
+const formatOptions = computed(() => [...new Set(keywordResults.value.map(formatLabelOf))].sort())
+const collegeOptions = computed(() => [...new Set(keywordResults.value.map(collegeOf))].sort())
+const uploaderOptions = computed(() => [...new Set(keywordResults.value.map(uploaderOf))].sort())
+
+const filteredFiles = computed(() => {
+  let rows = keywordResults.value
+  if (formatFilter.value) rows = rows.filter((f) => formatLabelOf(f) === formatFilter.value)
+  if (collegeFilter.value) rows = rows.filter((f) => collegeOf(f) === collegeFilter.value)
+  if (uploaderFilter.value) rows = rows.filter((f) => uploaderOf(f) === uploaderFilter.value)
+  return rows
 })
 
 const displayTotalFiles = computed(() => {
@@ -1751,6 +1797,18 @@ function saveFiles(files: KnowledgeFile[]) {
           prefix-icon="Search"
           class="search-input"
         />
+        <el-select v-model="formatFilter" clearable placeholder="文件格式" class="filter-select format-filter">
+          <el-option label="全部" value="" />
+          <el-option v-for="opt in formatOptions" :key="opt" :label="opt" :value="opt" />
+        </el-select>
+        <el-select v-model="collegeFilter" clearable placeholder="上传单位" class="filter-select college-filter">
+          <el-option label="全部" value="" />
+          <el-option v-for="opt in collegeOptions" :key="opt" :label="opt" :value="opt" />
+        </el-select>
+        <el-select v-model="uploaderFilter" clearable placeholder="上传者" class="filter-select uploader-filter">
+          <el-option label="全部" value="" />
+          <el-option v-for="opt in uploaderOptions" :key="opt" :label="opt" :value="opt" />
+        </el-select>
       </div>
 
       <div v-if="filteredFiles.length === 0 && !loading">
@@ -1919,11 +1977,29 @@ function saveFiles(files: KnowledgeFile[]) {
 }
 
 .search-section {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
   margin-bottom: var(--spacing-xl);
 }
 
 .search-input {
-  max-width: 400px;
+  flex: 1;
+  min-width: 260px;
+  max-width: 420px;
+}
+
+.filter-select {
+  width: 150px;
+}
+
+.filter-select.format-filter {
+  width: 130px;
+}
+
+.filter-select.college-filter {
+  width: 170px;
 }
 
 .edit-hint {
