@@ -1246,15 +1246,43 @@ const FORMAT_LABELS: Record<string, string> = {
   psd: '设计源', ai: '设计源',
   stl: '3D模型', obj: '3D模型', fbx: '3D模型',
   epub: '电子书', pub: '电子书', publisher: '电子书',
+  document: 'Word', text: '文本', plain: '文本', sheet: 'Excel', spreadsheet: 'Excel', presentation: 'PPT', slides: 'PPT',
 }
 
+/** 从文件多来源字段提取真实扩展名（文件名 → URL → file_type → 全字段扫描） */
 function rowExt(file: KnowledgeFile): string {
-  const name = (file.file_name || '').trim()
-  const dot = name.lastIndexOf('.')
-  return (dot > 0 ? name.slice(dot + 1) : (file.fileType || '')).toLowerCase()
+  const pickName = (s: string): string => {
+    const seg = (s || '').split(/[?#]/)[0].split('/').pop() || ''
+    const dot = seg.lastIndexOf('.')
+    return dot > 0 ? seg.slice(dot + 1).toLowerCase() : ''
+  }
+  const fromName = pickName(file.file_name || '')
+    || pickName(file.fileUrl || '')
+    || pickName(file.oss_url || '')
+    || pickName(file.download_url || '')
+  if (fromName) return fromName
+
+  const ft = String((file as any).file_type ?? file.fileType ?? (file as any).ext ?? '').toLowerCase()
+  if (ft && ft !== 'other' && ft !== '-' && ft !== 'unknown') {
+    if (ft === 'markdown') return 'md'
+    if (FORMAT_LABELS[ft]) return ft
+  }
+
+  // 兜底：后端字段名不定时，扫描整行字符串字段，只要带扩展名或格式 token 就识别
+  for (const val of Object.values(file)) {
+    if (typeof val !== 'string' || !val) continue
+    const low = val.trim().toLowerCase()
+    const seg = low.split(/[?#/\\]/).pop() || low
+    const dot = seg.lastIndexOf('.')
+    if (dot > 0 && FORMAT_LABELS[seg.slice(dot + 1)]) return seg.slice(dot + 1)
+    if (FORMAT_LABELS[low]) return low
+  }
+  return ''
 }
 function formatLabelOf(file: KnowledgeFile): string {
-  return FORMAT_LABELS[rowExt(file)] || '其他'
+  const ext = rowExt(file)
+  if (!ext) return '其他'
+  return FORMAT_LABELS[ext] || ext.toUpperCase()
 }
 function collegeOf(file: KnowledgeFile): string {
   return file.collegeName && String(file.collegeName).trim() ? String(file.collegeName).trim() : '未归属'
