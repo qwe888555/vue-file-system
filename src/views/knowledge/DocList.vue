@@ -1246,15 +1246,43 @@ const FORMAT_LABELS: Record<string, string> = {
   psd: '设计源', ai: '设计源',
   stl: '3D模型', obj: '3D模型', fbx: '3D模型',
   epub: '电子书', pub: '电子书', publisher: '电子书',
+  document: 'Word', text: '文本', plain: '文本', sheet: 'Excel', spreadsheet: 'Excel', presentation: 'PPT', slides: 'PPT',
 }
 
+/** 从文件多来源字段提取真实扩展名（文件名 → URL → file_type → 全字段扫描） */
 function rowExt(file: KnowledgeFile): string {
-  const name = (file.file_name || '').trim()
-  const dot = name.lastIndexOf('.')
-  return (dot > 0 ? name.slice(dot + 1) : (file.fileType || '')).toLowerCase()
+  const pickName = (s: string): string => {
+    const seg = (s || '').split(/[?#]/)[0].split('/').pop() || ''
+    const dot = seg.lastIndexOf('.')
+    return dot > 0 ? seg.slice(dot + 1).toLowerCase() : ''
+  }
+  const fromName = pickName(file.file_name || '')
+    || pickName(file.fileUrl || '')
+    || pickName(file.oss_url || '')
+    || pickName(file.download_url || '')
+  if (fromName) return fromName
+
+  const ft = String((file as any).file_type ?? file.fileType ?? (file as any).ext ?? '').toLowerCase()
+  if (ft && ft !== 'other' && ft !== '-' && ft !== 'unknown') {
+    if (ft === 'markdown') return 'md'
+    if (FORMAT_LABELS[ft]) return ft
+  }
+
+  // 兜底：后端字段名不定时，扫描整行字符串字段，只要带扩展名或格式 token 就识别
+  for (const val of Object.values(file)) {
+    if (typeof val !== 'string' || !val) continue
+    const low = val.trim().toLowerCase()
+    const seg = low.split(/[?#/\\]/).pop() || low
+    const dot = seg.lastIndexOf('.')
+    if (dot > 0 && FORMAT_LABELS[seg.slice(dot + 1)]) return seg.slice(dot + 1)
+    if (FORMAT_LABELS[low]) return low
+  }
+  return ''
 }
 function formatLabelOf(file: KnowledgeFile): string {
-  return FORMAT_LABELS[rowExt(file)] || '其他'
+  const ext = rowExt(file)
+  if (!ext) return '其他'
+  return FORMAT_LABELS[ext] || ext.toUpperCase()
 }
 function collegeOf(file: KnowledgeFile): string {
   return file.collegeName && String(file.collegeName).trim() ? String(file.collegeName).trim() : '未归属'
@@ -1779,16 +1807,12 @@ function saveFiles(files: KnowledgeFile[]) {
       </div>
 
       <el-alert
-        title="点击资料名可在线预览；支持 Markdown/文本、图片、音视频、PDF、Word(.docx)、Excel(.xls/.xlsx)、PPT(.pptx) 在线查看内容，其余格式请下载后查看。如需修改文档内容，请先下载文件，本地修改后再重新上传。"
+        title="可在线预览：Markdown/文本、图片、音视频、PDF、Word(.docx)、Excel(.xls/.xlsx)、PPT(.pptx)；不支持在线预览需下载：Word(.doc)、PPT(.ppt)、压缩包(.zip/.rar/.7z)、设计源(.psd/.ai)、3D模型(.stl/.obj/.fbx)、电子书(.epub/.pub)。预览失败或需修改内容时，请下载后本地查看，修改完成再重新上传。"
         type="success"
         :closable="false"
         show-icon
         class="preview-hint"
       />
-
-      <div class="offline-download-tip">
-        以下类型暂不支持在线查看内容，请下载后查看：Word 旧格式(.doc)、PPT 旧格式(.ppt)、压缩包(.zip/.rar/.7z)、设计源文件(.psd/.ai)、3D 模型(.stl/.obj/.fbx)、电子书(.epub/.pub)。若 .docx/.xlsx/.pptx 等仍无法正常预览，同样请下载后使用本地软件查看。
-      </div>
 
       <div class="search-section">
         <el-input
@@ -2633,17 +2657,6 @@ function saveFiles(files: KnowledgeFile[]) {
 
 .preview-hint {
   margin-bottom: var(--spacing-md);
-}
-
-.offline-download-tip {
-  margin-bottom: var(--spacing-md);
-  padding: 6px 12px;
-  font-size: 12px;
-  line-height: 1.7;
-  color: #e6a23c;
-  background: #fdf6ec;
-  border: 1px solid #faecd8;
-  border-radius: 4px;
 }
 
 .preview-content {
