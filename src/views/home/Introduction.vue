@@ -358,6 +358,8 @@ onMounted(() => {
   box-shadow: var(--st-shadow-container);
   display: flex;
   flex-direction: column;
+  /* 整体等比缩小：不压缩内部布局、不出现滚动裁剪，仅影响本页内嵌登录卡 */
+  transform: scale(0.96);
 }
 /* 内容区撑满卡片：扫码视图在剩余高度中垂直居中，外框不因切换而变 */
 .login-card :deep(.login-card-w) {
