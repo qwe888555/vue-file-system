@@ -19,18 +19,17 @@ interface PublicStats {
   logins: number | null
 }
 
-/* ── 7 项统计指标（index 0~6）：存储总量为左上主打大数字，其余 6 项入次级网格 ── */
+/* ── 6 项统计指标（index 0~5）：存储总量为左上主打大数字，其余 5 项入次级网格 ── */
 const stats = ref([
-  { key: 'users',        label: '用户总数',   caption: '注册师生账号',        value: 0, suffix: '' },
   { key: 'storage',      label: '存储总量',   caption: '文档与附件占用空间',  value: 0, suffix: 'GB' },
+  { key: 'users',        label: '用户总数',   caption: '注册师生账号',        value: 0, suffix: '' },
   { key: 'docs',         label: '资料总数',   caption: '知识库收录文档',      value: 0, suffix: '' },
-  { key: 'queries',      label: '查询总数',   caption: 'AI 问答累计次数',     value: 0, suffix: '' },
+  { key: 'queries',      label: '交互次数',   caption: 'AI 交互累计次数',     value: 0, suffix: '' },
   { key: 'avg_resp',     label: '平均响应时长', caption: 'AI 问答平均响应时长', value: 0, suffix: 's' },
-  { key: 'sensitive',    label: '敏感拦截',   caption: '命中敏感词拦截',      value: 0, suffix: '' },
   { key: 'logins',       label: '登录次数',   caption: '平台累计登录',        value: 0, suffix: '' },
 ])
 
-/** 右上角口径标注：公开统计为全平台累计，无周期概念 */
+/** 统计口径说明：公开统计为全平台累计，无周期概念；作为标题行内尾注展示 */
 const statPeriodLabel = '全平台累计'
 
 // ── 数字滚动动画（尊重 prefers-reduced-motion） ──
@@ -67,11 +66,12 @@ function fmtSize(b: number) {
   const gb = mb / 1024
   return gb < 1024 ? { v: Math.round(gb * 10) / 10, s: 'GB' } : { v: Math.round(gb / 1024 * 10) / 10, s: 'TB' }
 }
-function applyStatsVals(users: number, sizeBytes: number, docs: number, queries: number, avgSec: number, sensitive: number, logins: number) {
+function applyStatsVals(users: number, sizeBytes: number, docs: number, queries: number, avgSec: number, logins: number) {
   const f = fmtSize(sizeBytes)
-  const vals = [users, f.v, docs, queries, avgSec, sensitive, logins]
-  stats.value = stats.value.map((s, i) => ({ ...s, value: vals[i], suffix: i === 1 ? f.s : s.suffix }))
-  animateNumbers([users, f.v, docs, queries, avgSec, sensitive, logins])
+  // 展示顺序：存储总量(index 0) → 用户总数(index 1) → …
+  const vals = [f.v, users, docs, queries, avgSec, logins]
+  stats.value = stats.value.map((s, i) => ({ ...s, value: vals[i], suffix: i === 0 ? f.s : s.suffix }))
+  animateNumbers([f.v, users, docs, queries, avgSec, logins])
 }
 
 /** 统计数据状态：loading 加载中 / ready 已就绪 / error 获取失败 */
@@ -89,7 +89,6 @@ async function fetchStats() {
       s.docs ?? 0,
       s.queries ?? 0,
       s.avg_response_sec ?? 0,
-      s.sensitive_blocks ?? 0,
       s.logins ?? 0,
     )
     statsState.value = 'ready'
@@ -129,26 +128,15 @@ onMounted(() => {
             <div class="stats-head">
               <h2 class="stats-title">
                 <span class="title-tick" aria-hidden="true"></span>平台数据概览
+                <!-- 口径说明并入标题行：平台数据概览 · 全平台累计 -->
+                <span class="title-scope">· {{ statPeriodLabel }}</span>
               </h2>
-              <span class="stats-meta">{{ statPeriodLabel }} · 平台数据</span>
             </div>
 
             <template v-if="statsState === 'ready'">
-              <!-- 主导指标：存储总量 -->
-              <div class="stat-feature">
-                <div class="stat-feature-main">
-                  <span class="stat-feature-label">{{ stats[1].label }}</span>
-                  <div class="stat-feature-value">
-                    <span class="sf-num">{{ (displayVals[1] ?? 0).toLocaleString() }}</span>
-                    <span class="sf-unit">{{ stats[1].suffix }}</span>
-                  </div>
-                </div>
-                <span class="stat-feature-caption">{{ stats[1].caption }}</span>
-              </div>
-
-              <!-- 次级指标网格 -->
+              <!-- 指标网格：6 项统一排布，两排、每排 3 个（含存储总量，左对齐） -->
               <div class="stat-grid">
-                <div v-for="i in [0, 2, 3, 4, 5, 6]" :key="stats[i].key" class="stat-cell">
+                <div v-for="i in [0, 1, 2, 3, 4, 5]" :key="stats[i].key" class="stat-cell">
                   <span class="stat-cell-num">
                     {{ (displayVals[i] ?? 0).toLocaleString() }}
                     <span v-if="stats[i].suffix" class="stat-cell-unit">{{ stats[i].suffix }}</span>
@@ -194,9 +182,7 @@ onMounted(() => {
   --st-ink-1: #ffffff;
   --st-ink-2: rgba(255, 255, 255, 0.75);
   --st-ink-3: rgba(255, 255, 255, 0.55);
-  --st-num-xl: clamp(2.4rem, 5.5vh, 3.4rem);  /* 主导指标数字 */
-  --st-num-md: clamp(1.3rem, 2.8vh, 1.7rem);  /* 网格数字 */
-  --st-num-sm: 1.1rem;                        /* 单位字号 */
+  --st-num-md: 1.5rem;  /* 指标数字：固定字号，避免随视口高度缩放导致不同屏/不同窗口字号不一 */
   --st-label: 0.8rem;
   --st-caption: 0.75rem;
   --st-text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);  /* 照片上文字可读 */
@@ -248,7 +234,12 @@ onMounted(() => {
 @media (min-width: 1024px) {
   .page-grid { grid-template-columns: repeat(5, 1fr); gap: clamp(1.5rem, 3.5vh, 2.5rem); align-items: center; }
 }
-.left-col { grid-column: span 3; }
+.left-col {
+  grid-column: span 3;
+  align-self: flex-start;
+  /* 顶部对齐后下移一段，让面板既不贴底也不悬在行正中（幅度随视口自适应） */
+  margin-top: clamp(135px, 17.5vh, 350px);
+}
 .right-col { grid-column: span 2; align-self: center; }
 
 /* ── Hero 文字 ── */
@@ -284,8 +275,8 @@ onMounted(() => {
 }
 
 .stats-head {
-  display: flex; align-items: baseline; justify-content: space-between;
-  margin-bottom: clamp(20px, 4vh, 42px);
+  /* 标题行在上，与下方数据网格保留明确留白 */
+  margin-bottom: clamp(30px, 5vh, 54px);
 }
 .stats-title {
   margin: 0;
@@ -301,54 +292,25 @@ onMounted(() => {
   border-radius: 2px;
   background: #fff; opacity: 0.9;
 }
-.stats-meta {
-  font-size: var(--st-caption);
+/* 标题内口径尾注：平台数据概览 · 全平台累计 */
+.title-scope {
+  margin-left: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
   color: var(--st-ink-2);
-  letter-spacing: 0.02em;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-/* ── 主导指标：存储总量 ── */
-.stat-feature {
-  display: flex; align-items: flex-end; gap: 16px;
-  margin-bottom: clamp(22px, 4.5vh, 46px);
-}
-.stat-feature-main { display: flex; flex-direction: column; gap: 10px; }
-.stat-feature-label {
-  font-size: 0.9rem; font-weight: 500;
-  color: var(--st-ink-2); letter-spacing: 0.08em;
-  text-shadow: var(--st-text-shadow);
-}
-.stat-feature-value { display: inline-flex; align-items: baseline; }
-.sf-num {
-  font-size: var(--st-num-xl); font-weight: 700; line-height: 1;
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-  color: var(--st-ink-1);
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
-}
-.sf-unit {
-  font-size: var(--st-num-sm); font-weight: 600;
-  color: var(--st-ink-2);
-  margin-left: 6px;
-}
-.stat-feature-caption {
-  margin-left: auto;
-  align-self: flex-end;
-  font-size: var(--st-caption);
-  color: var(--st-ink-3);
-  letter-spacing: 0.02em;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
-}
-
-/* ── 次级指标网格 ── */
+/* ── 指标网格：两排 × 每排 3 个，数值与标题左对齐 ── */
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: clamp(20px, 3.6vh, 36px) 12px;
 }
 .stat-cell {
-  text-align: center;
+  /* 数据项左对齐：数值与标题同一起点，避免随数值长度左右漂移造成错位 */
+  text-align: left;
   min-width: 0;
 }
 .stat-cell-num {
