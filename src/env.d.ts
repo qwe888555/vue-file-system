@@ -8,3 +8,7 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+// 无类型声明的子路径模块（预览降级加载用）
+declare module 'mammoth/mammoth.browser.js'
+declare module 'xlsx/xlsx.mjs'

@@ -24,7 +24,6 @@
         <div class="keywords-container">
           <div v-for="(kw, index) in form.keywords" :key="kw.id || index" class="keyword-item">
             <el-input
-              :ref="(el) => keywordRefs[index] = el as HTMLInputElement"
               v-model="kw.phrase"
               class="keyword-input"
               placeholder="关键词"
@@ -81,7 +80,6 @@ const form = ref({
 })
 
 const originalKeywords = ref<Keyword[]>([])
-const keywordRefs = ref<HTMLInputElement[]>([])
 
 watch(
   () => props.visible,
@@ -103,7 +101,6 @@ function resetForm() {
   form.value.description = ''
   form.value.keywords = []
   originalKeywords.value = []
-  keywordRefs.value = []
 }
 
 function addKeyword() {
