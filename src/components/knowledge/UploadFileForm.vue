@@ -205,8 +205,12 @@ function handleClose() {
               class="description-input"
             />
             <el-radio-group v-model="form.scope" class="scope-group">
-              <el-radio label="public">公开</el-radio>
-              <el-radio label="private">私密</el-radio>
+              <el-tooltip content="公开文件：全校共享资源，登录后全校所有师生均可在知识库中查看、搜索和下载。" placement="top" effect="dark">
+                <el-radio label="public">公开</el-radio>
+              </el-tooltip>
+              <el-tooltip content="私密文件：仅文件所属学院（本单位）的成员可以查看和下载，其他学院用户不可见。" placement="top" effect="dark">
+                <el-radio label="private">私密</el-radio>
+              </el-tooltip>
             </el-radio-group>
           </div>
         </div>
@@ -249,8 +253,12 @@ function handleClose() {
               class="description-input"
             />
             <el-radio-group v-model="form.scope" class="scope-group">
-              <el-radio label="public">公开</el-radio>
-              <el-radio label="private">私密</el-radio>
+              <el-tooltip content="公开文件：全校共享资源，登录后全校所有师生均可在知识库中查看、搜索和下载。" placement="top" effect="dark">
+                <el-radio label="public">公开</el-radio>
+              </el-tooltip>
+              <el-tooltip content="私密文件：仅文件所属学院（本单位）的成员可以查看和下载，其他学院用户不可见。" placement="top" effect="dark">
+                <el-radio label="private">私密</el-radio>
+              </el-tooltip>
             </el-radio-group>
           </div>
         </div>

@@ -49,7 +49,7 @@ const loading = ref(false)
 const listError = ref('')
 
 const createMode = ref(false)
-const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string; title: string; keywords: string; description: string; scope: 'public' | 'private'; isAnalyzing: boolean; uploadError?: string }[]>([])
+const selectedFiles = ref<{ file: File; docId?: number; previewContent?: string; title: string; keywords: string; keywordOptions: string[]; checkedKeywords: string[]; description: string; scope: 'public' | 'private'; isAnalyzing: boolean; uploadError?: string }[]>([])
 const selectedFileIndex = ref(0)
 
 // ── 文件列表区域拖拽上传状态 ──
@@ -268,6 +268,8 @@ async function handleFileChange(file: File) {
     file,
     title: baseName,
     keywords: '',
+    keywordOptions: [] as string[],
+    checkedKeywords: [] as string[],
     description: '',
     scope: 'public' as const,
     isAnalyzing: !errorMsg,
@@ -288,7 +290,7 @@ async function handleFileChange(file: File) {
 
 /** 对单个文件执行 AI 分类，结果直接写回 fileItem */
 async function classifyFile(
-  fileItem: { title: string; keywords: string; description: string; scope: 'public' | 'private'; isAnalyzing: boolean; uploadError?: string },
+  fileItem: { title: string; keywords: string; keywordOptions: string[]; checkedKeywords: string[]; description: string; scope: 'public' | 'private'; isAnalyzing: boolean; uploadError?: string },
   file: File,
 ) {
   try {
@@ -328,7 +330,9 @@ async function classifyFile(
       fileItem.title = result.title
     }
     if (result.keywords && result.keywords.length > 0) {
-      fileItem.keywords = result.keywords.join(', ')
+      const kws = result.keywords.map((kw) => kw.trim()).filter((kw) => kw)
+      fileItem.keywordOptions = kws
+      fileItem.checkedKeywords = [...kws]
     }
     if (result.description) {
       fileItem.description = result.description
@@ -846,6 +850,13 @@ async function handlePreviewDoc(id: number, title: string) {
   previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
 }
 
+function keywordsOf(item: { keywords: string; keywordOptions: string[]; checkedKeywords: string[] }): string[] {
+  if (item.keywordOptions.length > 0) {
+    return item.checkedKeywords.map((kw) => kw.trim()).filter((kw) => kw)
+  }
+  return item.keywords.split(/[,，、\s]+/).map((kw) => kw.trim()).filter((kw) => kw)
+}
+
 function handlePreviewClose() {
   releasePreviewObjectUrl()
   previewFileUrl.value = ''
@@ -926,11 +937,7 @@ async function handleUploadSubmit() {
     }
 
     for (const item of selectedFiles.value) {
-      if (!item.keywords) {
-        ElMessage.warning(`文件 "${item.title || item.file.name}" 缺少关键词，请先确认信息`)
-        return
-      }
-      const itemKeywords = item.keywords.split(/[,，、\s]+/).map(kw => kw.trim()).filter(kw => kw)
+      const itemKeywords = keywordsOf(item)
       if (itemKeywords.length === 0) {
         ElMessage.warning(`文件 "${item.title || item.file.name}" 缺少关键词，请先确认信息`)
         return
@@ -1017,11 +1024,8 @@ async function handleUploadSubmit() {
         const file = item.file
         const fileName = file.name.replace(/\.[^/.]+$/, '')
 
-        // 将用户修改后的关键词整理成数组
-        const uploadKeywords = item.keywords
-          .split(/[,，、\s]+/)
-          .map((kw: string) => kw.trim())
-          .filter((kw: string) => kw)
+        // 将用户勾选后的关键词整理成数组
+        const uploadKeywords = keywordsOf(item)
 
         let result: KnowledgeFile
 
@@ -1695,7 +1699,16 @@ function saveFiles(files: KnowledgeFile[]) {
             </div>
             <div class="form-item">
               <label class="form-label">关键词</label>
+              <el-checkbox-group
+                v-if="currentFileForm.keywordOptions.length > 0"
+                v-model="currentFileForm.checkedKeywords"
+                class="keyword-checkbox-group"
+                :disabled="currentFileForm.isAnalyzing"
+              >
+                <el-checkbox v-for="kw in currentFileForm.keywordOptions" :key="kw" :value="kw" class="keyword-checkbox">{{ kw }}</el-checkbox>
+              </el-checkbox-group>
               <el-input
+                v-else
                 v-model="currentFileForm.keywords"
                 placeholder="关键词，用逗号或空格分隔"
                 class="form-input"
@@ -1705,8 +1718,12 @@ function saveFiles(files: KnowledgeFile[]) {
             <div class="form-item">
               <label class="form-label">公开/私密</label>
               <el-radio-group v-model="currentFileForm.scope" class="scope-group">
-                <el-radio value="public">公开</el-radio>
-                <el-radio value="private">私密</el-radio>
+                <el-tooltip content="公开文件：全校共享资源，登录后全校所有师生均可在知识库中查看、搜索和下载。" placement="top" effect="dark">
+                  <el-radio value="public">公开</el-radio>
+                </el-tooltip>
+                <el-tooltip content="私密文件：仅文件所属学院（本单位）的成员可以查看和下载，其他学院用户不可见。" placement="top" effect="dark">
+                  <el-radio value="private">私密</el-radio>
+                </el-tooltip>
               </el-radio-group>
             </div>
             <div class="form-item">
@@ -1770,8 +1787,12 @@ function saveFiles(files: KnowledgeFile[]) {
             <div class="form-item">
               <label class="form-label">公开/私密</label>
               <el-radio-group v-model="uploadForm.scope" class="scope-group">
-                <el-radio value="public">公开</el-radio>
-                <el-radio value="private">私密</el-radio>
+                <el-tooltip content="公开文件：全校共享资源，登录后全校所有师生均可在知识库中查看、搜索和下载。" placement="top" effect="dark">
+                  <el-radio value="public">公开</el-radio>
+                </el-tooltip>
+                <el-tooltip content="私密文件：仅文件所属学院（本单位）的成员可以查看和下载，其他学院用户不可见。" placement="top" effect="dark">
+                  <el-radio value="private">私密</el-radio>
+                </el-tooltip>
               </el-radio-group>
             </div>
             <div class="form-item">
@@ -2274,6 +2295,18 @@ function saveFiles(files: KnowledgeFile[]) {
   display: flex;
   gap: 16px;
 }
+
+.keyword-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.keyword-checkbox {
+  margin-right: 0;
+  height: auto;
+}
+
 
 .upload-dragger {
   width: 100%;
