@@ -117,6 +117,8 @@ const currentFileForm = computed(() => {
 const uploadForm = ref({
   title: '',
   keywords: '',
+  keywordOptions: [] as string[],
+  checkedKeywords: [] as string[],
   description: '',
   content: '',
   scope: 'public',
@@ -129,6 +131,8 @@ function resetUploadForm() {
   uploadForm.value = {
     title: '',
     keywords: '',
+    keywordOptions: [],
+    checkedKeywords: [],
     description: '',
     content: '',
     scope: 'public',
@@ -882,7 +886,9 @@ async function handleConfirmInfo() {
       uploadForm.value.title = '未命名文档'
     }
     if (result.keywords && result.keywords.length > 0) {
-      uploadForm.value.keywords = result.keywords.join(', ')
+      const kws = result.keywords.map((kw) => kw.trim()).filter((kw) => kw)
+      uploadForm.value.keywordOptions = kws
+      uploadForm.value.checkedKeywords = [...kws]
     }
     if (result.description) {
       uploadForm.value.description = result.description
@@ -910,17 +916,21 @@ async function handleUploadSubmit() {
   let keywords: string[] = []
   
   if (createMode.value) {
-    if (!uploadForm.value.keywords) {
-      ElMessage.warning('请输入关键词')
-      return
+    if (uploadForm.value.keywordOptions.length > 0) {
+      keywords = uploadForm.value.checkedKeywords.map((kw) => kw.trim()).filter((kw) => kw)
+    } else {
+      if (!uploadForm.value.keywords) {
+        ElMessage.warning('请输入关键词')
+        return
+      }
+      keywords = uploadForm.value.keywords
+        .split(/[,，、\s]+/)
+        .map((kw) => kw.trim())
+        .filter((kw) => kw)
     }
-    keywords = uploadForm.value.keywords
-      .split(/[,，、\s]+/)
-      .map((kw) => kw.trim())
-      .filter((kw) => kw)
 
     if (keywords.length === 0) {
-      ElMessage.warning('请输入关键词')
+      ElMessage.warning(uploadForm.value.keywordOptions.length > 0 ? '请至少勾选一个关键词' : '请输入关键词')
       return
     }
   } else {
@@ -1778,7 +1788,15 @@ function saveFiles(files: KnowledgeFile[]) {
             </div>
             <div class="form-item">
               <label class="form-label">关键词</label>
+              <el-checkbox-group
+                v-if="uploadForm.keywordOptions.length > 0"
+                v-model="uploadForm.checkedKeywords"
+                class="keyword-checkbox-group"
+              >
+                <el-checkbox v-for="kw in uploadForm.keywordOptions" :key="kw" :value="kw" class="keyword-checkbox">{{ kw }}</el-checkbox>
+              </el-checkbox-group>
               <el-input
+                v-else
                 v-model="uploadForm.keywords"
                 placeholder="关键词，用逗号或空格分隔"
                 class="form-input"
