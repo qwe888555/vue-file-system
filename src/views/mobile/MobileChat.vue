@@ -561,6 +561,15 @@ onUnmounted(() => {
 .m-messages { flex: 1; overflow-y: auto; padding: 8px 0; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .m-msgs-inner { padding: 0 8px; display: flex; flex-direction: column; gap: 12px; min-height: 100%; }
 
+/* ── 问答区宽度自适应（手机 / 平板宽屏共用） ──
+   MessageBubble 为移动与桌面共用，其默认样式面向桌面：AI 内容限制在行宽 85%、
+   AI 行右侧再留白 60px，在窄屏手机上气泡只占整行约 67%，偏窄。
+   这里仅覆盖移动端：AI 行右侧留白收窄、内容区放宽到接近整行，并按设备宽度自适应，
+   用 820px 上限兜住平板等宽屏的行长，避免阅读行过宽。 */
+.m-msgs-inner :deep(.msg-row-ai) { padding-right: 14px; }
+.m-msgs-inner :deep(.msg-content-area) { max-width: min(100%, 820px); }
+.m-msgs-inner :deep(.msg-row-user .msg-content-area) { max-width: 88%; }
+
 /* 欢迎页：撑满消息区并垂直居中，紧凑留白，一屏完整展示且无上下滚动 */
 .m-welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; padding: 12px 20px 20px; text-align: center; }
 .m-welcome-icon { margin-bottom: 12px; }
