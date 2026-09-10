@@ -109,6 +109,7 @@ export interface KnowledgeFile {
   oss_url?: string           // 签名内联预览 URL（7天有效）
   download_url?: string      // 附件下载 URL，带原始文件名（7天有效）
   file_name?: string         // 原始文件名
+  file_ext?: string          // 真实扩展名（小写不含点，后端从 file_name 解析，空时兜底为 file_type 类别码）
   oss_key?: string           // OSS 对象键（UUID）
 }
 
