@@ -239,6 +239,16 @@ function formatLabelOf(file: KnowledgeFile): string {
   if (!ext) return '其他'
   return FORMAT_LABELS[ext] || ext.toUpperCase()
 }
+
+/** 表格"文件格式"列：直接展示后端 file_ext 真实扩展名（PPTX/XLSX/DOCX...）；类别码兜底时映射中文 */
+function formatCellExt(file: KnowledgeFile): string {
+  const ext = String(file.file_ext || '').toLowerCase().replace(/^\./, '')
+  if (!ext) return formatLabelOf(file)
+  if (['image', 'video', 'audio', 'other'].includes(ext)) {
+    return FORMAT_LABELS[ext] || ext.toUpperCase()
+  }
+  return ext.toUpperCase()
+}
 function collegeOf(file: KnowledgeFile): string {
   return file.collegeName && String(file.collegeName).trim() ? String(file.collegeName).trim() : '未归属'
 }
@@ -626,7 +636,7 @@ function saveFiles(files: KnowledgeFile[]) {
 
         <el-table-column label="文件格式" min-width="100" align="center">
           <template #default="scope">
-            <el-tag size="small" effect="plain">{{ formatLabelOf(scope.row) }}</el-tag>
+            <el-tag size="small" effect="plain">{{ formatCellExt(scope.row) }}</el-tag>
           </template>
         </el-table-column>
 
