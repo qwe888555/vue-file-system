@@ -268,12 +268,18 @@ async function pickJsonFileUrl(buf: ArrayBuffer): Promise<string | null> {
  * doc/ppt 旧二进制、压缩包、设计源/3D/电子书等 → 提示不支持在线预览。
  * 下载接口返回 JSON 链接时，自动改为拉取链接内容再解析。
  */
-async function renderLocalBytes(id: number, extHint: string) {
+async function renderLocalBytes(id: number, extHint: string, inlineUrl = '') {
   let blob: Blob
   try {
     blob = await downloadDocApi(id)
   } catch (e: any) {
     console.error('获取文件内容失败:', e)
+    // PDF 有预览接口的内联签名地址时直接 iframe 展示（与图片/视频同机制，不受跨域限制）
+    if ((extHint || '').toLowerCase() === 'pdf' && inlineUrl) {
+      previewFileUrl.value = inlineUrl
+      previewMediaKind.value = 'pdf'
+      return
+    }
     previewContent.value = previewPlaceholder(`预览失败：${e?.message || '网络异常'}，请下载后查看`)
     return
   }
@@ -301,6 +307,12 @@ async function renderLocalBytes(id: number, extHint: string) {
       if (remoteBuf.byteLength > 0) buf = remoteBuf
     } catch (e) {
       console.error('拉取文件真实地址失败（可能是 OSS 跨域限制）:', e)
+      // PDF 有预览接口的内联签名地址时直接 iframe 展示（与图片/视频同机制，不受跨域限制）
+      if ((extHint || '').toLowerCase() === 'pdf' && inlineUrl) {
+        previewFileUrl.value = inlineUrl
+        previewMediaKind.value = 'pdf'
+        return
+      }
       previewContent.value = previewPlaceholder('该文件以链接方式存储，受浏览器跨域限制暂无法在线预览，请下载后查看')
       return
     }
@@ -393,10 +405,12 @@ async function openDoc(id: number, title: string) {
   if (fileName) previewFileName.value = fileName
   const content = result?.content || ''
   const realExt = (ext || '').toLowerCase()
+  // 预览接口返回的签名地址（内联预览用），PDF 无法本地解析时作为 iframe 兜底
+  const inlineUrl = /^https?:\/\//i.test(content) ? content : ''
 
   // 1. 二进制 Office / PDF：一律同源取字节本地解析，规避后端 preview_type 误标 text 造成乱码
   if (OFFICE_PDF_EXTS.includes(realExt)) {
-    await renderLocalBytes(id, realExt)
+    await renderLocalBytes(id, realExt, inlineUrl)
     return
   }
 
@@ -432,7 +446,7 @@ async function openDoc(id: number, title: string) {
 
   // 4. 其余二进制（pdf/office 在第 1 步已拦截，此处兜底再按字节嗅探一次）
   if (kind === 'pdf' || kind === 'office' || (realExt && BINARY_EXT_SET.has(realExt))) {
-    await renderLocalBytes(id, realExt)
+    await renderLocalBytes(id, realExt, inlineUrl)
     return
   }
 
