@@ -10,10 +10,9 @@ import { isAdminRole } from '@/config/roles'
 import type { KnowledgeFile, SuggestedItem, ImageItem } from '@/types'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
-import AppRail from '@/components/chat/AppRail.vue'
+import ChatMergedSidebar from '@/components/chat/ChatMergedSidebar.vue'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ChatLoginDialog from '@/components/chat/ChatLoginDialog.vue'
-import SidebarUser from '@/components/common/SidebarUser.vue'
 import { useChatUiStore } from '@/store/chatUi'
 
 defineOptions({ name: 'ChatHome' })
@@ -155,6 +154,17 @@ const renamingId = ref<number | null>(null)
 const renameText = ref('')
 const renameInput = ref<HTMLInputElement | null>(null)
 
+// 会话操作已迁移到 ChatMergedSidebar 组件（保持 ChatGPT 风格侧边栏内自闭环）
+// 这里仅保留被 chat 流式 / 发送等场景调用的极简包装
+function handleNewConversation() { chat.createConversation() }
+async function handleSelectConversation(id: number) {
+  await chat.selectConversation(id)
+  chatUi.clearConvUnread(id)
+}
+async function handleDeleteConversation(id: number) {
+  await chat.deleteConversation(id)
+  chatUi.clearConvUnread(id)
+}
 function startRename(conv: any) {
   renamingId.value = conv.id
   renameText.value = conv.title || ''
@@ -175,21 +185,6 @@ function confirmRename(id: number) {
 /** 取消改名（恢复原名） */
 function cancelRename() {
   renamingId.value = null
-}
-
-function handleNewConversation() {
-  // 不杀其他后台流：切走时让其继续生成，落库后切回可见
-  chat.createConversation()
-}
-async function handleSelectConversation(id: number) {
-  // 不杀原会话流：切走时让其继续生成，落库后切回可见
-  await chat.selectConversation(id)
-  // 切回该会话即视为已读，清除其 conv 红点
-  chatUi.clearConvUnread(id)
-}
-async function handleDeleteConversation(id: number) {
-  await chat.deleteConversation(id)
-  chatUi.clearConvUnread(id)
 }
 
 /** 滚动对话区到底部 */
@@ -455,7 +450,7 @@ function handleBlankClick(e: MouseEvent) {
   if (renamingId.value === null) return
   const el = e.target as HTMLElement
   // 点击这些元素不取消
-  if (el.closest('.conv-rename-input, .conv-rename-confirm, .sidebar-new-chat, .conv-item-edit, .conv-item-icon')) return
+  if (el.closest('.conv-rename-input, .conv-rename-confirm, .nav-new-btn, .conv-item-edit, .conv-item-icon')) return
   cancelRename()
 }
 
@@ -532,79 +527,8 @@ watch(
         <div></div><div></div><div></div><div></div><div></div><div></div><div></div>
       </div>
     </div>
-    <!-- 左侧常驻 rail（主导航，Q1B/Q9A：64px 收起态 + hover 浮层） -->
-    <AppRail />
-    <!-- ═══ 左侧边栏（对话列表）═══ -->
-    <aside class="chat-sidebar" :class="{ collapsed: !sidebarOpen }">
-      <!-- 顶部 -->
-      <div class="sidebar-logo">
-        <span class="sidebar-logo-text">NeuHub</span>
-        <span class="sidebar-logo-sub">资源系统</span>
-      </div>
-
-      <!-- 搜索 -->
-      <div class="sidebar-search">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-          <path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398h-.001l3.85 3.85a1 1 0 001.415-1.414l-3.85-3.85zm-5.242.156a5 5 0 110-10 5 5 0 010 10z"/>
-        </svg>
-        <input v-model="chat.searchKeyword.value" type="text" placeholder="搜索对话" />
-      </div>
-
-      <!-- 新建对话 -->
-      <button class="sidebar-new-chat" @click="handleNewConversation">
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-          <path d="M8 2a.75.75 0 01.75.75v4.5h4.5a.75.75 0 010 1.5h-4.5v4.5a.75.75 0 01-1.5 0v-4.5h-4.5a.75.75 0 010-1.5h4.5v-4.5A.75.75 0 018 2z"/>
-        </svg>
-        <span>新建对话</span>
-      </button>
-
-      <!-- 对话列表 -->
-      <div class="sidebar-conversations">
-        <div
-          v-for="conv in chat.filteredConversations.value"
-          :key="conv.id"
-          class="conv-item"
-          :class="{ active: conv.id === chat.currentConversationId.value, unread: chatUi.unreadConvIds[conv.id] }"
-          @click="renamingId !== conv.id && handleSelectConversation(conv.id)"
-        >
-          <div class="conv-item-icon">
-            <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-              <path d="M2 3.5A1.5 1.5 0 013.5 2h9A1.5 1.5 0 0114 3.5v7a1.5 1.5 0 01-1.5 1.5h-3.586a1.5 1.5 0 00-1.06.44L5 15V12H3.5A1.5 1.5 0 012 10.5v-7z"/>
-            </svg>
-            <span v-if="chatUi.unreadConvIds[conv.id]" class="conv-unread-dot" />
-          </div>
-          <div class="conv-item-content">
-            <div v-if="renamingId === conv.id" class="conv-rename-row">
-              <input
-                class="conv-rename-input"
-                v-model="renameText"
-                @keyup.enter="confirmRename(conv.id)"
-                @click.stop
-                ref="renameInput"
-              />
-              <button class="conv-rename-confirm" @click.stop="confirmRename(conv.id)" title="保存">
-                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-                  <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
-                </svg>
-              </button>
-            </div>
-            <span v-else class="conv-item-title">{{ conv.title || '新对话' }}</span>
-            <span class="conv-item-time">{{ conv.updatedAt?.slice(5, 10) }}</span>
-          </div>
-          <button v-if="renamingId !== conv.id" class="conv-item-edit" @click.stop="startRename(conv)" title="重命名">
-            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M12.146.854a.5.5 0 01.708 0l2.292 2.292a.5.5 0 010 .708l-10 10a.5.5 0 01-.168.11l-4 1.5a.5.5 0 01-.64-.64l1.5-4a.5.5 0 01.11-.168l10-10z"/></svg>
-          </button>
-          <button v-if="renamingId !== conv.id" class="conv-item-del" @click.stop="handleDeleteConversation(conv.id)">×</button>
-        </div>
-        <div v-if="chat.loading.value" class="sidebar-loading">
-          <span class="load-dot" /><span class="load-dot" /><span class="load-dot" />
-        </div>
-        <div v-if="chat.filteredConversations.value.length === 0 && !chat.loading.value" class="sidebar-empty">
-          暂无对话
-        </div>
-      </div>
-      <SidebarUser @login="showLoginDialog = true" />
-    </aside>
+    <!-- ═══ 合并侧边栏（ChatGPT 风格）：Logo + 6 导航按钮 + 新建对话 + 历史列表 + 用户 ═══ -->
+    <ChatMergedSidebar v-model:open="sidebarOpen" />
     <!-- ═══ 右侧主区域 ═══ -->
     <div class="chat-main" :class="{ 'sidebar-collapsed': !sidebarOpen }">
       <!-- 顶部栏（Q2A：原「退出问答」已移除，出口交给左侧常驻 rail） -->
@@ -794,232 +718,9 @@ watch(
   right: 10%;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(64, 158, 255, 0.3), transparent);
-}
-.sidebar-logo {
-  height: 72px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 0 16px;
-  flex-shrink: 0;
-  gap: 2px;
-}
-.sidebar-logo-text {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--color-primary-deep, #2563eb);
-  letter-spacing: 2px;
-  line-height: 1.2;
-}
-.sidebar-logo-sub {
-  font-size: 13px;
-  font-weight: 500;
-  color: #8e95a6;
-  letter-spacing: 4px;
-}
-/* 退出按钮 */
-.sidebar-exit {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  margin: 0 8px 4px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--color-text-secondary, #64748b);
-  transition: background-color 0.15s, color 0.15s;
-}
-.sidebar-exit:hover {
-  background: rgba(64, 158, 255, 0.06);
-  color: #409eff;
-}
+}
 
-/* 搜索 */
-.sidebar-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 12px 16px;
-  padding: 8px 12px;
-  background: rgba(64, 158, 255, 0.06);
-  border-radius: 8px;
-  color: var(--color-text-secondary, #64748b);
-}
-.sidebar-search input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  outline: none;
-  font-size: 13px;
-  color: #1f1f1f;
-}
-.sidebar-search input::placeholder { color: var(--color-text-placeholder, #6b7280); }
-
-/* 新建对话按钮 */
-.sidebar-new-chat {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin: 0 16px 12px;
-  padding: 10px;
-  background: rgba(64, 158, 255, 0.12);
-  color: #409eff;
-  border: none;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.sidebar-new-chat:hover { background: rgba(64, 158, 255, 0.2); }
-
-/* 对话列表 */
-.sidebar-conversations {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 8px;
-}
-.conv-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 8px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s;
-  position: relative;
-  overflow: hidden;
-  min-width: 0;
-}
-.conv-item:hover { background: #f5f5f5; }
-.conv-item.active { background: #f0f0f0; }
-
-.conv-item-icon {
-  width: 28px; height: 28px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--color-text-secondary, #64748b);
-  flex-shrink: 0;
-  position: relative;
-}
-.conv-unread-dot {
-  position: absolute;
-  top: 4px; right: 4px;
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: var(--color-danger, #f56c6c);
-  box-shadow: 0 0 0 2px #fff;
-  pointer-events: none;
-}
-.conv-item-content {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.conv-item-title {
-  font-size: 13px;
-  color: #1f1f1f;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.conv-item-time {
-  font-size: 11px;
-  color: var(--color-text-secondary, #64748b);
-}
-.conv-item-del {
-  opacity: 0;
-  background: none;
-  border: none;
-  color: var(--color-text-secondary, #64748b);
-  font-size: 16px;
-  cursor: pointer;
-  padding: 0 4px;
-  flex-shrink: 0;
-  transition: opacity 0.15s;
-}
-.conv-item:hover .conv-item-del,
-.conv-item:hover .conv-item-edit { opacity: 1; }
-.conv-item-del:hover { color: #f56c6c; }
-
-.conv-item-edit {
-  opacity: 0; background: none; border: none; color: var(--color-text-secondary, #64748b);
-  cursor: pointer; padding: 0 2px; transition: opacity 0.15s; flex-shrink: 0;
-}
-.conv-item-edit:hover { color: #409eff; }
-.conv-rename-row {
-  display: flex; align-items: center; gap: 4px;
-  min-width: 0; overflow: hidden;
-}
-.conv-rename-input {
-  flex: 1; min-width: 0; height: 24px; padding: 0 4px; border: 1px solid #409eff;
-  border-radius: 4px; font-size: 13px; outline: none; background: #fff;
-}
-.conv-rename-confirm {
-  position: relative;
-  width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
-  border: none; border-radius: 4px; background: #409eff; color: #fff;
-  cursor: pointer; flex-shrink: 0; transition: background 0.15s;
-}
-.conv-rename-confirm::before { content: ""; position: absolute; inset: -10px; }
-.conv-rename-confirm:hover { background: var(--color-primary-dark, #337ecc); }
-
-.sidebar-loading { display: flex; justify-content: center; gap: 4px; padding: 20px; }
-.load-dot {
-  width: 5px; height: 5px; border-radius: 50%;
-  background: var(--color-text-secondary, #64748b); animation: dotPulse 1.2s ease-in-out infinite;
-}
-.load-dot:nth-child(2) { animation-delay: 0.2s; }
-.load-dot:nth-child(3) { animation-delay: 0.4s; }
-@keyframes dotPulse {
-  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-  40% { transform: scale(1); opacity: 1; }
-}
-.sidebar-empty { text-align: center; padding: 24px; font-size: 13px; color: var(--color-text-secondary, #64748b); }
-
-/* 底部用户 */
-.sidebar-user {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
-  border-top: 1px solid #f0f0f0;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.sidebar-user-area { position: relative; }
-.sidebar-user:hover { background: #f0f4fe; }
-.user-popup {
-  position: absolute; bottom: calc(100% + 4px); left: 8px; right: 8px;
-  background: #fff; border-radius: 10px;
-  box-shadow: 0 -2px 16px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.06);
-  overflow: hidden; z-index: 20;
-}
-.user-popup-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 12px 16px; cursor: pointer; font-size: 14px; color: #1a2332;
-  transition: background 0.15s;
-}
-.user-popup-item:hover { background: #f0f4fe; color: var(--color-primary-deep, #2563eb); }
-.user-popup-item:first-child { border-bottom: 1px solid #f0f0f0; }
-.menu-up-enter-active, .menu-up-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
-.menu-up-enter-from, .menu-up-leave-to { opacity: 0; transform: translateY(8px); }
-.su-avatar {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: rgba(64, 158, 255, 0.15);
-  display: flex; align-items: center; justify-content: center;
-  color: #409eff; flex-shrink: 0; font-size: 15px; font-weight: 600;
-}
-.su-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.su-name { font-size: 13px; font-weight: 600; color: #1f1f1f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.su-role { font-size: 11px; color: var(--color-text-secondary, #64748b); }
-.su-status { font-size: 11px; color: #67c23a; background: #f0f9eb; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
-.su-avatar-text { font-size: 16px; font-weight: 700; color: #333; }
-.su-name { font-size: 15px; font-weight: 500; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 旧侧边栏样式已迁移到 ChatMergedSidebar 组件 ── */
 /* ═══════════════════ 右侧主区域 ═══════════════════ */
 .chat-main {
   flex: 1;
