@@ -106,20 +106,8 @@ export function actionFaqDraftApi(
 
 
 // ══════════════════════════════════════
-//  FAQ 自动生成 — /api/faq/generate/ & /api/faq/generation-logs/
+//  FAQ 自动生成 — /api/faq/generate/（文档 5.1，super_admin 专属）
 // ══════════════════════════════════════
-
-export interface FaqGenerationLog {
-  id: number
-  status: 'running' | 'completed' | 'failed'
-  total_questions: number
-  clusters_found: number
-  drafts_generated: number
-  error_message: string | null
-  started_at: string
-  completed_at: string | null
-  duration_seconds: number | null
-}
 
 /**
  * 触发 FAQ 自动生成（聊天记录管线）
@@ -133,20 +121,4 @@ export function triggerFaqGenerationApi(): Promise<{
   message: string
 }> {
   return request.post('/faq/generate/')
-}
-
-/**
- * 获取生成日志列表 —— 文档 5.3：标准分页；status 可选筛选，取值同日志状态枚举
- */
-export function getFaqGenerationLogsApi(params?: {
-  page?: number
-  page_size?: number
-  status?: FaqGenerationLog['status']
-}): Promise<{ count: number; results: FaqGenerationLog[] }> {
-  return request.get('/faq/generation-logs/', { params })
-}
-
-/** 获取单条生成日志详情 */
-export function getFaqGenerationLogDetailApi(id: number): Promise<FaqGenerationLog> {
-  return request.get(`/faq/generation-logs/${id}/`)
 }
