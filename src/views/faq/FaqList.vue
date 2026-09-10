@@ -67,7 +67,16 @@
         </div>
       </div>
 
-      <div v-if="!loading && filteredItems.length === 0" class="faq-empty">
+      <!-- 游客 / 401：陈旧 Token 被 DRF 拦截 → 引导登录（与移动端一致） -->
+      <div v-if="authError" class="faq-empty">
+        <div class="faq-empty-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9l3 3-3 3M13 15h4"/><rect x="3" y="3" width="18" height="18" rx="4"/></svg>
+        </div>
+        <p class="faq-empty-text">登录后可查看更多常见问题</p>
+        <el-button type="primary" @click="goLogin">去登录</el-button>
+      </div>
+
+      <div v-else-if="!loading && filteredItems.length === 0" class="faq-empty">
         <div class="faq-empty-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/></svg>
         </div>
@@ -75,11 +84,11 @@
       </div>
 
       <!-- 分页 -->
-      <div class="faq-pagination">
+      <div v-if="!authError" class="faq-pagination">
         <el-pagination
           v-model:current-page="page"
           v-model:page-size="pageSize"
-          :total="allFiltered.length"
+          :total="items.length"
           layout="total, sizes, prev, pager, next, jumper"
           :page-sizes="[10, 15, 20]"
           @current-change="handlePageChange"
@@ -93,9 +102,12 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { Search } from '@element-plus/icons-vue'
 import { getFaqCategoriesApi, getFaqItemsApi } from '@/api/faq'
 import type { FaqCategory, FaqItem } from '@/api/faq'
+
+const router = useRouter()
 
 const categories = ref<FaqCategory[]>([])
 const items = ref<FaqItem[]>([])
@@ -103,6 +115,8 @@ const activeCategory = ref<number | null>(null)
 const expandedId = ref<number | null>(null)
 const searchQuery = ref('')
 const loading = ref(true)
+// 401（陈旧 Token 被 DRF 拦下）时展示登录引导，避免误导性的「暂无相关问题」
+const authError = ref(false)
 
 const page = ref(1)
 const pageSize = ref(10)
@@ -123,6 +137,9 @@ onMounted(async () => {
     if (seq === searchSeq) items.value = faqs || []
   } catch (e) {
     console.error('获取 FAQ 分类失败', e)
+    if (seq === searchSeq && (e as { response?: { status?: number } })?.response?.status === 401) {
+      authError.value = true
+    }
   } finally {
     if (seq === searchSeq) loading.value = false
   }
@@ -143,6 +160,7 @@ async function loadItems() {
   const seq = ++searchSeq
   page.value = 1
   loading.value = true
+  authError.value = false
   try {
     const res = await getFaqItemsApi({
       status: 'published',
@@ -152,7 +170,12 @@ async function loadItems() {
     if (seq === searchSeq) items.value = res || []
   } catch (e) {
     console.error('获取 FAQ 列表失败', e)
-    if (seq === searchSeq) items.value = []
+    if (seq === searchSeq) {
+      items.value = []
+      if ((e as { response?: { status?: number } })?.response?.status === 401) {
+        authError.value = true
+      }
+    }
   } finally {
     if (seq === searchSeq) loading.value = false
   }
@@ -184,19 +207,16 @@ function searchTag(tag: string) {
   loadItems()
 }
 
-// 搜索 + 分类过滤后的全部数据（用于分页统计）
-const allFiltered = computed(() => {
-  let result = items.value
-  if (activeCategory.value !== null) {
-    result = result.filter((item) => item.category === activeCategory.value)
-  }
-  return result
-})
+// 桌面端登录为嵌入首页的登录卡片（与 Sidebar 的 @login 约定一致）
+function goLogin() {
+  router.push('/')
+}
 
-// 当前页展示的数据（搜索 + 客户端分页）
+// 当前页展示的数据（客户端分页）
+// 分类与关键词筛选均已交由后端（文档 3.2 支持 ?category= / ?q=），此处只做分页切片
 const filteredItems = computed(() => {
   const start = (page.value - 1) * pageSize.value
-  return allFiltered.value.slice(start, start + pageSize.value)
+  return items.value.slice(start, start + pageSize.value)
 })
 </script>
 
