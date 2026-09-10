@@ -87,6 +87,15 @@ export function deleteFaqItemApi(id: number): Promise<void> {
   return request.delete(`/faq/manage/items/${id}/`)
 }
 
+/**
+ * 草稿详情 —— 文档 4.2 GET：返回单个草稿的完整数据。
+ * 列表接口（4.4）基于 3.2 结构不含 updated_at，且可能是缓存数据，
+ * 故打开编辑弹窗时以此接口为准，避免用陈旧数据全量覆盖他人修改。
+ */
+export function getFaqDraftApi(id: number): Promise<FaqManageItem> {
+  return request.get(`/faq/drafts/${id}/`)
+}
+
 /** 编辑草稿 */
 export function updateFaqDraftApi(
   id: number,
