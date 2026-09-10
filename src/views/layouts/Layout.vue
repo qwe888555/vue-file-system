@@ -43,6 +43,7 @@ import Sidebar from './Sidebar.vue'
 
 .layout-content {
   flex: 1;
+  position: relative;        /* 为路由页面 transition 提供定位基准（absolute 子元素以此为参照） */
   overflow-y: auto;
   padding: var(--spacing-lg);
 }

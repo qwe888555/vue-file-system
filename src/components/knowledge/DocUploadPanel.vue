@@ -185,7 +185,12 @@ function validateFile(file: File): string | null {
     return `不支持的文件格式 ".${ext || '未知'}"，支持：PDF、Word、Excel、PPT、CSV、TXT、Markdown、HTML、图片、音视频、压缩包、设计文件、3D模型、电子书（共43种扩展名）`
   }
 
-  // 2. 大小校验
+  // 2. 空文件预校验（0 字节，任何扩展名直接拒绝，不发请求）
+  if (file.size === 0) {
+    return '不能上传空文件（文件内容为空）'
+  }
+
+  // 3. 大小校验
   const maxSize = FILE_SIZE_LIMITS[ext]
   if (maxSize && file.size > maxSize) {
     const limitMB = (maxSize / (1024 * 1024)).toFixed(0)
