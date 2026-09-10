@@ -359,7 +359,7 @@ async function confirmEdit() {
 .fm-card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .fm-card-q {
   font-size: 14.5px; font-weight: 500; color: #1a2332; line-height: 1.4;
-  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: block; max-width: 100%;
 }
 .fm-card-meta { font-size: 12px; color: var(--color-text-secondary, #64748b); margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .fm-card-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
