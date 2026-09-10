@@ -34,7 +34,7 @@ function onPreviewFile(file: File, docId?: number) {
 }
 
 const currentPage = ref(1)
-const pageSize = ref(8)
+const pageSize = ref(10)
 const totalFiles = ref(0)
 
 const uploadedFiles = ref<KnowledgeFile[]>([])
@@ -51,7 +51,26 @@ async function fetchFiles(keyword?: string) {
       keyword: keyword || undefined,
     })
     const data = res.results || res.data || res
-    const newFiles = Array.isArray(data) ? data : []
+    let newFiles = Array.isArray(data) ? data : []
+
+    // 后端 page_size 参数不生效（DRF 固定 20 条/页），按 next 循环翻页取全量
+    if (!Array.isArray(res)) {
+      const maxPages = 100
+      for (let page = 2; page <= maxPages && res?.next; page++) {
+        const nextRes: any = await getDocListApi({
+          page,
+          page_size: 1000,
+          keyword: keyword || undefined,
+        })
+        const nextData = nextRes.results || nextRes.data || []
+        if (Array.isArray(nextData) && nextData.length > 0) {
+          newFiles = newFiles.concat(nextData)
+        } else {
+          break
+        }
+        res.next = nextRes?.next || null
+      }
+    }
 
     newFiles.forEach((file) => {
       const cachedKws = getCachedKeywords(file.id)
@@ -178,10 +197,15 @@ const FORMAT_LABELS: Record<string, string> = {
   stl: '3D模型', obj: '3D模型', fbx: '3D模型',
   epub: '电子书', pub: '电子书', publisher: '电子书',
   document: 'Word', text: '文本', plain: '文本', sheet: 'Excel', spreadsheet: 'Excel', presentation: 'PPT', slides: 'PPT',
+  other: '其他',
 }
 
-/** 从文件多来源字段提取真实扩展名（文件名 → URL → file_type → 全字段扫描） */
+/** 从文件多来源字段提取真实扩展名（后端 file_ext → 文件名 → URL → file_type → 全字段扫描） */
 function rowExt(file: KnowledgeFile): string {
+  // 后端 2026-09-10 起返回 file_ext（真实扩展名，小写不含点，永不为空，拿不到时兜底为类别码）
+  const fe = String(file.file_ext || '').toLowerCase().replace(/^\./, '')
+  if (fe) return fe
+
   const pickName = (s: string): string => {
     const seg = (s || '').split(/[?#]/)[0].split('/').pop() || ''
     const dot = seg.lastIndexOf('.')
@@ -214,6 +238,16 @@ function formatLabelOf(file: KnowledgeFile): string {
   const ext = rowExt(file)
   if (!ext) return '其他'
   return FORMAT_LABELS[ext] || ext.toUpperCase()
+}
+
+/** 表格"文件格式"列：直接展示后端 file_ext 真实扩展名（PPTX/XLSX/DOCX...）；类别码兜底时映射中文 */
+function formatCellExt(file: KnowledgeFile): string {
+  const ext = String(file.file_ext || '').toLowerCase().replace(/^\./, '')
+  if (!ext) return formatLabelOf(file)
+  if (['image', 'video', 'audio', 'other'].includes(ext)) {
+    return FORMAT_LABELS[ext] || ext.toUpperCase()
+  }
+  return ext.toUpperCase()
 }
 function collegeOf(file: KnowledgeFile): string {
   return file.collegeName && String(file.collegeName).trim() ? String(file.collegeName).trim() : '未归属'
@@ -600,6 +634,12 @@ function saveFiles(files: KnowledgeFile[]) {
           </template>
         </el-table-column>
 
+        <el-table-column label="文件格式" min-width="100" align="center">
+          <template #default="scope">
+            <el-tag size="small" effect="plain">{{ formatCellExt(scope.row) }}</el-tag>
+          </template>
+        </el-table-column>
+
         <el-table-column prop="fileSize" label="文件大小" min-width="110" align="center">
           <template #default="scope">
             {{ formatFileSize(scope.row.fileSize) }}
@@ -628,7 +668,7 @@ function saveFiles(files: KnowledgeFile[]) {
           :current-page="currentPage"
           :page-size="pageSize"
           :total="displayTotalFiles"
-          :page-sizes="[8, 10, 12, 16, 18]"
+          :page-sizes="[10, 20, 30]"
           :pager-count="6"
           layout="total, sizes, prev, pager, next, jumper"
           :hide-on-single-page="false"
