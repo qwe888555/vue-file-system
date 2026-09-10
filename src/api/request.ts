@@ -66,6 +66,9 @@ const noAuthPaths = [
   '/auth/dingtalk/status/',
   // 首页公开统计：完全不认证（auth 白名单去掉后原超管 dashboard 接口改为需携带 Token）
   '/platform/stats/',
+  // FAQ 分类：纯公开静态数据，带 Token 无任何收益；
+  // 而陈旧 Token 会被 DRF 优先鉴权拦成 401，游客因此看到空分类栏
+  '/faq/categories/',
 ]
 
 instance.interceptors.request.use(

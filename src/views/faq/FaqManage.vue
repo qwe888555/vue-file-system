@@ -29,7 +29,7 @@
 
     <!-- 列表 -->
     <div class="fm-list" v-loading="loading">
-      <div v-for="item in displayedList" :key="item.id" class="fm-card" :class="['fm-status--' + item.status, { expanded: expandedId === item.id }]">
+      <div v-for="item in list" :key="item.id" class="fm-card" :class="['fm-status--' + item.status, { expanded: expandedId === item.id }]">
         <div class="fm-card-top">
           <div class="fm-card-info" @click="toggleItem(item.id)">
             <div class="fm-card-head">
@@ -39,15 +39,15 @@
               <el-tag :type="item.status === 'published' ? 'success' : item.status === 'draft' ? 'warning' : 'info'" size="small">
                 {{ item.status === 'published' ? '已发布' : item.status === 'draft' ? '草稿' : '已驳回' }}
               </el-tag>
-              <span>{{ item.category_name }}</span>
+              <span v-if="item.category_name">{{ item.category_name }}</span>
               <span v-if="item.frequency !== undefined">· 频率 {{ item.frequency }}</span>
               <span v-if="item.college_name">· {{ item.college_name }}</span>
             </div>
           </div>
           <div class="fm-card-actions">
-            <!-- 草稿/已驳回均可编辑重提；已发布保持只读（后端暂不支持下架） -->
-            <el-button v-if="item.status === 'draft' || item.status === 'rejected'" size="small" @click.stop="openEdit(item)">编辑</el-button>
-            <el-button v-if="item.status === 'draft' || item.status === 'rejected'" type="primary" size="small" @click.stop="handlePublish(item)">发布</el-button>
+            <!-- 仅草稿可编辑/发布；已发布、已驳回保持只读（后端仅允许 draft 状态修改） -->
+            <el-button v-if="item.status === 'draft'" size="small" @click.stop="openEdit(item)">编辑</el-button>
+            <el-button v-if="item.status === 'draft'" type="primary" size="small" @click.stop="handlePublish(item)">发布</el-button>
             <el-button v-if="item.status === 'draft'" type="warning" size="small" @click.stop="handleReject(item)">驳回</el-button>
             <el-button type="danger" size="small" @click.stop="handleDelete(item)">删除</el-button>
           </div>
@@ -59,11 +59,12 @@
           <div v-if="item.tags?.length" class="fm-tags">
             <span v-for="tag in item.tags" :key="tag" class="fm-tag">{{ tag }}</span>
           </div>
-          <div v-if="item.updated_at" class="fm-time">更新于 {{ item.updated_at.slice(0, 10) }}</div>
+          <!-- 后端从未返回 updated_at（实测 17 条均无该字段），沿用 created_at 并如实标注为「创建于」 -->
+          <div v-if="item.created_at" class="fm-time">创建于 {{ item.created_at.slice(0, 10) }}</div>
         </div>
       </div>
 
-      <div v-if="!loading && displayedList.length === 0" class="fm-empty">
+      <div v-if="!loading && list.length === 0" class="fm-empty">
         <p>暂无数据</p>
       </div>
 
@@ -91,7 +92,7 @@
           <el-input v-model="editForm.answer" type="textarea" :rows="5" />
         </el-form-item>
         <el-form-item label="分类">
-          <el-select v-model="editForm.category" placeholder="选择分类" class="w-full">
+          <el-select v-model="editForm.category" placeholder="选择分类" clearable class="w-full">
             <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
           </el-select>
         </el-form-item>
@@ -110,10 +111,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
-import { getFaqItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, updateFaqDraftApi } from '@/api/faq'
+import { getFaqManageItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, updateFaqDraftApi } from '@/api/faq'
 import type { FaqCategory, FaqItem } from '@/api/faq'
 
 const keyword = ref('')
@@ -125,6 +126,8 @@ const loading = ref(false)
 const expandedId = ref<number | null>(null)
 const page = ref(1)
 const pageSize = ref(10)
+// 管理端接口为服务端分页，total 由后端 count 提供
+const total = ref(0)
 
 const tabs = [
   { value: '', label: '全部' },
@@ -171,37 +174,36 @@ async function loadData() {
   const seq = ++searchSeq
   loading.value = true
   try {
-    const data = await getFaqItemsApi({
+    const data = await getFaqManageItemsApi({
+      page: page.value,
+      page_size: pageSize.value,
       status: activeTab.value || undefined,
-      q: keyword.value || undefined,
+      search: keyword.value || undefined,
       category: categoryFilter.value || undefined,
     })
-    if (seq === searchSeq) list.value = data || []
+    if (seq !== searchSeq) return
+    // 文档 4.4：/faq/manage/items/ 为标准分页，后端已按 page/page_size 切好，直接使用
+    list.value = data?.results || []
+    total.value = data?.count || 0
   } catch {
-    if (seq === searchSeq) list.value = []
+    if (seq === searchSeq) {
+      list.value = []
+      total.value = 0
+    }
   } finally {
     if (seq === searchSeq) loading.value = false
   }
 }
 
-/** 分类过滤 + 前端分页 */
-const filteredList = computed(() => {
-  if (!categoryFilter.value) return list.value
-  return list.value.filter((item) => item.category === categoryFilter.value)
-})
-const total = computed(() => filteredList.value.length)
-const displayedList = computed(() => {
-  const start = (page.value - 1) * pageSize.value
-  return filteredList.value.slice(start, start + pageSize.value)
-})
-
 function handlePageChange(p: number) {
   page.value = p
+  loadData()
 }
 
 function handleSizeChange(s: number) {
   pageSize.value = s
   page.value = 1
+  loadData()
 }
 
 function handleReset() {
@@ -239,6 +241,9 @@ async function handleDelete(row: FaqItem) {
     await ElMessageBox.confirm(`确定删除「${row.question}」吗？此操作不可撤销。`, '删除确认', { type: 'warning' })
     await deleteFaqItemApi(row.id)
     ElMessage.success('删除成功')
+    // 服务端分页下，若当前页仅剩这一条，删除后该页必为空，
+    // 而 DRF 分页器对越界页码返回 404 而非空列表 → 主动回退一页
+    if (list.value.length === 1 && page.value > 1) page.value -= 1
     await loadData()
   } catch (e) { console.error('删除 FAQ 失败', e) }
 }
@@ -268,7 +273,10 @@ async function confirmEdit() {
     await updateFaqDraftApi(editingId.value, {
       question: editForm.value.question,
       answer: editForm.value.answer,
-      category: editForm.value.category || undefined,
+      // 文档 4.2：category 传 null 表示清除分类。
+      // el-select 清空时置为 undefined（element-plus 的 valueOnClear 默认值），
+      // 而 axios 会丢弃 undefined 字段导致清不掉，故用 ?? 归一到 null
+      category: editForm.value.category ?? null,
       tags: editForm.value.tags,
     })
     ElMessage.success('保存成功')
