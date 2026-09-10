@@ -8,7 +8,7 @@
 
     <!-- 搜索 + 筛选 -->
     <div class="fm-toolbar">
-      <el-input v-model="keyword" placeholder="搜索问题..." clearable size="default" class="fi kw" @keyup.enter="page = 1; loadData()" @clear="page = 1; loadData()">
+      <el-input v-model="keyword" placeholder="搜索问题..." clearable size="default" class="fi kw" @input="onSearchInput" @keyup.enter="page = 1; loadData()" @clear="page = 1; loadData()">
         <template #append>
           <el-button :icon="Search" @click="page = 1; loadData()" />
         </template>
@@ -34,11 +34,11 @@
           <div class="fm-card-info" @click="toggleItem(item.id)">
             <div class="fm-card-head">
               <span class="fm-card-q">{{ item.question }}</span>
+            </div>
+            <div class="fm-card-meta">
               <el-tag :type="item.status === 'published' ? 'success' : item.status === 'draft' ? 'warning' : 'info'" size="small">
                 {{ item.status === 'published' ? '已发布' : item.status === 'draft' ? '草稿' : '已驳回' }}
               </el-tag>
-            </div>
-            <div class="fm-card-meta">
               <span>{{ item.category_name }}</span>
               <span v-if="item.frequency !== undefined">· 频率 {{ item.frequency }}</span>
               <span v-if="item.college_name">· {{ item.college_name }}</span>
@@ -155,6 +155,17 @@ onMounted(async () => {
   } catch { /* */ }
   await loadData()
 })
+
+// 输入搜索防抖：停止输入 300ms 后自动触发搜索
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+function onSearchInput() {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => {
+    page.value = 1
+    loadData()
+  }, 300)
+}
 
 async function loadData() {
   const seq = ++searchSeq
@@ -346,8 +357,11 @@ async function confirmEdit() {
 }
 .fm-card-info { flex: 1; min-width: 0; cursor: pointer; }
 .fm-card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.fm-card-q { font-size: 14.5px; font-weight: 500; color: #1a2332; line-height: 1.4; }
-.fm-card-meta { font-size: 12px; color: var(--color-text-secondary, #64748b); margin-top: 4px; display: flex; gap: 6px; }
+.fm-card-q {
+  font-size: 14.5px; font-weight: 500; color: #1a2332; line-height: 1.4;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fm-card-meta { font-size: 12px; color: var(--color-text-secondary, #64748b); margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .fm-card-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 
 /* ── 展开详情 ── */
