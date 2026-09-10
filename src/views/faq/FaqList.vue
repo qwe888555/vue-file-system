@@ -13,6 +13,7 @@
         clearable
         size="default"
         class="faq-search-input kw"
+        @input="onSearchInput"
         @keyup.enter="page = 1; loadItems()"
         @clear="page = 1; loadItems()"
       >
@@ -126,6 +127,17 @@ onMounted(async () => {
     if (seq === searchSeq) loading.value = false
   }
 })
+
+// 输入搜索防抖：停止输入 300ms 后自动触发搜索
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+function onSearchInput() {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => {
+    page.value = 1
+    loadItems()
+  }, 300)
+}
 
 async function loadItems() {
   const seq = ++searchSeq
