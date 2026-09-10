@@ -28,13 +28,7 @@
               class="keyword-input"
               placeholder="关键词"
             />
-            <el-button
-              size="small"
-              type="text"
-              danger
-              @click="removeKeyword(index)"
-              icon="Delete"
-            />
+            <el-icon class="keyword-remove" title="删除该关键词" @click="removeKeyword(index)"><Close /></el-icon>
           </div>
           <el-button
             size="small"
@@ -60,6 +54,7 @@
 /* eslint-disable no-console */
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Close } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
 import { addKeywordApi, deleteKeywordApi, updateKeywordApi, updateDocApi } from '@/api/knowledge'
 
@@ -192,5 +187,15 @@ async function handleSubmit() {
 
 .keyword-input {
   flex: 1;
+}
+
+.keyword-remove {
+  color: #f56c6c;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.keyword-remove:hover {
+  color: #f78989;
 }
 </style>

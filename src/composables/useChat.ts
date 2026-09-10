@@ -32,12 +32,14 @@ interface CacheData {
   timestamp: number
 }
 
+// ── 单例状态（所有 useChat() 调用共享同一份数据）──
+const conversations = ref<Conversation[]>([])
+const currentConversationId = ref<number | null>(null)
+const messagesMap = ref<Record<number, Message[]>>({})
+const searchKeyword = ref('')
+const loading = ref(false)
+
 export function useChat() {
-  // ── 对话列表 ──
-  const conversations = ref<Conversation[]>([])
-  const currentConversationId = ref<number | null>(null)
-  const messagesMap = ref<Record<number, Message[]>>({})
-  const searchKeyword = ref('')
 
   // ── Computed ──
   const currentMessages = computed<Message[]>(() => {
@@ -63,8 +65,6 @@ export function useChat() {
     if (!kw) return list
     return list.filter(c => c.title.toLowerCase().includes(kw))
   })
-
-  const loading = ref(false)
 
   // ── 缓存读写 ──
   function loadCache() {

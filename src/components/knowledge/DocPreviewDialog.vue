@@ -243,18 +243,38 @@ async function renderPptxHtml(buf: ArrayBuffer) {
 }
 
 /**
+ * 下载接口若返回 JSON（{download_url} 链接模式而非二进制流），解析出真实文件地址。
+ * 返回 null 表示不是 JSON 或没有链接字段。
+ */
+async function pickJsonFileUrl(buf: ArrayBuffer): Promise<string | null> {
+  if (buf.byteLength === 0 || buf.byteLength > 65536) return null
+  const head = new Uint8Array(buf.slice(0, 1))
+  // 真实二进制（PDF/zip/OLE）不可能以 { 或 [ 开头
+  if (head[0] !== 0x7b && head[0] !== 0x5b) return null
+  try {
+    const text = new TextDecoder('utf-8').decode(buf)
+    const json = JSON.parse(text)
+    if (json && typeof json === 'object') {
+      return json.download_url || json.url || json.file_url || json.fileUrl || null
+    }
+  } catch {}
+  return null
+}
+
+/**
  * 已上传文档本地渲染：通过同源下载接口取原始字节，再按文件真实格式解析渲染。
  * 不依赖后端 preview 接口的 URL/文本，也不受 OSS 跨域与微软 Office Online 限制。
  * pdf → Blob；docx → mammoth 转 HTML；xls/xlsx → SheetJS 转表格；pptx → 逐页文字；
  * doc/ppt 旧二进制、压缩包、设计源/3D/电子书等 → 提示不支持在线预览。
+ * 下载接口返回 JSON 链接时，自动改为拉取链接内容再解析。
  */
 async function renderLocalBytes(id: number, extHint: string) {
   let blob: Blob
   try {
     blob = await downloadDocApi(id)
-  } catch (e) {
+  } catch (e: any) {
     console.error('获取文件内容失败:', e)
-    previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
+    previewContent.value = previewPlaceholder(`预览失败：${e?.message || '网络异常'}，请下载后查看`)
     return
   }
   if (!blob || blob.size === 0) {
@@ -269,6 +289,21 @@ async function renderLocalBytes(id: number, extHint: string) {
     console.error('读取文件字节失败:', e)
     previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
     return
+  }
+
+  // 后端把下载改成返回 {download_url} JSON 时，这里改为拉取链接的真实内容
+  const jsonUrl = await pickJsonFileUrl(buf)
+  if (jsonUrl) {
+    try {
+      const remote = await fetch(jsonUrl)
+      if (!remote.ok) throw new Error(`HTTP ${remote.status}`)
+      const remoteBuf = await remote.arrayBuffer()
+      if (remoteBuf.byteLength > 0) buf = remoteBuf
+    } catch (e) {
+      console.error('拉取文件真实地址失败（可能是 OSS 跨域限制）:', e)
+      previewContent.value = previewPlaceholder('该文件以链接方式存储，受浏览器跨域限制暂无法在线预览，请下载后查看')
+      return
+    }
   }
   const u8 = new Uint8Array(buf)
 
@@ -311,6 +346,16 @@ async function renderLocalBytes(id: number, extHint: string) {
     }
   } catch (e) {
     console.error('文件解析失败:', e)
+  }
+  // 既不是 PDF/zip/OLE：若像 HTML 错误页说明下载接口异常，给出针对性提示
+  if (u8[0] === 0x3c || u8[0] === 0xEF) {
+    try {
+      const text = new TextDecoder('utf-8').decode(buf.slice(0, 2048)).toLowerCase()
+      if (text.includes('<html') || text.includes('<!doctype') || text.includes('gateway') || text.includes('error')) {
+        previewContent.value = previewPlaceholder('服务器返回异常，暂时无法预览，请稍后重试或下载后查看')
+        return
+      }
+    } catch {}
   }
   previewContent.value = previewPlaceholder(UNSUPPORTED_TIP)
 }

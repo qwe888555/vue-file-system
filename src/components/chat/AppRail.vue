@@ -236,7 +236,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocMousedown))
   position: relative;
 }
 
-/* 激活态滑动指示条：沿轨道平滑滑动到当前激活项 */
+/* 激活态滑动指示条：沿轨道平滑滑动到当前激活项（300ms，比页面动画早一拍到位） */
 .rail-indicator {
   position: absolute;
   left: 0;
@@ -245,7 +245,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocMousedown))
   height: 48px;
   border-radius: 10px;
   background: linear-gradient(135deg, #eef3fe, #e6edfe);
-  transition: transform 0.42s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.30s cubic-bezier(0.32, 0.72, 0, 1);
   z-index: 0;
   pointer-events: none;
 }
