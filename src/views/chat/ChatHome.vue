@@ -154,9 +154,10 @@ const renamingId = ref<number | null>(null)
 const renameText = ref('')
 const renameInput = ref<HTMLInputElement | null>(null)
 
-// 会话操作已迁移到 ChatMergedSidebar 组件（保持 ChatGPT 风格侧边栏内自闭环）
-// 这里仅保留被 chat 流式 / 发送等场景调用的极简包装
-function handleNewConversation() { chat.createConversation() }
+// 会话操作（核心方法在 ChatMergedSidebar 侧边栏内闭环，ChatHome 保留引用供内部调用）
+async function handleNewConversation() {
+  await chat.createConversation()
+}
 async function handleSelectConversation(id: number) {
   await chat.selectConversation(id)
   chatUi.clearConvUnread(id)
@@ -718,7 +719,8 @@ watch(
   right: 10%;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(64, 158, 255, 0.3), transparent);
-}
+}
+
 
 /* 旧侧边栏样式已迁移到 ChatMergedSidebar 组件 ── */
 /* ═══════════════════ 右侧主区域 ═══════════════════ */

@@ -1,9 +1,11 @@
 <template>
   <!-- 路由页面渲染出口，必须要有这个标签 -->
   <!-- KeepAlive：缓存问答页组件，切走时草稿/对话状态保留、SSE 后台继续生成 -->
-  <!-- Transition：点 rail 切换模块时使用方案 C（缩回+轻推） -->
+  <!-- Transition：仅在进出问答页时使用方案 C 动画；其他模块切换直接渲染，无动画 -->
   <router-view v-slot="{ Component }">
+    <!-- 有动画时包裹 transition -->
     <transition
+      v-if="transitionName"
       :name="transitionName"
       :duration="340"
       mode="default"
@@ -12,6 +14,10 @@
         <component :is="Component" />
       </keep-alive>
     </transition>
+    <!-- 无动画时直接渲染 -->
+    <keep-alive v-else :include="['ChatHome']">
+      <component :is="Component" />
+    </keep-alive>
   </router-view>
 </template>
 
