@@ -103,22 +103,3 @@ export function actionFaqDraftApi(
 ): Promise<{ status: string; faq_id: number; new_status: string }> {
   return request.post(`/faq/drafts/${id}/action/`, { action })
 }
-
-
-// ══════════════════════════════════════
-//  FAQ 自动生成 — /api/faq/generate/（文档 5.1，super_admin 专属）
-// ══════════════════════════════════════
-
-/**
- * 触发 FAQ 自动生成（聊天记录管线）
- * 文档 5.1：{ log_id, status, task_id, message }；Celery 不可用时降级同步执行，task_id 为 null。
- * 已有任务在跑时后端返回 409 FAQ_GENERATION_RUNNING，由响应拦截器统一提示错误。
- */
-export function triggerFaqGenerationApi(): Promise<{
-  log_id: number
-  status: string
-  task_id: string | null
-  message: string
-}> {
-  return request.post('/faq/generate/')
-}

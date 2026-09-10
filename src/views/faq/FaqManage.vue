@@ -18,8 +18,6 @@
         <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
       </el-select>
       <el-button size="default" @click="handleReset">重置</el-button>
-      <!-- FAQ 自动生成入口：文档 5.1，生成任务仅 super_admin 可触发 -->
-      <el-button v-if="isSuperAdmin" size="default" type="primary" plain :icon="MagicStick" :loading="genTriggering" @click="handleGenerate">生成 FAQ</el-button>
     </div>
 
     <!-- 状态 Tabs -->
@@ -70,16 +68,14 @@
         <p>暂无数据</p>
       </div>
 
-      <!-- 分页 -->
+      <!-- 分页：文档 4.4 规定每页 20 条，故固定页长、不提供条数选择 -->
       <div class="faq-pagination">
         <el-pagination
           v-model:current-page="page"
-          v-model:page-size="pageSize"
+          :page-size="pageSize"
           :total="total"
-          layout="total, sizes, prev, pager, next, jumper"
-          :page-sizes="[10, 15, 20]"
+          layout="total, prev, pager, next, jumper"
           @current-change="handlePageChange"
-          @size-change="handleSizeChange"
         />
       </div>
     </div>
@@ -113,14 +109,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, MagicStick } from '@element-plus/icons-vue'
-import { getFaqManageItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, updateFaqDraftApi, triggerFaqGenerationApi } from '@/api/faq'
+import { Search } from '@element-plus/icons-vue'
+import { getFaqManageItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, updateFaqDraftApi } from '@/api/faq'
 import type { FaqCategory, FaqItem } from '@/api/faq'
-import { useUserStore } from '@/store/user'
-
-const userStore = useUserStore()
 
 const keyword = ref('')
 const categoryFilter = ref<number | ''>('')
@@ -130,7 +123,8 @@ const list = ref<FaqItem[]>([])
 const loading = ref(false)
 const expandedId = ref<number | null>(null)
 const page = ref(1)
-const pageSize = ref(10)
+// 文档 4.4：/faq/manage/items/ 标准分页，每页 20 条
+const pageSize = ref(20)
 // 管理端接口为服务端分页，total 由后端 count 提供
 const total = ref(0)
 
@@ -152,11 +146,6 @@ const editRules = {
   question: [{ required: true, message: '请输入问题', trigger: 'blur' }],
   answer: [{ required: true, message: '请输入答案', trigger: 'blur' }],
 }
-
-// ── FAQ 自动生成（文档 5.1：生成任务仅 super_admin） ──
-const isSuperAdmin = computed(() => userStore.role === 'super_admin')
-// 触发中：用于按钮 loading，防止连点重复投递
-const genTriggering = ref(false)
 
 // 请求序号守卫：Tab/搜索/分类切换与初次加载并发时，慢的旧请求不得覆盖新请求结果
 // （FaqList/MobileFaq 已有同类防护，FaqManage 补齐）
@@ -207,12 +196,6 @@ async function loadData() {
 
 function handlePageChange(p: number) {
   page.value = p
-  loadData()
-}
-
-function handleSizeChange(s: number) {
-  pageSize.value = s
-  page.value = 1
   loadData()
 }
 
@@ -294,31 +277,6 @@ async function confirmEdit() {
     await loadData()
   } catch (e) { console.error('编辑 FAQ 失败', e) } finally {
     editLoading.value = false
-  }
-}
-
-/**
- * 触发 FAQ 自动生成（文档 5.1）—— 入口按钮仅 super_admin 可见。
- * 后端在 Celery 不可用时降级同步执行；任务完成后草稿出现在「草稿」Tab。
- * 已有任务在跑时后端返回 409，提示文案由响应拦截器统一弹出，此处仅记录。
- */
-async function handleGenerate() {
-  try {
-    await ElMessageBox.confirm(
-      '确定启动 FAQ 自动生成吗？任务将在后台执行，完成后可在「草稿」中查看；若已有任务正在进行，本次会被后端拒绝。',
-      '生成确认',
-    )
-  } catch {
-    return
-  }
-  genTriggering.value = true
-  try {
-    await triggerFaqGenerationApi()
-    ElMessage.success('生成任务已投递，完成后可在「草稿」中查看')
-  } catch (e) {
-    console.error('触发 FAQ 生成失败', e)
-  } finally {
-    genTriggering.value = false
   }
 }
 
