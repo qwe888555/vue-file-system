@@ -87,6 +87,15 @@ export function deleteFaqItemApi(id: number): Promise<void> {
   return request.delete(`/faq/manage/items/${id}/`)
 }
 
+/**
+ * 草稿详情 —— 文档 4.2 GET：返回单个草稿的完整数据。
+ * 列表接口（4.4）基于 3.2 结构不含 updated_at，且可能是缓存数据，
+ * 故打开编辑弹窗时以此接口为准，避免用陈旧数据全量覆盖他人修改。
+ */
+export function getFaqDraftApi(id: number): Promise<FaqManageItem> {
+  return request.get(`/faq/drafts/${id}/`)
+}
+
 /** 编辑草稿 */
 export function updateFaqDraftApi(
   id: number,
@@ -102,51 +111,4 @@ export function actionFaqDraftApi(
   action: 'publish' | 'reject',
 ): Promise<{ status: string; faq_id: number; new_status: string }> {
   return request.post(`/faq/drafts/${id}/action/`, { action })
-}
-
-
-// ══════════════════════════════════════
-//  FAQ 自动生成 — /api/faq/generate/ & /api/faq/generation-logs/
-// ══════════════════════════════════════
-
-export interface FaqGenerationLog {
-  id: number
-  status: 'running' | 'completed' | 'failed'
-  total_questions: number
-  clusters_found: number
-  drafts_generated: number
-  error_message: string | null
-  started_at: string
-  completed_at: string | null
-  duration_seconds: number | null
-}
-
-/**
- * 触发 FAQ 自动生成（聊天记录管线）
- * 文档 5.1：{ log_id, status, task_id, message }；Celery 不可用时降级同步执行，task_id 为 null。
- * 已有任务在跑时后端返回 409 FAQ_GENERATION_RUNNING，由响应拦截器统一提示错误。
- */
-export function triggerFaqGenerationApi(): Promise<{
-  log_id: number
-  status: string
-  task_id: string | null
-  message: string
-}> {
-  return request.post('/faq/generate/')
-}
-
-/**
- * 获取生成日志列表 —— 文档 5.3：标准分页；status 可选筛选，取值同日志状态枚举
- */
-export function getFaqGenerationLogsApi(params?: {
-  page?: number
-  page_size?: number
-  status?: FaqGenerationLog['status']
-}): Promise<{ count: number; results: FaqGenerationLog[] }> {
-  return request.get('/faq/generation-logs/', { params })
-}
-
-/** 获取单条生成日志详情 */
-export function getFaqGenerationLogDetailApi(id: number): Promise<FaqGenerationLog> {
-  return request.get(`/faq/generation-logs/${id}/`)
 }

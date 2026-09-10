@@ -83,16 +83,14 @@
         <p class="faq-empty-text">暂无相关问题</p>
       </div>
 
-      <!-- 分页 -->
+      <!-- 分页：/faq/items/ 无后端分页（文档 3.2），此处为固定 20 条/页的客户端切片 -->
       <div v-if="!authError" class="faq-pagination">
         <el-pagination
           v-model:current-page="page"
-          v-model:page-size="pageSize"
+          :page-size="pageSize"
           :total="items.length"
-          layout="total, sizes, prev, pager, next, jumper"
-          :page-sizes="[10, 15, 20]"
+          layout="total, prev, pager, next, jumper"
           @current-change="handlePageChange"
-          @size-change="handleSizeChange"
         />
       </div>
     </div>
@@ -119,7 +117,8 @@ const loading = ref(true)
 const authError = ref(false)
 
 const page = ref(1)
-const pageSize = ref(10)
+// /faq/items/ 无后端分页（文档 3.2），页长固定为 20 条
+const pageSize = ref(20)
 
 // ── 请求序号守卫：丢弃过期响应 ──
 // 搜索/分类/初次加载并发时，慢的旧请求不得覆盖新请求结果
@@ -187,11 +186,6 @@ function handlePageChange(p: number) {
 
 function toggleItem(id: number) {
   expandedId.value = expandedId.value === id ? null : id
-}
-
-function handleSizeChange(s: number) {
-  pageSize.value = s
-  page.value = 1
 }
 
 function handleReset() {

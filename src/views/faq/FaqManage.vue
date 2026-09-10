@@ -40,7 +40,8 @@
                 {{ item.status === 'published' ? '已发布' : item.status === 'draft' ? '草稿' : '已驳回' }}
               </el-tag>
               <span v-if="item.category_name">{{ item.category_name }}</span>
-              <span v-if="item.frequency !== undefined">· 频率 {{ item.frequency }}</span>
+              <!-- frequency 本身即为百分比（文档 3.2：热度占比%），不能再乘 100 -->
+              <span v-if="item.frequency != null">· 热度 {{ item.frequency.toFixed(2) }}%</span>
               <span v-if="item.college_name">· {{ item.college_name }}</span>
             </div>
           </div>
@@ -68,16 +69,14 @@
         <p>暂无数据</p>
       </div>
 
-      <!-- 分页 -->
+      <!-- 分页：文档 4.4 规定每页 20 条，故固定页长、不提供条数选择 -->
       <div class="faq-pagination">
         <el-pagination
           v-model:current-page="page"
-          v-model:page-size="pageSize"
+          :page-size="pageSize"
           :total="total"
-          layout="total, sizes, prev, pager, next, jumper"
-          :page-sizes="[10, 15, 20]"
+          layout="total, prev, pager, next, jumper"
           @current-change="handlePageChange"
-          @size-change="handleSizeChange"
         />
       </div>
     </div>
@@ -97,9 +96,29 @@
           </el-select>
         </el-form-item>
         <el-form-item label="标签">
-          <el-select v-model="editForm.tags" multiple filterable allow-create default-first-option placeholder="输入标签后回车" class="w-full">
-            <el-option v-for="tag in existingTags" :key="tag" :label="tag" :value="tag" />
-          </el-select>
+          <!-- 标签编辑：不再用 el-select 的 allow-create（回车即凭空建标签），
+               改为「勾选已有标签 或 输入后点『添加』」两种显式添加方式 -->
+          <div class="tag-editor">
+            <!-- 已选标签：点 × 移除 -->
+            <div class="tag-selected" v-if="editForm.tags.length">
+              <el-tag v-for="tag in editForm.tags" :key="tag" closable size="small" @close="removeTag(tag)">
+                {{ tag }}
+              </el-tag>
+            </div>
+            <p class="tag-empty" v-else>暂无标签</p>
+
+            <!-- 候选标签：本条已有但当前未选中，点击即添加 -->
+            <div class="tag-pool" v-if="availableTags.length">
+              <span class="tag-pool-label">点击添加：</span>
+              <span v-for="tag in availableTags" :key="tag" class="tag-chip" @click="addTag(tag)">+ {{ tag }}</span>
+            </div>
+
+            <!-- 新增标签：输入后必须点「添加」才会生效 -->
+            <div class="tag-add-row">
+              <el-input v-model="newTag" size="small" placeholder="新标签" class="tag-add-input" />
+              <el-button size="small" @click="addTag(newTag)">添加</el-button>
+            </div>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -111,10 +130,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
-import { getFaqManageItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, updateFaqDraftApi } from '@/api/faq'
+import { getFaqManageItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, getFaqDraftApi, updateFaqDraftApi } from '@/api/faq'
 import type { FaqCategory, FaqItem } from '@/api/faq'
 
 const keyword = ref('')
@@ -125,7 +144,8 @@ const list = ref<FaqItem[]>([])
 const loading = ref(false)
 const expandedId = ref<number | null>(null)
 const page = ref(1)
-const pageSize = ref(10)
+// 文档 4.4：/faq/manage/items/ 标准分页，每页 20 条
+const pageSize = ref(20)
 // 管理端接口为服务端分页，total 由后端 count 提供
 const total = ref(0)
 
@@ -141,7 +161,12 @@ const editVisible = ref(false)
 const editLoading = ref(false)
 const editForm = ref({ question: '', answer: '', category: null as number | null, tags: [] as string[] })
 const editingId = ref<number | null>(null)
-const existingTags = ref<string[]>([])
+// 本条草稿已有的标签（来源：4.2 GET），作为「可勾选添加」的候选池
+const draftTags = ref<string[]>([])
+// 输入框里的新标签，点「添加」才并入 editForm.tags
+const newTag = ref('')
+// 候选标签 = 本条已有标签中当前未选中的部分（移出后可再次点回）
+const availableTags = computed(() => draftTags.value.filter((t) => !editForm.value.tags.includes(t)))
 const formRef = ref()
 const editRules = {
   question: [{ required: true, message: '请输入问题', trigger: 'blur' }],
@@ -200,12 +225,6 @@ function handlePageChange(p: number) {
   loadData()
 }
 
-function handleSizeChange(s: number) {
-  pageSize.value = s
-  page.value = 1
-  loadData()
-}
-
 function handleReset() {
   keyword.value = ''
   categoryFilter.value = ''
@@ -248,16 +267,47 @@ async function handleDelete(row: FaqItem) {
   } catch (e) { console.error('删除 FAQ 失败', e) }
 }
 
-function openEdit(row: FaqItem) {
+async function openEdit(row: FaqItem) {
   editingId.value = row.id
+  newTag.value = ''
+  // 先用列表数据填充，避免弹窗出现空白闪烁
   editForm.value = {
     question: row.question,
     answer: row.answer,
     category: row.category ?? null,
     tags: [...(row.tags || [])],
   }
-  existingTags.value = row.tags || []
+  draftTags.value = row.tags || []
   editVisible.value = true
+  // 文档 4.2 GET：再拉一次草稿最新详情。列表（4.4）结构不含 updated_at 且可能已过期，
+  // 若直接用列表数据编辑保存，会用陈旧的全量字段覆盖他人在此期间的修改
+  try {
+    const draft = await getFaqDraftApi(row.id)
+    // 期间用户可能已关闭弹窗或改编辑了另一条，丢弃过期响应
+    if (editingId.value !== row.id) return
+    editForm.value = {
+      question: draft.question,
+      answer: draft.answer,
+      category: draft.category ?? null,
+      tags: [...(draft.tags || [])],
+    }
+    draftTags.value = draft.tags || []
+  } catch (e) {
+    console.error('获取草稿详情失败', e)
+  }
+}
+
+/** 添加标签：候选标签点击、或输入框 +「添加」按钮触发 */
+function addTag(tag: string) {
+  const t = tag.trim()
+  if (!t || editForm.value.tags.includes(t)) return
+  editForm.value.tags.push(t)
+  newTag.value = ''
+}
+
+/** 移除已选标签（移除后若属于本条原有标签，会重新出现在候选区） */
+function removeTag(tag: string) {
+  editForm.value.tags = editForm.value.tags.filter((t) => t !== tag)
 }
 
 async function confirmEdit() {
@@ -403,4 +453,21 @@ async function confirmEdit() {
 
 /* ── 分页（居中） ── */
 .faq-pagination { display: flex; justify-content: center; margin-top: 20px; }
+
+/* ── 编辑弹窗的标签编辑器 ── */
+.tag-editor { width: 100%; }
+.tag-selected { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-empty { margin: 0; font-size: 12px; color: var(--color-text-secondary, #94a3b8); }
+
+.tag-pool { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.tag-pool-label { font-size: 12px; color: var(--color-text-secondary, #64748b); }
+.tag-chip {
+  padding: 2px 9px; border-radius: 12px; font-size: 12px; line-height: 1.6;
+  color: #64748b; background: #f1f5f9; border: 1px dashed #cbd5e1;
+  cursor: pointer; user-select: none; transition: all 0.2s;
+}
+.tag-chip:hover { color: var(--color-primary-deep, #2563eb); background: #e8f0fe; border-color: #93b4f5; }
+
+.tag-add-row { display: flex; gap: 8px; margin-top: 10px; }
+.tag-add-input { width: 180px; }
 </style>
