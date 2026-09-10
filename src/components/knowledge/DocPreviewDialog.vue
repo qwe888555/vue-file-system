@@ -168,6 +168,16 @@ async function zipEntryTexts(buf: ArrayBuffer, want: RegExp): Promise<Map<string
   return out
 }
 
+/**
+ * 微软 Office 在线渲染：docx/xlsx/pptx 接近原版效果。
+ * 原理是把公开可访问的文件地址交给 Office Web Viewer，iframe 嵌入渲染结果。
+ * 要求文件链接公网可访问；文件过大（约 >10MB）或微软服务不可达时 iframe 内会显示错误。
+ */
+function renderOfficeOnline(fileUrl: string) {
+  isOfficePreview.value = true
+  previewFileUrl.value = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(fileUrl)}`
+}
+
 async function renderPdfBlob(buf: ArrayBuffer) {
   previewFileUrl.value = URL.createObjectURL(new Blob([buf], { type: 'application/pdf' }))
   previewMediaKind.value = 'pdf'
@@ -408,8 +418,19 @@ async function openDoc(id: number, title: string) {
   // 预览接口返回的签名地址（内联预览用），PDF 无法本地解析时作为 iframe 兜底
   const inlineUrl = /^https?:\/\//i.test(content) ? content : ''
 
-  // 1. 二进制 Office / PDF：一律同源取字节本地解析，规避后端 preview_type 误标 text 造成乱码
+  // 1. 二进制 Office / PDF
   if (OFFICE_PDF_EXTS.includes(realExt)) {
+    // PDF：浏览器原生 PDF 查看器渲染，效果即原版；失败时兜底内联地址
+    if (realExt === 'pdf') {
+      await renderLocalBytes(id, realExt, inlineUrl)
+      return
+    }
+    // Office（doc/docx/xls/xlsx/ppt/pptx）：优先微软 Office 在线渲染（接近原版效果），
+    // 拿不到公网文件地址时退回本地文字解析
+    if (inlineUrl) {
+      renderOfficeOnline(inlineUrl)
+      return
+    }
     await renderLocalBytes(id, realExt, inlineUrl)
     return
   }

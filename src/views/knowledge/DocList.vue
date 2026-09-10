@@ -557,7 +557,7 @@ function saveFiles(files: KnowledgeFile[]) {
       </div>
 
       <el-alert
-        title="点击文件名可预览文件内容。可在线预览：Markdown/文本、图片、音视频、PDF、Word(.docx)、Excel(.xls/.xlsx)、PPT(.pptx)；不支持在线预览需下载：Word(.doc)、PPT(.ppt)、压缩包(.zip/.rar/.7z)、设计源(.psd/.ai)、3D模型(.stl/.obj/.fbx)、电子书(.epub/.pub)。大文件请打包成压缩包后上传。预览失败或需修改内容时，请下载后本地查看，修改完成再重新上传。"
+        title="点击文件名可预览文件内容。可在线预览：Markdown/文本、图片、音视频、PDF、Word(.docx)、Excel(.xls/.xlsx)、PPT(.pptx)；不支持在线预览需下载：Word(.doc)、PPT(.ppt)、压缩包(.zip/.rar/.7z)、设计源(.psd/.ai)、3D模型(.stl/.obj/.fbx)、电子书(.epub/.pub)。大文件请打包成压缩包后上传。Office 文件在线预览由微软服务渲染，超过 10MB 的大文件可能无法预览，请下载后本地查看。预览失败或需修改内容时，请下载后本地查看，修改完成再重新上传。"
         type="success"
         :closable="false"
         show-icon
