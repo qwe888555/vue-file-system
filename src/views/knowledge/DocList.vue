@@ -600,6 +600,12 @@ function saveFiles(files: KnowledgeFile[]) {
           </template>
         </el-table-column>
 
+        <el-table-column label="文件格式" min-width="100" align="center">
+          <template #default="scope">
+            <el-tag size="small" effect="plain">{{ formatLabelOf(scope.row) }}</el-tag>
+          </template>
+        </el-table-column>
+
         <el-table-column prop="fileSize" label="文件大小" min-width="110" align="center">
           <template #default="scope">
             {{ formatFileSize(scope.row.fileSize) }}
