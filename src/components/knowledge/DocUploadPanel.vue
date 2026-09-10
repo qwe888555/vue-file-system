@@ -67,6 +67,8 @@ function resetUploadForm() {
   selectedFiles.value = []
   uploadRef.value?.clearFiles()
   showCreateForm.value = false
+  uploadNewKeyword.value = ''
+  createNewKeyword.value = ''
   uploadForm.value = {
     title: '',
     keywords: '',
@@ -357,6 +359,52 @@ function onUploadContentDrop(e: DragEvent) {
       handleFileChange(file)
     })
   }
+}
+
+// ── 关键词手动增删 ──
+const uploadNewKeyword = ref('')
+const createNewKeyword = ref('')
+
+function addUploadKeyword() {
+  if (!currentFileForm.value) return
+  const kw = uploadNewKeyword.value.trim()
+  if (!kw) {
+    ElMessage.warning('请输入关键词')
+    return
+  }
+  if (currentFileForm.value.keywordOptions.includes(kw)) {
+    ElMessage.warning(`关键词「${kw}」已存在`)
+    return
+  }
+  currentFileForm.value.keywordOptions.push(kw)
+  currentFileForm.value.checkedKeywords.push(kw)
+  uploadNewKeyword.value = ''
+}
+
+function removeUploadKeyword(kw: string) {
+  if (!currentFileForm.value) return
+  currentFileForm.value.keywordOptions = currentFileForm.value.keywordOptions.filter(k => k !== kw)
+  currentFileForm.value.checkedKeywords = currentFileForm.value.checkedKeywords.filter(k => k !== kw)
+}
+
+function addCreateKeyword() {
+  const kw = createNewKeyword.value.trim()
+  if (!kw) {
+    ElMessage.warning('请输入关键词')
+    return
+  }
+  if (uploadForm.value.keywordOptions.includes(kw)) {
+    ElMessage.warning(`关键词「${kw}」已存在`)
+    return
+  }
+  uploadForm.value.keywordOptions.push(kw)
+  uploadForm.value.checkedKeywords.push(kw)
+  createNewKeyword.value = ''
+}
+
+function removeCreateKeyword(kw: string) {
+  uploadForm.value.keywordOptions = uploadForm.value.keywordOptions.filter(k => k !== kw)
+  uploadForm.value.checkedKeywords = uploadForm.value.checkedKeywords.filter(k => k !== kw)
 }
 
 function keywordsOf(item: FileItem): string[] {
@@ -742,14 +790,29 @@ async function handleUploadSubmit() {
           </div>
           <div class="form-item">
             <label class="form-label">关键词</label>
-            <el-checkbox-group
-              v-if="currentFileForm.keywordOptions.length > 0"
-              v-model="currentFileForm.checkedKeywords"
-              class="keyword-checkbox-group"
-              :disabled="currentFileForm.isAnalyzing"
-            >
-              <el-checkbox v-for="kw in currentFileForm.keywordOptions" :key="kw" :value="kw" class="keyword-checkbox">{{ kw }}</el-checkbox>
-            </el-checkbox-group>
+            <template v-if="currentFileForm.keywordOptions.length > 0">
+              <el-checkbox-group
+                v-model="currentFileForm.checkedKeywords"
+                class="keyword-checkbox-group"
+                :disabled="currentFileForm.isAnalyzing"
+              >
+                <el-checkbox v-for="kw in currentFileForm.keywordOptions" :key="kw" :value="kw" class="keyword-checkbox">
+                  {{ kw }}
+                  <el-icon class="keyword-remove" title="删除该关键词" @click.prevent.stop="removeUploadKeyword(kw)"><Close /></el-icon>
+                </el-checkbox>
+              </el-checkbox-group>
+              <div class="add-keyword-row">
+                <el-input
+                  v-model="uploadNewKeyword"
+                  size="small"
+                  placeholder="手动添加关键词"
+                  class="add-keyword-input"
+                  :disabled="currentFileForm.isAnalyzing"
+                  @keyup.enter="addUploadKeyword"
+                />
+                <el-button size="small" type="primary" plain :disabled="currentFileForm.isAnalyzing" @click="addUploadKeyword">添加</el-button>
+              </div>
+            </template>
             <el-input
               v-else
               v-model="currentFileForm.keywords"
@@ -821,13 +884,27 @@ async function handleUploadSubmit() {
           </div>
           <div class="form-item">
             <label class="form-label">关键词</label>
-            <el-checkbox-group
-              v-if="uploadForm.keywordOptions.length > 0"
-              v-model="uploadForm.checkedKeywords"
-              class="keyword-checkbox-group"
-            >
-              <el-checkbox v-for="kw in uploadForm.keywordOptions" :key="kw" :value="kw" class="keyword-checkbox">{{ kw }}</el-checkbox>
-            </el-checkbox-group>
+            <template v-if="uploadForm.keywordOptions.length > 0">
+              <el-checkbox-group
+                v-model="uploadForm.checkedKeywords"
+                class="keyword-checkbox-group"
+              >
+                <el-checkbox v-for="kw in uploadForm.keywordOptions" :key="kw" :value="kw" class="keyword-checkbox">
+                  {{ kw }}
+                  <el-icon class="keyword-remove" title="删除该关键词" @click.prevent.stop="removeCreateKeyword(kw)"><Close /></el-icon>
+                </el-checkbox>
+              </el-checkbox-group>
+              <div class="add-keyword-row">
+                <el-input
+                  v-model="createNewKeyword"
+                  size="small"
+                  placeholder="手动添加关键词"
+                  class="add-keyword-input"
+                  @keyup.enter="addCreateKeyword"
+                />
+                <el-button size="small" type="primary" plain @click="addCreateKeyword">添加</el-button>
+              </div>
+            </template>
             <el-input
               v-else
               v-model="uploadForm.keywords"
@@ -1125,6 +1202,27 @@ async function handleUploadSubmit() {
 .keyword-checkbox {
   margin-right: 0;
   height: auto;
+}
+
+.keyword-remove {
+  color: #f56c6c;
+  cursor: pointer;
+  margin-left: 2px;
+  vertical-align: -2px;
+}
+
+.keyword-remove:hover {
+  color: #f78989;
+}
+
+.add-keyword-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.add-keyword-input {
+  width: 180px;
 }
 
 
