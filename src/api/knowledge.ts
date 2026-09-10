@@ -135,9 +135,12 @@ export function extractFreshnessApi(id: number): Promise<{ freshness: string }> 
 }
 
 /** 下载文档 */
-export function downloadDocApi(id: number): Promise<Blob> {
+export function downloadDocApi(id: number, config: Record<string, any> = {}): Promise<Blob> {
   return request.get(`/knowledge/docs/${id}/download/`, {
     responseType: 'blob',
+    // 大文件（几十 MB 的 PDF/Office）下载耗时远超全局 15s 超时，预览单独放宽
+    timeout: 120000,
+    ...config,
   })
 }
 
