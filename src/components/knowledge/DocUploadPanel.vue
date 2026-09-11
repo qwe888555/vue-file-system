@@ -25,6 +25,7 @@ interface FileItem {
   docId?: number
   previewContent?: string
   title: string
+  aiTitle?: string
   keywords: string
   keywordOptions: string[]
   checkedKeywords: string[]
@@ -265,7 +266,8 @@ async function classifyFile(fileItem: FileItem, file: File) {
     }
 
     if (result.title) {
-      fileItem.title = result.title
+      // AI 推荐文件名单独存放，文件名默认保持原文件名，用户可自行选择采用
+      fileItem.aiTitle = result.title
     }
     if (result.keywords && result.keywords.length > 0) {
       const kws = result.keywords.map((kw) => kw.trim()).filter((kw) => kw)
@@ -288,6 +290,14 @@ async function classifyFile(fileItem: FileItem, file: File) {
     // AI 解析失败，也更新状态
     fileItem.isAnalyzing = false
     triggerRef(selectedFiles)
+  }
+}
+
+/** 采用 AI 推荐文件名作为文件名 */
+function useAiTitle() {
+  const item = currentFileForm.value
+  if (item?.aiTitle) {
+    item.title = item.aiTitle
   }
 }
 
@@ -794,6 +804,23 @@ async function handleUploadSubmit() {
             />
           </div>
           <div class="form-item">
+            <label class="form-label">AI推荐文件名</label>
+            <div class="ai-title-row">
+              <el-input
+                v-model="currentFileForm.aiTitle"
+                placeholder="AI 解析完成后自动填写"
+                class="form-input"
+                :disabled="currentFileForm.isAnalyzing"
+              />
+              <el-button
+                type="primary"
+                plain
+                :disabled="currentFileForm.isAnalyzing || !currentFileForm.aiTitle"
+                @click="useAiTitle"
+              >使用</el-button>
+            </div>
+          </div>
+          <div class="form-item">
             <label class="form-label">关键词</label>
             <template v-if="currentFileForm.keywordOptions.length > 0">
               <el-checkbox-group
@@ -1224,6 +1251,11 @@ async function handleUploadSubmit() {
   display: flex;
   gap: 8px;
   margin-top: 8px;
+}
+
+.ai-title-row {
+  display: flex;
+  gap: 8px;
 }
 
 .add-keyword-input {
