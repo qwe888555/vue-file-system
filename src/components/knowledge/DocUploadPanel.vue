@@ -25,7 +25,9 @@ interface FileItem {
   docId?: number
   previewContent?: string
   title: string
+  originalTitle: string
   aiTitle?: string
+  aiTitleUsed?: boolean
   keywords: string
   keywordOptions: string[]
   checkedKeywords: string[]
@@ -209,6 +211,7 @@ async function handleFileChange(file: File) {
   const newFileItem = {
     file,
     title: baseName,
+    originalTitle: baseName,
     keywords: '',
     keywordOptions: [] as string[],
     checkedKeywords: [] as string[],
@@ -293,11 +296,16 @@ async function classifyFile(fileItem: FileItem, file: File) {
   }
 }
 
-/** 采用 AI 推荐文件名作为文件名 */
-function useAiTitle() {
+/** 使用 / 取消使用 AI 推荐文件名（取消时恢复原文件名） */
+function toggleAiTitle() {
   const item = currentFileForm.value
-  if (item?.aiTitle) {
+  if (!item) return
+  if (item.aiTitleUsed) {
+    item.title = item.originalTitle
+    item.aiTitleUsed = false
+  } else if (item.aiTitle) {
     item.title = item.aiTitle
+    item.aiTitleUsed = true
   }
 }
 
@@ -813,11 +821,11 @@ async function handleUploadSubmit() {
                 :disabled="currentFileForm.isAnalyzing"
               />
               <el-button
-                type="primary"
-                plain
-                :disabled="currentFileForm.isAnalyzing || !currentFileForm.aiTitle"
-                @click="useAiTitle"
-              >使用</el-button>
+                :type="currentFileForm.aiTitleUsed ? 'info' : 'primary'"
+                :plain="!currentFileForm.aiTitleUsed"
+                :disabled="currentFileForm.isAnalyzing || (!currentFileForm.aiTitleUsed && !currentFileForm.aiTitle)"
+                @click="toggleAiTitle"
+              >{{ currentFileForm.aiTitleUsed ? '不使用' : '使用' }}</el-button>
             </div>
           </div>
           <div class="form-item">
