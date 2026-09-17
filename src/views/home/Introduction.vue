@@ -185,8 +185,8 @@ onMounted(() => {
   --st-ink-1: #ffffff;
   --st-ink-2: rgba(255, 255, 255, 0.75);
   --st-ink-3: rgba(255, 255, 255, 0.55);
-  --st-num-md: 1.8rem;  /* 指标数字：固定字号，避免随视口高度缩放导致不同屏/不同窗口字号不一 */
-  --st-label: 0.92rem;
+  --st-num-md: 2.1rem;  /* 指标数字：固定字号，避免随视口高度缩放导致不同屏/不同窗口字号不一 */
+  --st-label: 1.02rem;
   --st-caption: 0.75rem;
   --st-text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);  /* 照片上文字可读 */
 
@@ -284,7 +284,7 @@ onMounted(() => {
 .stats-title {
   margin: 0;
   display: flex; align-items: center;
-  font-size: 1.25rem; font-weight: 600;
+  font-size: 1.4rem; font-weight: 600;
   color: var(--st-ink-1); letter-spacing: 0.08em;
   text-shadow: var(--st-text-shadow);
 }
@@ -298,7 +298,7 @@ onMounted(() => {
 /* 标题内口径尾注：平台数据概览 · 全平台累计 */
 .title-scope {
   margin-left: 8px;
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-weight: 500;
   color: var(--st-ink-2);
   letter-spacing: 0.04em;
@@ -329,7 +329,7 @@ onMounted(() => {
   text-shadow: var(--st-text-shadow);
 }
 .stat-cell-unit {
-  font-size: 0.95rem; font-weight: 600;
+  font-size: 1.05rem; font-weight: 600;
   color: var(--st-ink-2);
   margin-left: 4px;
 }
