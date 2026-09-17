@@ -468,10 +468,43 @@ function cleanupRecording() {
   isRecording.value = false
 }
 
+// ── 输入框边框流光动画：SVG 周长参数计算（顶边中心为起点，两条线在下边框中心相遇）──
+const inputWrapperRef = ref<HTMLElement | null>(null)
+const inputW = ref(760)
+const inputH = ref(54)
+const borderRx = 11
+// 描边 dashoffset（pathLength=100 归一化）：A 顺时针、B 逆时针
+const offA = ref(0)
+const offBIdle = ref(0)
+const offBFocus = ref(50)
+let inputBorderRO: ResizeObserver | null = null
+
+function measureInputBorder() {
+  const el = inputWrapperRef.value
+  if (!el) return
+  const w = el.offsetWidth
+  const h = el.offsetHeight
+  if (!w || !h) return
+  inputW.value = w
+  inputH.value = h
+  const straightW = (w - 2) - 2 * borderRx
+  const perimeter = 2 * straightW + 2 * ((h - 2) - 2 * borderRx) + 2 * Math.PI * borderRx
+  // 顶边中心在矩形路径上的长度占比
+  const f = perimeter > 0 ? (straightW / 2 / perimeter) * 100 : 25
+  offA.value = -f
+  offBIdle.value = -f
+  offBFocus.value = 50 - f
+}
+
 onMounted(() => {
   chat.init()
   loadHotQuestions()
   document.addEventListener('mousedown', handleBlankClick)
+  measureInputBorder()
+  if (inputWrapperRef.value && 'ResizeObserver' in window) {
+    inputBorderRO = new ResizeObserver(measureInputBorder)
+    inputBorderRO.observe(inputWrapperRef.value)
+  }
   if (showEntryAnim.value) {
     // 首次进入：播放完整动画，2600ms 后写入标记
     setTimeout(() => {
@@ -490,6 +523,7 @@ watch(streamingContent, () => {
 
 onUnmounted(() => {
   document.removeEventListener('mousedown', handleBlankClick)
+  inputBorderRO?.disconnect()
   cleanupRecording()
   // 关闭所有后台流（含 watcher），使在途 SSE 回调失效
   closeAllStreaming()
@@ -621,23 +655,19 @@ watch(
       <!-- 输入栏 -->
       <div class="chat-input-area">
         <div class="input-anim-container">
-          <svg style="position: absolute; width: 0; height: 0;">
-            <filter width="300%" x="-100%" height="300%" y="-100%" id="unopaq">
-              <feColorMatrix values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 9 0" />
-            </filter>
-            <filter width="300%" x="-100%" height="300%" y="-100%" id="unopaq2">
-              <feColorMatrix values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 3 0" />
-            </filter>
-            <filter width="300%" x="-100%" height="300%" y="-100%" id="unopaq3">
-              <feColorMatrix values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 2 0" />
-            </filter>
+          <!-- 动态值说明：viewBox 与描边偏移变量按输入框实测尺寸计算（ResizeObserver 跟随变化） -->
+          <svg
+            class="input-border-svg"
+            :viewBox="`0 0 ${inputW} ${inputH}`"
+            preserveAspectRatio="none"
+            :style="{ '--off-a': offA, '--off-b-idle': offBIdle, '--off-b-focus': offBFocus }"
+            aria-hidden="true"
+          >
+            <!-- 两条描边 A/B：均以顶边中心为起点，A 顺时针、B 逆时针流动 -->
+            <rect class="border-line border-line-a" x="1" y="1" :width="inputW - 2" :height="inputH - 2" :rx="11" pathLength="100" />
+            <rect class="border-line border-line-b" x="1" y="1" :width="inputW - 2" :height="inputH - 2" :rx="11" pathLength="100" />
           </svg>
-          <div class="spin spin-blur"></div>
-          <div class="spin spin-intense"></div>
-          <div class="input-backdrop"></div>
-          <div class="input-anim-border">
-            <div class="spin spin-inside"></div>
-            <div class="chat-input-wrapper">
+          <div ref="inputWrapperRef" class="chat-input-wrapper">
             <input
               v-model="inputText"
               type="text"
@@ -661,7 +691,6 @@ watch(
                 <path d="M10 2a1 1 0 01.707.293l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414l-4.293 4.293a1 1 0 01-1.414-1.414l6-6A1 1 0 0110 2z"/>
               </svg>
             </button>
-          </div>
           </div>
         </div>
       </div>
@@ -936,18 +965,39 @@ watch(
   background: #fff;
 }
 
-/* ── 输入框旋转渐变（蓝橙配色）── */
+/* ── 输入框边框流光：聚焦时两条蓝线从顶边中心沿边框两侧流动，下边框中心相遇覆盖整圈；失焦原路退回 ── */
 .input-anim-container {
   position: relative;
   max-width: 760px;
   margin: 0 auto;
 }
 
-.input-anim-border {
-  padding: 3px;
+.input-border-svg {
+  position: absolute;
   inset: 0;
-  background: #0005;
-  border-radius: 16px;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.border-line {
+  fill: none;
+  stroke: var(--color-primary, #409eff);
+  stroke-width: 2;
+  /* 静止时描边长度为 0（不可见），聚焦时两条线各伸展半个周长 */
+  stroke-dasharray: 0 100;
+  transition: stroke-dasharray 0.9s ease, stroke-dashoffset 0.9s ease;
+  filter: drop-shadow(0 0 3px rgba(64, 158, 255, 0.55));
+}
+.border-line-a { stroke-dashoffset: var(--off-a, -25); }
+.border-line-b { stroke-dashoffset: var(--off-b-idle, -25); }
+
+.input-anim-container:focus-within .border-line-a { stroke-dasharray: 50 50; }
+.input-anim-container:focus-within .border-line-b {
+  stroke-dasharray: 50 50;
+  stroke-dashoffset: var(--off-b-focus, 25);
 }
 
 .chat-input-wrapper {
@@ -960,88 +1010,6 @@ watch(
   padding: 6px 6px 6px 14px;
   background: #fff;
   z-index: 1;
-}
-
-.input-backdrop {
-  position: absolute;
-  inset: -9900%;
-  background: radial-gradient(circle at 50% 50%, #0000 0, #0000 20%, #111111aa 50%);
-  background-size: 3px 3px;
-  z-index: -1;
-}
-
-.spin {
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  opacity: 0;
-  overflow: hidden;
-  transition: opacity 0.35s;
-}
-
-.input-anim-container:focus-within .spin,
-.input-anim-container:hover .spin,
-.input-anim-container:focus-within .input-anim-border .spin,
-.input-anim-container:hover .input-anim-border .spin {
-  opacity: 0.6;
-}
-
-.spin-blur {
-  filter: blur(2em) url(#unopaq);
-}
-
-.spin-intense {
-  inset: -0.125em;
-  filter: blur(0.25em) url(#unopaq2);
-  border-radius: 0.75em;
-}
-
-.spin-inside {
-  inset: -1px;
-  border-radius: inherit;
-  filter: blur(1.5px) url(#unopaq3);
-  z-index: 0;
-}
-
-.spin::before {
-  content: "";
-  position: absolute;
-  inset: -150%;
-  animation: speen 8s cubic-bezier(0.56, 0.15, 0.28, 0.86) infinite, woah 4s ease infinite;
-  animation-play-state: paused;
-}
-
-.input-anim-container:focus-within .spin::before,
-.input-anim-container:hover .spin::before,
-.input-anim-container:focus-within .input-anim-border .spin::before,
-.input-anim-container:hover .input-anim-border .spin::before {
-  animation-play-state: running;
-}
-
-.spin-blur::before {
-  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light), var(--color-primary-dark));
-  background-size: 200% 100%;
-}
-
-.spin-intense::before {
-  background: linear-gradient(90deg, var(--color-primary-dark), var(--color-primary), var(--color-primary-light));
-  background-size: 200% 100%;
-}
-
-.spin-inside::before {
-  background: linear-gradient(90deg, var(--color-primary-light), var(--color-primary-dark), var(--color-primary));
-  background-size: 200% 100%;
-}
-
-@keyframes speen {
-  0% { rotate: 10deg; }
-  50% { rotate: 190deg; }
-  to { rotate: 370deg; }
-}
-
-@keyframes woah {
-  0%, to { scale: 1; }
-  50% { scale: 0.75; }
 }
 
 .input-field {
