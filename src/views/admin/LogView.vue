@@ -116,7 +116,7 @@ const logTabs = [
           <div v-else class="db-stats">
             <div class="db-stat"><span>总数</span><strong>{{ block.total ?? 0 }}</strong></div>
             <div v-if="block.total_size != null" class="db-stat"><span>总大小</span><strong>{{ (block.total_size / 1048576).toFixed(1) }}MB</strong></div>
-            <div v-if="block.avg_response_ms != null" class="db-stat"><span>平均响应</span><strong>{{ block.avg_response_ms }}ms</strong></div>
+            <div v-if="block.avg_response_ms != null" class="db-stat"><span>平均思考</span><strong>{{ block.avg_response_ms }}ms</strong></div>
             <div v-if="block.like_rate != null" class="db-stat"><span>点赞率</span><strong>{{ (block.like_rate * 100).toFixed(1) }}%</strong></div>
             <div v-if="block.success_count != null" class="db-stat"><span>成功</span><strong>{{ block.success_count }}</strong></div>
             <div v-if="block.fail_count != null" class="db-stat"><span>失败</span><strong>{{ block.fail_count }}</strong></div>

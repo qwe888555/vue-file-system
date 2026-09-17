@@ -162,7 +162,7 @@ function handleSizeChange() {
         <el-table-column prop="user_name" label="查询用户" width="140" />
         <el-table-column prop="question" label="问题" min-width="250" show-overflow-tooltip />
         <el-table-column prop="hit_count" label="命中" width="100" />
-        <el-table-column prop="response_ms" label="耗时" width="100" :formatter="(r:any) => r.response_ms + 'ms'" />
+        <el-table-column prop="response_ms" label="思考耗时" width="100" :formatter="(r:any) => r.response_ms + 'ms'" />
         <el-table-column prop="user_feedback" label="反馈" width="100">
           <template #default="{ row }">
             <span v-if="row.user_feedback === 1" class="feedback-like">赞</span>
@@ -237,7 +237,7 @@ function handleSizeChange() {
           <el-descriptions v-if="tab === 'query'" :column="2" border size="small">
             <el-descriptions-item label="ID">{{ detailData.id }}</el-descriptions-item><el-descriptions-item label="用户">{{ detailData.user_name }}</el-descriptions-item>
             <el-descriptions-item label="问题" :span="2" show-overflow-tooltip>{{ detailData.question }}</el-descriptions-item>
-            <el-descriptions-item label="耗时">{{ detailData.response_ms }}ms</el-descriptions-item><el-descriptions-item label="反馈"><span v-if="detailData.user_feedback === 1" class="feedback-like">赞</span><span v-else-if="detailData.user_feedback === 0" class="feedback-dislike">踩</span><span v-else class="feedback-none">无反馈</span></el-descriptions-item>
+            <el-descriptions-item label="思考耗时">{{ detailData.response_ms }}ms</el-descriptions-item><el-descriptions-item label="反馈"><span v-if="detailData.user_feedback === 1" class="feedback-like">赞</span><span v-else-if="detailData.user_feedback === 0" class="feedback-dislike">踩</span><span v-else class="feedback-none">无反馈</span></el-descriptions-item>
             <el-descriptions-item label="时间">{{ detailData.created_at }}</el-descriptions-item>
           </el-descriptions>
           <el-descriptions v-if="tab === 'sensitive'" :column="2" border size="small">

@@ -7,7 +7,7 @@ import heroBg from '@/assets/images/hero3.jpg'
 
 /* 首页公开统计 v1.0 — GET /api/platform/stats/（AllowAny、完全不认证、无参数、全量累计）
    字段：users 用户总数 / storage_bytes 存储总量(字节) / docs 资料总数
-        queries 查询总数 / avg_response_sec 平均响应时长(秒) / sensitive_blocks 敏感拦截 / logins 登录次数
+        queries 查询总数 / avg_response_sec 平均思考时长(秒) / sensitive_blocks 敏感拦截 / logins 登录次数
    单项计算失败 → 该项为 null（其余照常）；整库不可用（全部为 null）→ HTTP 503 */
 interface PublicStats {
   users: number | null
@@ -19,15 +19,17 @@ interface PublicStats {
   logins: number | null
 }
 
-/* ── 6 项统计指标（index 0~5）：存储总量为左上主打大数字，其余 5 项入次级网格 ── */
+/* ── 5 项统计指标（index 0~4）：两行排布，第一行 存储总量+用户总数，第二行 资料总数+交互次数+平均思考时长 ── */
 const stats = ref([
   { key: 'storage',      label: '存储总量',   caption: '文档与附件占用空间',  value: 0, suffix: 'GB' },
   { key: 'users',        label: '用户总数',   caption: '注册师生账号',        value: 0, suffix: '' },
   { key: 'docs',         label: '资料总数',   caption: '知识库收录文档',      value: 0, suffix: '' },
   { key: 'queries',      label: '交互次数',   caption: 'AI 交互累计次数',     value: 0, suffix: '' },
-  { key: 'avg_resp',     label: '平均响应时长', caption: 'AI 问答平均响应时长', value: 0, suffix: 's' },
-  { key: 'logins',       label: '登录次数',   caption: '平台累计登录',        value: 0, suffix: '' },
+  { key: 'avg_resp',     label: '平均思考时长', caption: 'AI 问答平均思考时长', value: 0, suffix: 's' },
 ])
+
+/** 指标网格分行：索引对应 stats / displayVals 下标；两行共用 3 列轨道，保证上下列对齐 */
+const statRowIndexes = [[0, 1], [2, 3, 4]]
 
 /** 统计口径说明：公开统计为全平台累计，无周期概念；作为标题行内尾注展示 */
 const statPeriodLabel = '全平台累计'
@@ -66,12 +68,12 @@ function fmtSize(b: number) {
   const gb = mb / 1024
   return gb < 1024 ? { v: Math.round(gb * 10) / 10, s: 'GB' } : { v: Math.round(gb / 1024 * 10) / 10, s: 'TB' }
 }
-function applyStatsVals(users: number, sizeBytes: number, docs: number, queries: number, avgSec: number, logins: number) {
+function applyStatsVals(users: number, sizeBytes: number, docs: number, queries: number, avgSec: number) {
   const f = fmtSize(sizeBytes)
   // 展示顺序：存储总量(index 0) → 用户总数(index 1) → …
-  const vals = [f.v, users, docs, queries, avgSec, logins]
+  const vals = [f.v, users, docs, queries, avgSec]
   stats.value = stats.value.map((s, i) => ({ ...s, value: vals[i], suffix: i === 0 ? f.s : s.suffix }))
-  animateNumbers([f.v, users, docs, queries, avgSec, logins])
+  animateNumbers([f.v, users, docs, queries, avgSec])
 }
 
 /** 统计数据状态：loading 加载中 / ready 已就绪 / error 获取失败 */
@@ -89,7 +91,6 @@ async function fetchStats() {
       s.docs ?? 0,
       s.queries ?? 0,
       s.avg_response_sec ?? 0,
-      s.logins ?? 0,
     )
     statsState.value = 'ready'
   } catch {
@@ -134,14 +135,16 @@ onMounted(() => {
             </div>
 
             <template v-if="statsState === 'ready'">
-              <!-- 指标网格：6 项统一排布，两排、每排 3 个（含存储总量，左对齐） -->
-              <div class="stat-grid">
-                <div v-for="i in [0, 1, 2, 3, 4, 5]" :key="stats[i].key" class="stat-cell">
-                  <span class="stat-cell-num">
-                    {{ (displayVals[i] ?? 0).toLocaleString() }}
-                    <span v-if="stats[i].suffix" class="stat-cell-unit">{{ stats[i].suffix }}</span>
-                  </span>
-                  <span class="stat-cell-label">{{ stats[i].label }}</span>
+              <!-- 指标网格：第一行 2 项、第二行 3 项，两行共用 3 列轨道（第一行第 3 列留空），整体左对齐 -->
+              <div class="stat-rows">
+                <div v-for="(row, ri) in statRowIndexes" :key="ri" class="stat-grid">
+                  <div v-for="i in row" :key="stats[i].key" class="stat-cell">
+                    <span class="stat-cell-num">
+                      {{ (displayVals[i] ?? 0).toLocaleString() }}
+                      <span v-if="stats[i].suffix" class="stat-cell-unit">{{ stats[i].suffix }}</span>
+                    </span>
+                    <span class="stat-cell-label">{{ stats[i].label }}</span>
+                  </div>
                 </div>
               </div>
             </template>
@@ -182,8 +185,8 @@ onMounted(() => {
   --st-ink-1: #ffffff;
   --st-ink-2: rgba(255, 255, 255, 0.75);
   --st-ink-3: rgba(255, 255, 255, 0.55);
-  --st-num-md: 1.5rem;  /* 指标数字：固定字号，避免随视口高度缩放导致不同屏/不同窗口字号不一 */
-  --st-label: 0.8rem;
+  --st-num-md: 1.8rem;  /* 指标数字：固定字号，避免随视口高度缩放导致不同屏/不同窗口字号不一 */
+  --st-label: 0.92rem;
   --st-caption: 0.75rem;
   --st-text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);  /* 照片上文字可读 */
 
@@ -281,7 +284,7 @@ onMounted(() => {
 .stats-title {
   margin: 0;
   display: flex; align-items: center;
-  font-size: 1.1rem; font-weight: 600;
+  font-size: 1.25rem; font-weight: 600;
   color: var(--st-ink-1); letter-spacing: 0.08em;
   text-shadow: var(--st-text-shadow);
 }
@@ -295,18 +298,23 @@ onMounted(() => {
 /* 标题内口径尾注：平台数据概览 · 全平台累计 */
 .title-scope {
   margin-left: 8px;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   font-weight: 500;
   color: var(--st-ink-2);
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
 
-/* ── 指标网格：两排 × 每排 3 个，数值与标题左对齐 ── */
+/* ── 指标网格：两行共用同一套 3 列轨道，保证上下列对齐；行间距由 .stat-rows 统一控制 ── */
+.stat-rows {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(20px, 3.6vh, 36px);
+}
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: clamp(20px, 3.6vh, 36px) 12px;
+  gap: 0 12px;
 }
 .stat-cell {
   /* 数据项左对齐：数值与标题同一起点，避免随数值长度左右漂移造成错位 */
@@ -321,13 +329,13 @@ onMounted(() => {
   text-shadow: var(--st-text-shadow);
 }
 .stat-cell-unit {
-  font-size: 0.85rem; font-weight: 600;
+  font-size: 0.95rem; font-weight: 600;
   color: var(--st-ink-2);
   margin-left: 4px;
 }
 .stat-cell-label {
   display: block;
-  margin-top: 9px;
+  margin-top: 10px;
   font-size: var(--st-label);
   color: var(--st-ink-2);
   letter-spacing: 0.06em;
