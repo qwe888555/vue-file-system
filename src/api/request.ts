@@ -1,7 +1,7 @@
 // ── Axios 统一请求封装 ──
 // Token 注入、401 自动刷新、错误拦截
 import axios from 'axios'
-import type { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
+import type { AxiosInstance, AxiosResponse, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 import { refreshTokenApi } from './auth'
 
@@ -204,5 +204,23 @@ export function createCancellableRequest<T>(
   }
 }
 
+// ── 对外导出类型 ──
+// 响应拦截器已经把 response.data 拆包（见上方 interceptors.response.use），运行时
+// request.get() 拿到的就是业务数据本身；但 AxiosInstance 的静态类型仍标着 AxiosResponse，
+// 声明与运行时不符，导致每一个调用点都丢掉类型（曾因此漏过真实缺陷）。
+// 这里用一个反映真实返回值的类型替换导出类型，使 request.get<T>() 直接返回 T。
+// 泛型默认 any 是为了兼容尚未标注类型的存量调用点（70+ 处）；
+// 后续应逐步改写为 request.get<Foo>(...)，让调用点拿到具体类型。
+/* eslint-disable @typescript-eslint/no-explicit-any -- 存量调用点尚未逐个标注泛型，见上方说明 */
+interface Http {
+  get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>
+  post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>
+  put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>
+  patch<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>
+  delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>
+  request<T = any>(config: AxiosRequestConfig): Promise<T>
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 export { getToken, getAccessToken, setAccessToken, setRefreshToken, clearToken, getRefreshToken }
-export default instance
+export default instance as unknown as Http
