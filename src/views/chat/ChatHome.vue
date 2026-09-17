@@ -821,7 +821,7 @@ watch(
 
 /* 科技感蓝色光晕背景 */
 .messages-inner {
-  max-width: 720px;
+  max-width: 1000px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;

@@ -326,13 +326,13 @@ function downloadBlob(blob: Blob, fileName: string) {
   flex-direction: row-reverse;
 }
 
-/* AI 气泡整体向左收窄一点 */
+/* AI 消息无边框通栏排版（千问风格） */
 .msg-row-ai {
   margin-left: 0;
-  padding-right: 60px;
+  padding-right: 24px;
 }
 .msg-row-ai .msg-content-area {
-  max-width: 85%;
+  max-width: 100%;
 }
 
 /* AI 头像 */
@@ -378,11 +378,11 @@ function downloadBlob(blob: Blob, fileName: string) {
 }
 
 .msg-bubble-ai {
-  background: #f7f8fa;
+  background: transparent;
   color: #2c3e50;
-  border-radius: 20px;
-  border-bottom-left-radius: 4px;
-  border: 1px solid #eef0f2;
+  border-radius: 0;
+  border: none;
+  padding: 4px 0;
 }
 
 /* 引用 */
