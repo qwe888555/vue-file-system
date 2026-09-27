@@ -120,11 +120,11 @@ async function handleSubmit() {
 
   try {
     if (props.file?.id) {
-      // 描述为空时整个字段不传（后端对 '' 和 null 都报"不能为空/不能为 null"），PATCH 部分更新只改标题
-      const payload: { title: string; description?: string } = { title: form.value.title.trim() }
-      const desc = form.value.description.trim()
-      if (desc) payload.description = desc
-      await updateDocApi(props.file.id, payload)
+      // 描述清空后传空字符串保存（依赖后端序列化器 allow_blank 修复，见 2026-09-28 沟通）
+      await updateDocApi(props.file.id, {
+        title: form.value.title.trim(),
+        description: form.value.description.trim(),
+      })
 
       const originalMap = new Map(originalKeywords.value.map((kw) => [kw.id, kw]))
       const currentMap = new Map(validKeywords.map((kw) => [kw.id, kw]))
