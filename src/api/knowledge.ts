@@ -107,7 +107,7 @@ export function uploadCallbackApi(data: {
   return request.post('/knowledge/upload/callback/', data)
 }
 
-/** 编辑文档 */
+/** 编辑文档（PATCH 部分更新：description 为空时不要传该字段，后端拒绝 '' 和 null） */
 export function updateDocApi(id: number, data: {
   title?: string
   description?: string
@@ -116,7 +116,7 @@ export function updateDocApi(id: number, data: {
   category_id?: number
   content?: string
 }): Promise<void> {
-  return request.put(`/knowledge/docs/${id}/`, data)
+  return request.patch(`/knowledge/docs/${id}/`, data)
 }
 
 /** 删除文档 */

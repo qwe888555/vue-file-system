@@ -120,11 +120,11 @@ async function handleSubmit() {
 
   try {
     if (props.file?.id) {
-      await updateDocApi(props.file.id, {
-        title: form.value.title.trim(),
-        // 后端允许描述为空，但不接受空字符串（DRF allow_blank 校验），为空时传 null
-        description: form.value.description.trim() || null,
-      })
+      // 描述为空时整个字段不传（后端对 '' 和 null 都报"不能为空/不能为 null"），PATCH 部分更新只改标题
+      const payload: { title: string; description?: string } = { title: form.value.title.trim() }
+      const desc = form.value.description.trim()
+      if (desc) payload.description = desc
+      await updateDocApi(props.file.id, payload)
 
       const originalMap = new Map(originalKeywords.value.map((kw) => [kw.id, kw]))
       const currentMap = new Map(validKeywords.map((kw) => [kw.id, kw]))
