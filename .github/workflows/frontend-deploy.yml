@@ -1,0 +1,114 @@
+name: Deploy Frontend to Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Apply local patch (OSS direct-upload Content-Type)
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys
+          p = pathlib.Path('src/utils/oss-upload.ts')
+          s = p.read_text(encoding='utf-8')
+          if "setRequestHeader('Content-Type'" in s:
+              print('already patched')
+          else:
+              old = "xhr.open('PUT', credential.upload_url)"
+              if old not in s:
+                  print('patch anchor not found'); sys.exit(1)
+              s = s.replace(old, old + "\n      xhr.setRequestHeader('Content-Type', 'application/octet-stream')")
+              p.write_text(s, encoding='utf-8')
+              print('patched')
+          PY
+          grep -q "setRequestHeader('Content-Type'" src/utils/oss-upload.ts
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --registry=https://registry.npmmirror.com
+
+      - name: Build project
+        run: npm run build
+      - name: Verify build output
+        run: |
+          test -f dist/index.html || { echo "构建产物缺少 dist/index.html"; exit 1; }
+          du -sh dist
+
+      # 1) 在服务器上清空临时发布目录
+      - name: Prepare remote staging dir
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          fingerprint: SHA256:wh0eA4TXFxwcUgY/hkz8gks/msWX3N9Z3HW80ed8rmc
+          script: |
+            set -e
+            rm -rf /tmp/campus_frontend_dist
+            mkdir -p /tmp/campus_frontend_dist
+
+      # 2) 上传构建产物到临时目录
+      - name: Upload dist to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          fingerprint: SHA256:wh0eA4TXFxwcUgY/hkz8gks/msWX3N9Z3HW80ed8rmc
+          source: 'dist/*'
+          target: /tmp/campus_frontend_dist
+          strip_components: 1
+          overwrite: true
+
+      # 3) rsync --delete 发布 + 校验 + 访问自检（失败即红，不再有"绿灯假成功"）
+      - name: Publish and self-check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          fingerprint: SHA256:wh0eA4TXFxwcUgY/hkz8gks/msWX3N9Z3HW80ed8rmc
+          script: |
+            set -e
+            WEB_ROOT=/www/wwwroot/campus_frontend
+            STAGE=/tmp/campus_frontend_dist
+
+            test -f "$STAGE/index.html" || { echo "服务器暂存目录缺少 index.html"; exit 1; }
+
+            # 覆盖式发布，清掉旧的 hash 资源，避免目录无限膨胀
+            sudo -n mkdir -p "$WEB_ROOT"
+            sudo -n rsync -a --delete "$STAGE"/ "$WEB_ROOT"/
+
+            # Caddyfile 校验通过才 reload
+            sudo -n caddy validate --config /etc/caddy/Caddyfile >/dev/null
+            sudo -n systemctl reload caddy
+
+            # 自检：首页 200，且 index.html 里引用的 JS 资源可访问
+            code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 http://127.0.0.1:8080/)
+            asset=$(grep -oE 'assets/[A-Za-z0-9._-]+\.js' "$WEB_ROOT/index.html" | head -n1 || true)
+            acode=200
+            if [ -n "$asset" ]; then
+              acode=$(curl -s -o /dev/null -w '%{http_code}' -m 10 "http://127.0.0.1:8080/$asset")
+            fi
+
+            echo "首页 / -> $code, 资源 ${asset:-无} -> $acode"
+            if [ "$code" != "200" ] || [ "$acode" != "200" ]; then
+              echo "前端自检失败"
+              exit 1
+            fi
+            echo "部署成功"
