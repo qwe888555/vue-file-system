@@ -64,6 +64,8 @@ async function loadDingTalkQr() {
           userStore.token = statusData.access
           userStore.refreshToken = statusData.refresh
           userStore.userInfo = statusData.user
+          // 回调 user 仅用于展示，归属/权限以合并后的 /admin/me/ 结果为准
+          await userStore.getUserInfo()
           ElMessage.success('登录成功')
           navTimeout = setTimeout(() => {
             const target = isAdminRole(userStore.role) ? '/knowledge/list' : '/chat'
@@ -132,15 +134,15 @@ onMounted(async () => {
     userStore.refreshToken = ssoRes.refresh
     userStore.userInfo = ssoRes.user
     localStorage.setItem('user', JSON.stringify(ssoRes.user))
-    if (!userStore.role) {
-      try { await userStore.getUserInfo() } catch {}
-    }
+    // 回调 user 仅用于展示，归属/权限以合并后的 /admin/me/ 结果为准
+    await userStore.getUserInfo()
     const role = userStore.role
     const welcomeRole = role === 'super_admin' ? '超级管理员' : isAdminRole(role) ? '普通管理员' : '普通用户'
     ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
     router.push(isAdminRole(role) ? '/knowledge/list' : '/chat')
-  } catch (e: any) {
-    ElMessage.error(e?.message || 'SSO 登录失败')
+  } catch (e) {
+    // HTTP / 网络错误已由 request 拦截器统一提示，避免重复 toast
+    console.error('[SSO] 回调登录失败:', e)
   } finally {
     loading.value = false
   }
@@ -171,31 +173,53 @@ async function handleLogin(username: string, password: string) {
 
 // SSO 统一登录
 async function handleSSOLogin() {
+  if (ssoLoading.value) return
   ssoLoading.value = true
+  ssoAccounts.value = []
   try {
     const url = ssoLoginUrl()
     const response = await fetch(url, { redirect: 'manual' })
+
+    // 302：同源可读 Location 时直接跳转
     if (response.status === 302) {
       window.location.href = response.headers.get('Location') || url
       return
     }
-    if (response.ok) {
-      const data = await response.json()
-      if (data.mock_codes && Array.isArray(data.mock_codes)) {
-        ssoAccounts.value = data.mock_codes
-        ssoLoading.value = false
-        ssoDialogVisible.value = true
-        return
-      }
+    // 浏览器 manual 模式下的跨域重定向是 opaqueredirect（status 0），重新访问由浏览器跟随
+    if (response.type === 'opaqueredirect') {
+      window.location.href = url
+      return
     }
-  } catch { /* 忽略 */ }
-  // 后端不可用或未返回 mock_codes 时使用默认测试账号
-  ssoAccounts.value = [
-    { code: 'mock_college_admin', username: 'sso_college_admin', role: 'college_admin', description: '学院SSO管理员' },
-    { code: 'mock_dept_admin', username: 'sso_dept_admin', role: 'dept_admin', description: '部门SSO管理员' },
-  ]
-  ssoDialogVisible.value = true
-  ssoLoading.value = false
+
+    const data = await response.json().catch(() => null)
+    // 兼容后端新增的 mode 字段；缺少 mode 时按响应结构判断
+    const isRedirect = data?.mode === 'redirect' || (!data?.mode && !!data?.sso_url)
+    const isMock = data?.mode === 'mock' || (!data?.mode && Array.isArray(data?.mock_codes))
+
+    // 正式 SSO：后端给出统一认证地址
+    if (response.ok && isRedirect && data.sso_url) {
+      window.location.href = data.sso_url
+      return
+    }
+
+    // Mock：账号列表完全由后端返回，前端不做任何硬编码兜底
+    if (response.ok && isMock && Array.isArray(data.mock_codes)) {
+      if (data.mock_codes.length) {
+        ssoAccounts.value = data.mock_codes
+        ssoDialogVisible.value = true
+      } else {
+        ElMessage.warning('当前没有可用的 SSO 测试账号')
+      }
+      return
+    }
+
+    // 后端未配置 / 返回异常：展示真实原因，不伪造账号
+    ElMessage.error(data?.detail || `统一身份认证登录不可用（HTTP ${response.status}）`)
+  } catch {
+    ElMessage.error('无法连接统一身份认证服务，请检查网络后重试')
+  } finally {
+    ssoLoading.value = false
+  }
 }
 
 // SSO 选择测试账号
@@ -209,15 +233,15 @@ async function handleSSOSelect(code: string) {
     userStore.token = ssoRes.access
     userStore.refreshToken = ssoRes.refresh
     userStore.userInfo = ssoRes.user
-    if (!userStore.role) {
-      try { await userStore.getUserInfo() } catch {}
-    }
+    // 回调 user 仅用于展示，归属/权限以合并后的 /admin/me/ 结果为准
+    await userStore.getUserInfo()
     const role = userStore.role
     const welcomeRole = role === 'super_admin' ? '超级管理员' : isAdminRole(role) ? '普通管理员' : '普通用户'
     ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
     router.push(isAdminRole(role) ? '/knowledge/list' : '/chat')
-  } catch {
-    ElMessage.error('SSO 登录失败')
+  } catch (e) {
+    // HTTP / 网络错误已由 request 拦截器统一提示，避免重复 toast
+    console.error('[SSO] Mock 登录失败:', e)
   } finally {
     ssoLoading.value = false
   }

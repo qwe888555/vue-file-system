@@ -2,7 +2,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { UserInfo, UserRole, LoginParams } from '@/types'
-import { loginApi, getUserInfoApi, logoutApi } from '@/api/auth'
+import { loginApi, getUserInfoApi, getAdminMeApi, logoutApi } from '@/api/auth'
 import { setAccessToken, setRefreshToken, clearToken, getAccessToken, getRefreshToken } from '@/api/request'
 
 export const useUserStore = defineStore('user', () => {
@@ -42,9 +42,15 @@ export const useUserStore = defineStore('user', () => {
 
   async function getUserInfo() {
     try {
-      const res = await getUserInfoApi()
-      userInfo.value = res
-      return res
+      // /auth/me/ 提供姓名、邮箱、手机、头像等个人资料；
+      // /admin/me/ 提供 college_id、department_id 和 permissions，两者字段互补，必须合并。
+      // /admin/me/ 失败时退回资料接口，不阻断登录和角色判断。
+      const [profile, adminMe] = await Promise.all([
+        getUserInfoApi(),
+        getAdminMeApi().catch(() => null),
+      ])
+      userInfo.value = { ...profile, ...(adminMe ?? {}) }
+      return userInfo.value
     } catch (error) {
       console.error('[user store] getUserInfo failed:', error)
       return null

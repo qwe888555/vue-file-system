@@ -3,7 +3,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
-import { changePasswordApi, updateProfileApi, getUserInfoApi } from '@/api/auth'
+import { changePasswordApi, updateProfileApi } from '@/api/auth'
 
 const emit = defineEmits<{ close: [] }>()
 const userStore = useUserStore()
@@ -23,18 +23,14 @@ const profileForm = reactive({
 // 修改密码表单
 const pwdForm = reactive({ old_password: '', new_password: '' })
 
-// 打开时从接口获取最新用户信息
+// 打开时从接口获取最新用户信息（store 会合并 /auth/me/ 与 /admin/me/）
 onMounted(async () => {
-  try {
-    const res = await getUserInfoApi()
-    userStore.userInfo = res
-    profileForm.first_name = res.first_name || ''
-    profileForm.last_name = res.last_name || ''
-    profileForm.email = res.email || ''
-    profileForm.phone = res.phone || ''
-  } catch {
-    // 静默，使用已有缓存
-  }
+  const res = await userStore.getUserInfo()
+  if (!res) return
+  profileForm.first_name = res.first_name || ''
+  profileForm.last_name = res.last_name || ''
+  profileForm.email = res.email || ''
+  profileForm.phone = res.phone || ''
 })
 
 function validatePhone(val: string) {
@@ -74,7 +70,8 @@ async function handleSaveProfile() {
       email,
       phone,
     })
-    userStore.userInfo = res
+    // updateProfileApi 只返回资料字段，合并以保留 /admin/me/ 的归属与权限
+    userStore.userInfo = { ...(userStore.userInfo ?? res), ...res }
     ElMessage.success('个人资料更新成功')
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || e?.message || '更新失败')

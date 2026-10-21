@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { ssoLogin, fetchSsoToken, API_BASE } from './helpers'
+import { ssoLogin, API_BASE } from './helpers'
 
 test.describe('知识库管理', () => {
   test.describe('桌面端', () => {
@@ -46,9 +46,8 @@ test.describe('知识库管理', () => {
 
     test('直接访问文档详情页渲染标题', async ({ page, isMobile }) => {
       test.skip(isMobile)
-      await ssoLogin(page, 'super_admin')
       // 动态取一篇已索引文档的 id（docs 接口需鉴权，使用超管 token）
-      const t = await fetchSsoToken('mock_super_admin')
+      const t = await ssoLogin(page, 'super_admin')
       const res = await page.request.get(`${API_BASE}/api/knowledge/docs/`, {
         headers: { Authorization: `Bearer ${t.access}` },
       })

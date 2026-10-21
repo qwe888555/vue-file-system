@@ -101,9 +101,11 @@ instance.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config
+    // SSO 回调是公开接口：401 表示 code 无效，不是 access token 过期，不能走刷新流程
+    const isSsoCallback = originalRequest.url?.includes('/auth/sso/callback/')
 
-    // 401 → 尝试刷新 Token
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // 401 → 尝试刷新 Token（SSO 回调除外）
+    if (error.response?.status === 401 && !originalRequest._retry && !isSsoCallback) {
       // 刷新接口自身返回 401：不进入刷新流程。
       // 否则刷新请求在 isRefreshing=true 时会把自己 push 进 pendingQueue，
       // 返回一个永不 resolve 的 Promise，外层 catch 永远不执行 → 全部请求挂死。
@@ -185,7 +187,8 @@ instance.interceptors.response.use(
       }
     }
     error.message = msg
-    if (error.response?.status !== 401) {
+    // SSO 回调的 401 需要展示后端 detail；其他 401 仍交给刷新流程/调用方处理
+    if (error.response?.status !== 401 || isSsoCallback) {
       ElMessage.error(msg)
     }
     return Promise.reject(error)

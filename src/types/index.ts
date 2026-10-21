@@ -158,14 +158,14 @@ export interface Account {
   last_name: string
   role: UserRole
   role_display: string
-  college_id: number | null
+  college: number | null
   college_name: string | null
-  department_id: number | null
+  department: number | null
   department_name: string | null
   is_active: boolean
   date_joined: string
   last_login: string | null
-  resource_count: number
+  uploaded_doc_count: number
 }
 
 export interface College {

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { ssoLogin, uiLogin, mobileUiLogin, ssoUiLogin, PASSWORD } from './helpers'
+import { ssoLogin, uiLogin, mobileUiLogin, ssoUiLogin } from './helpers'
 
 test.describe('登录与认证', () => {
   test.describe('桌面端', () => {
@@ -33,9 +33,9 @@ test.describe('登录与认证', () => {
       await expect(page).toHaveURL(/\/chat$/, { timeout: 15000 })
     })
 
-    test('SSO 统一认证弹窗登录（mock_admin）', async ({ page, isMobile }) => {
+    test('SSO 统一认证弹窗登录（mock_college_admin）', async ({ page, isMobile }) => {
       test.skip(isMobile)
-      await ssoUiLogin(page, 'sso_admin')
+      await ssoUiLogin(page, 'sso_college_admin')
       await expect(page).toHaveURL(/\/knowledge\/list/, { timeout: 15000 })
     })
 

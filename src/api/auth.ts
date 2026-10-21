@@ -13,9 +13,14 @@ export function refreshTokenApi(params: RefreshParams): Promise<RefreshResult> {
   return request.post('/auth/refresh/', params)
 }
 
-/** 获取当前用户信息 */
+/** 获取当前用户信息（个人资料：姓名/邮箱/手机/头像等） */
 export function getUserInfoApi(): Promise<UserInfo> {
   return request.get('/auth/me/')
+}
+
+/** 获取当前用户的归属与权限快照（college_id/department_id/permissions） */
+export function getAdminMeApi(): Promise<Partial<UserInfo>> {
+  return request.get('/admin/me/')
 }
 
 /** 更新个人资料 */

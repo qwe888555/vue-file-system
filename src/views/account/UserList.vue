@@ -128,7 +128,6 @@
 </template>
 
 <script setup lang="ts">
-/* eslint-disable no-console */
 // ── 账号管理页面（对接后端 API） ──
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -263,9 +262,6 @@ async function getLocalAccounts(params: {
 }) {
   // 兜底：非超级管理员且有 college_id → 强制限制学院范围（不依赖过滤器链路）
   const collegeId = params.college_id ?? (!isSuperAdmin.value ? userCollegeId.value : undefined)
-  if (!isSuperAdmin.value && !userCollegeId.value) {
-    console.warn('[UserList] 非超级管理员但 college_id 为空，无法限制学院范围', userStore.userInfo)
-  }
 
   // __admin__ → 不传 role 给后端，拿到全量后前端过滤
   const apiRole = params.role === '__admin__' ? undefined : params.role || undefined

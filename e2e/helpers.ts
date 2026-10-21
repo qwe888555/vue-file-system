@@ -17,6 +17,13 @@ export const SSO_CODES: Record<string, string> = {
   student: 'mock_student',
 }
 
+/** 后端默认 SSO_MOCK_ALLOW_PRIVILEGED=False，高权限 mock code 会被 401 拒绝；
+ *  E2E 改用 seed_e2e.py 已设置密码的种子账号登录，不依赖被隐藏的 code。 */
+const PRIVILEGED_USERS: Record<string, string> = {
+  super_admin: 'sso_super_admin',
+  admin: 'sso_admin',
+}
+
 /** 通过后端 SSO Mock 回调换取真实 token（node 侧直连，无 CORS） */
 export async function fetchSsoToken(code: string) {
   const ctx = await pwRequest.newContext({ baseURL: API_BASE })
@@ -27,9 +34,33 @@ export async function fetchSsoToken(code: string) {
   return body as { access: string; refresh: string; user: Record<string, unknown> }
 }
 
-/** 用 SSO token 预注入 localStorage，再让路由守卫用真实 token 拉取用户信息 */
+/** 用种子账号密码换取真实 token（高权限角色使用） */
+export async function fetchPasswordToken(username: string, password: string = PASSWORD) {
+  const ctx = await pwRequest.newContext({ baseURL: API_BASE })
+  const res = await ctx.post('/api/auth/login/', { data: { username, password } })
+  const body = await res.json()
+  if (!body.access) {
+    await ctx.dispose()
+    throw new Error(`密码登录失败 (${username}): ${JSON.stringify(body).slice(0, 200)}`)
+  }
+  // 登录接口只返回 access/refresh，user 需另取，保持与 SSO 回调返回结构一致
+  const me = await ctx.get('/api/auth/me/', {
+    headers: { Authorization: `Bearer ${body.access}` },
+  })
+  const user = me.ok() ? await me.json() : null
+  await ctx.dispose()
+  return { access: body.access, refresh: body.refresh, user } as {
+    access: string
+    refresh: string
+    user: Record<string, unknown> | null
+  }
+}
+
+/** 用真实 token 预注入 localStorage，再让路由守卫用真实 token 拉取用户信息 */
 export async function ssoLogin(page: Page, role: keyof typeof SSO_CODES) {
-  const t = await fetchSsoToken(SSO_CODES[role])
+  const t = PRIVILEGED_USERS[role]
+    ? await fetchPasswordToken(PRIVILEGED_USERS[role])
+    : await fetchSsoToken(SSO_CODES[role])
   await page.addInitScript(({ access, refresh, user }) => {
     localStorage.setItem('access_token', access)
     localStorage.setItem('refresh_token', refresh)
