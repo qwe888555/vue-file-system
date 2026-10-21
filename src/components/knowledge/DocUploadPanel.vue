@@ -49,6 +49,10 @@ const uploadRef = ref()
 const showCreateForm = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
+// ── 创建文件状态弹窗（确认信息 / 确认创建 期间展示进度提示）──
+const createStatusVisible = ref(false)
+const createStatusText = ref('')
+
 const currentFileForm = computed(() => {
   if (selectedFiles.value.length > 0 && selectedFiles.value[selectedFileIndex.value]) {
     return selectedFiles.value[selectedFileIndex.value]
@@ -443,6 +447,9 @@ async function handleConfirmInfo() {
     return
   }
 
+  createStatusText.value = 'AI 正在解析文件内容，为您生成文件名和关键词，请稍候...'
+  createStatusVisible.value = true
+
   try {
     const result = await aiClassifyApi({ content: uploadForm.value.content })
 
@@ -470,6 +477,8 @@ async function handleConfirmInfo() {
     if (!uploadForm.value.title) {
       uploadForm.value.title = '未命名文档'
     }
+  } finally {
+    createStatusVisible.value = false
   }
 }
 
@@ -531,11 +540,8 @@ async function handleUploadSubmit() {
       return
     }
 
-    const loadingInstance = ElLoading.service({
-      lock: true,
-      text: '正在创建文件...',
-      background: 'rgba(0, 0, 0, 0.7)',
-    })
+    createStatusText.value = '正在创建文件并写入知识库，请稍候...'
+    createStatusVisible.value = true
 
     try {
       const result = await uploadTextApi({
@@ -556,7 +562,7 @@ async function handleUploadSubmit() {
       console.error('创建文件失败:', error)
       ElMessage.error('创建文件失败，请重试')
     } finally {
-      loadingInstance.close()
+      createStatusVisible.value = false
     }
   } else {
     if (selectedFiles.value.length === 0) {
@@ -984,6 +990,24 @@ async function handleUploadSubmit() {
         </div>
       </div>
     </div>
+
+    <!-- 创建文件状态弹窗：AI 解析 / 创建过程中给出明确反馈 -->
+    <el-dialog
+      v-model="createStatusVisible"
+      title="正在创建文件"
+      width="400px"
+      :show-close="false"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      align-center
+      append-to-body
+    >
+      <div class="create-status-content">
+        <el-icon class="is-loading" :size="36" color="#409eff"><Loading /></el-icon>
+        <p class="create-status-text">{{ createStatusText }}</p>
+        <p class="create-status-tip">请勿关闭页面或重复提交</p>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -1403,5 +1427,28 @@ async function handleUploadSubmit() {
 
 .preview-icon:hover {
   color: #66b1ff;
+}
+
+/* ── 创建文件状态弹窗 ── */
+.create-status-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 0 16px;
+  text-align: center;
+}
+
+.create-status-text {
+  margin: 0;
+  font-size: 14px;
+  color: #303133;
+  line-height: 1.6;
+}
+
+.create-status-tip {
+  margin: 0;
+  font-size: 12px;
+  color: #909399;
 }
 </style>
