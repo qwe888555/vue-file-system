@@ -237,6 +237,12 @@ export interface Keyword {
   weight: number
 }
 
+/** 判断关键词 id 是否为服务端真实 id（正整数）；0 仅用于前端新增占位 */
+export function isValidKeywordId(id: unknown): boolean {
+  const num = Number(id)
+  return Number.isInteger(num) && num > 0
+}
+
 /** 文档关键词 CRUD */
 export function getKeywordsApi(docId: number): Promise<Keyword[]> {
   return request.get(`/knowledge/docs/${docId}/keywords/`)
@@ -255,9 +261,15 @@ export async function addKeywordsApi(docId: number, keywords: string[]): Promise
   }
 }
 export function updateKeywordApi(id: number, data: { phrase: string; match_type: string; weight: number }): Promise<void> {
+  if (!isValidKeywordId(id)) {
+    return Promise.reject(new Error(`无效的关键词 ID：${id}`))
+  }
   return request.put(`/knowledge/keywords/${id}/`, data)
 }
 export function deleteKeywordApi(id: number): Promise<void> {
+  if (!isValidKeywordId(id)) {
+    return Promise.reject(new Error(`无效的关键词 ID：${id}`))
+  }
   return request.delete(`/knowledge/keywords/${id}/delete/`)
 }
 

@@ -11,7 +11,7 @@
         <el-input v-model="form.title" placeholder="请输入文件名" />
       </el-form-item>
 
-      <el-form-item label="描述">
+      <el-form-item label="描述" required>
         <el-input
           v-model="form.description"
           type="textarea"
@@ -20,7 +20,7 @@
         />
       </el-form-item>
 
-      <el-form-item label="关键词">
+      <el-form-item label="关键词" required>
         <div class="keywords-container">
           <div v-for="(kw, index) in form.keywords" :key="kw.id || index" class="keyword-item">
             <el-input
@@ -56,7 +56,7 @@ import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { addKeywordApi, deleteKeywordApi, updateKeywordApi, updateDocApi } from '@/api/knowledge'
+import { addKeywordApi, deleteKeywordApi, getKeywordsApi, isValidKeywordId, updateKeywordApi, updateDocApi } from '@/api/knowledge'
 
 const props = defineProps<{
   visible: boolean
@@ -76,6 +76,25 @@ const form = ref({
 
 const originalKeywords = ref<Keyword[]>([])
 
+/** 深拷贝关键词，避免编辑表单与原始快照共享同一批对象导致改名无法被识别 */
+function cloneKeywords(list: Keyword[] = []): Keyword[] {
+  return list.map((kw) => ({ ...kw }))
+}
+
+/** 归一化服务端关键词字段（兼容 phrase / keyword / name 命名） */
+function normalizeKeywords(
+  list: Array<Partial<Keyword> & { keyword?: string; name?: string }> = [],
+): Keyword[] {
+  return list
+    .map((kw) => ({
+      id: Number(kw.id) || 0,
+      phrase: kw.phrase || kw.keyword || kw.name || '',
+      match_type: kw.match_type || 'exact',
+      weight: kw.weight || 1,
+    }))
+    .filter((kw) => kw.phrase)
+}
+
 watch(
   () => props.visible,
   (visible) => {
@@ -83,8 +102,9 @@ watch(
       form.value.title = props.file.title
       // 优先使用 summary，其次 description（后端可能返回不同字段名）
       form.value.description = props.file.summary || (props.file as any).description || ''
-      form.value.keywords = [...(props.file.keywords || [])]
-      originalKeywords.value = [...(props.file.keywords || [])]
+      const initialKeywords = normalizeKeywords(props.file.keywords || [])
+      form.value.keywords = cloneKeywords(initialKeywords)
+      originalKeywords.value = cloneKeywords(initialKeywords)
     } else if (!visible) {
       resetForm()
     }
@@ -116,7 +136,25 @@ async function handleSubmit() {
     return
   }
 
-  const validKeywords = form.value.keywords.filter((kw) => kw.phrase.trim())
+  if (!form.value.description.trim()) {
+    ElMessage.warning('请输入文件描述')
+    return
+  }
+
+  if (form.value.keywords.some((kw) => !kw.phrase.trim())) {
+    ElMessage.warning('关键词不能为空，请填写或删除空白关键词')
+    return
+  }
+
+  const validKeywords = form.value.keywords.map((kw) => ({
+    ...kw,
+    phrase: kw.phrase.trim(),
+  }))
+
+  if (validKeywords.length === 0) {
+    ElMessage.warning('请至少填写一个关键词')
+    return
+  }
 
   try {
     if (props.file?.id) {
@@ -125,30 +163,40 @@ async function handleSubmit() {
         description: form.value.description.trim(),
       })
 
-      const originalMap = new Map(originalKeywords.value.map((kw) => [kw.id, kw]))
-      const currentMap = new Map(validKeywords.map((kw) => [kw.id, kw]))
+      const originalById = new Map(
+        originalKeywords.value
+          .filter((kw) => isValidKeywordId(kw.id))
+          .map((kw) => [Number(kw.id), kw] as const),
+      )
+      const currentValid = validKeywords.filter((kw) => isValidKeywordId(kw.id))
+      const currentIds = new Set(currentValid.map((kw) => Number(kw.id)))
 
-      for (const [id] of originalMap) {
-        if (!currentMap.has(id)) {
+      // 删除：只处理服务端真实 id，避免请求 /keywords/0/delete/
+      for (const id of originalById.keys()) {
+        if (!currentIds.has(id)) {
           await deleteKeywordApi(id)
         }
       }
 
-      const toAdd = validKeywords.filter((kw) => !kw.id)
-      const toUpdate = validKeywords.filter((kw) => kw.id && originalMap.get(kw.id)?.phrase !== kw.phrase)
-
-      if (toAdd.length > 0) {
-        for (const kw of toAdd) {
-          await addKeywordApi(props.file!.id, kw.phrase.trim())
-        }
+      // 新增：id 无效（0 或缺失）的行；去重只针对已保留的有效关键词
+      const retainedPhrases = new Set(currentValid.map((kw) => kw.phrase))
+      for (const kw of validKeywords) {
+        if (isValidKeywordId(kw.id)) continue
+        if (retainedPhrases.has(kw.phrase)) continue
+        retainedPhrases.add(kw.phrase)
+        await addKeywordApi(props.file.id, kw.phrase)
       }
 
-      for (const kw of toUpdate) {
-        await updateKeywordApi(kw.id!, {
-          phrase: kw.phrase.trim(),
-          match_type: kw.match_type || 'exact',
-          weight: kw.weight || 1,
-        })
+      // 更新：真实 id 且短语有变化（原始快照已深拷贝，改名可被识别）
+      for (const kw of currentValid) {
+        const originalPhrase = originalById.get(Number(kw.id))?.phrase.trim()
+        if (originalPhrase !== kw.phrase) {
+          await updateKeywordApi(Number(kw.id), {
+            phrase: kw.phrase,
+            match_type: kw.match_type || 'exact',
+            weight: kw.weight || 1,
+          })
+        }
       }
     }
   } catch (error) {
@@ -157,10 +205,20 @@ async function handleSubmit() {
     return
   }
 
+  // 保存后重新拉取服务端关键词，让新增项拿到真实 id，避免下次编辑重复添加
+  let latestKeywords = validKeywords
+  if (props.file?.id) {
+    try {
+      latestKeywords = normalizeKeywords(await getKeywordsApi(props.file.id))
+    } catch (error) {
+      console.warn('[EditFileForm] 保存后刷新关键词失败，使用本地结果:', error)
+    }
+  }
+
   emit('submit', {
     title: form.value.title.trim(),
     description: form.value.description.trim(),
-    keywords: validKeywords,
+    keywords: latestKeywords,
   })
 }
 </script>

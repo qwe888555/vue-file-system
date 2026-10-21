@@ -1,5 +1,6 @@
 // ── 知识库文档本地缓存（描述/关键词） ──
 // 后端列表接口不返回 description，编辑/上传后写入 localStorage 防刷新丢失
+// 注意：关键词缓存只作为搜索提示，不能作为编辑/删除的数据源（上传后缓存可能含 id: 0）
 import type { Keyword } from '@/types'
 
 const DESC_CACHE_KEY = 'doc_description_cache'
@@ -43,7 +44,11 @@ export function getCachedKeywords(id: number): Keyword[] | undefined {
 }
 
 export function cacheKeywords(id: number, keywords: Keyword[]) {
-  if (!keywords.length) return
-  keywordsCache.set(id, keywords)
+  // 空数组表示关键词已全部删除，需要同步清除缓存，否则刷新后旧关键词会“复活”
+  if (!keywords.length) {
+    keywordsCache.delete(id)
+  } else {
+    keywordsCache.set(id, keywords)
+  }
   saveJsonCache(KW_CACHE_KEY, keywordsCache)
 }

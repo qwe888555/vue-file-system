@@ -4,7 +4,7 @@ import { ref, computed, triggerRef } from 'vue'
 import { ElMessage, ElLoading } from 'element-plus'
 import { Upload, Close, Plus, Check, Document, WarningFilled, Loading } from '@element-plus/icons-vue'
 import type { KnowledgeFile } from '@/types'
-import { uploadTextApi, uploadFileApi, aiClassifyApi, addKeywordsApi } from '@/api/knowledge'
+import { uploadTextApi, uploadFileApi, aiClassifyApi, addKeywordsApi, getKeywordsApi } from '@/api/knowledge'
 import { uploadFileToOss } from '@/utils/oss-upload'
 import { cacheDesc, cacheKeywords } from '@/utils/docCache'
 
@@ -514,6 +514,10 @@ async function handleUploadSubmit() {
 
     for (const item of selectedFiles.value) {
       const itemKeywords = keywordsOf(item)
+      if (!item.description.trim()) {
+        ElMessage.warning(`文件 "${item.title || item.file.name}" 缺少描述，请先确认信息`)
+        return
+      }
       if (itemKeywords.length === 0) {
         ElMessage.warning(`文件 "${item.title || item.file.name}" 缺少关键词，请先确认信息`)
         return
@@ -530,6 +534,10 @@ async function handleUploadSubmit() {
       ElMessage.warning('请输入文件内容')
       return
     }
+    if (!uploadForm.value.description.trim()) {
+      ElMessage.warning('请输入文件描述')
+      return
+    }
 
     const loadingInstance = ElLoading.service({
       lock: true,
@@ -541,13 +549,13 @@ async function handleUploadSubmit() {
       const result = await uploadTextApi({
         title: uploadForm.value.title,
         content: uploadForm.value.content,
-        description: uploadForm.value.description || undefined,
-        keywords: keywords.length > 0 ? keywords : undefined,
+        description: uploadForm.value.description.trim(),
+        keywords,
         scope: uploadForm.value.scope === 'public' ? 'school' : 'college',
       })
       // 缓存描述，防止 fetchFiles 刷新后丢失
-      if (result.id && uploadForm.value.description) {
-        cacheDesc(result.id, uploadForm.value.description)
+      if (result.id) {
+        cacheDesc(result.id, uploadForm.value.description.trim())
       }
       ElMessage.success('创建成功')
       resetUploadForm()
@@ -611,7 +619,7 @@ async function handleUploadSubmit() {
             result = await uploadFileToOss({
               file,
               title: item.title || fileName,
-              description: item.description,
+              description: item.description.trim(),
               scope: item.scope,
               keywords: uploadKeywords,
               // 文件哈希计算进度回调
@@ -631,9 +639,7 @@ async function handleUploadSubmit() {
             const formData = new FormData()
             formData.append('file', file)
             formData.append('title', item.title || fileName)
-            if (item.description) {
-              formData.append('description', item.description)
-            }
+            formData.append('description', item.description.trim())
             uploadKeywords.forEach((kw: string) => formData.append('keywords', kw))
             formData.append('scope', item.scope === 'public' ? 'school' : 'college')
 
@@ -646,9 +652,7 @@ async function handleUploadSubmit() {
           const formData = new FormData()
           formData.append('file', file)
           formData.append('title', item.title || fileName)
-          if (item.description) {
-            formData.append('description', item.description)
-          }
+          formData.append('description', item.description.trim())
           uploadKeywords.forEach((kw: string) => formData.append('keywords', kw))
           formData.append('scope', item.scope === 'public' ? 'school' : 'college')
 
@@ -658,14 +662,20 @@ async function handleUploadSubmit() {
         // 上传成功后的统一处理：缓存描述、写入关键词
         if (result.id) {
           item.docId = result.id
-          if (item.description) {
-            cacheDesc(result.id, item.description)
-          }
+          cacheDesc(result.id, item.description.trim())
           if (uploadKeywords.length > 0) {
             try { await addKeywordsApi(result.id, uploadKeywords) } catch {}
-            cacheKeywords(result.id, uploadKeywords.map((phrase: string) => ({
-              id: 0, phrase, match_type: 'exact', weight: 1,
-            })))
+            try {
+              // 优先缓存服务端真实 id；缓存仅用于搜索提示，不参与编辑/删除
+              const realKeywords = await getKeywordsApi(result.id)
+              cacheKeywords(result.id, realKeywords.length > 0 ? realKeywords : uploadKeywords.map((phrase: string) => ({
+                id: 0, phrase, match_type: 'exact', weight: 1,
+              })))
+            } catch {
+              cacheKeywords(result.id, uploadKeywords.map((phrase: string) => ({
+                id: 0, phrase, match_type: 'exact', weight: 1,
+              })))
+            }
           }
         }
         successCount++
@@ -829,7 +839,7 @@ async function handleUploadSubmit() {
             </div>
           </div>
           <div class="form-item">
-            <label class="form-label">关键词</label>
+            <label class="form-label is-required">关键词</label>
             <template v-if="currentFileForm.keywordOptions.length > 0">
               <el-checkbox-group
                 v-model="currentFileForm.checkedKeywords"
@@ -873,7 +883,7 @@ async function handleUploadSubmit() {
             </el-radio-group>
           </div>
           <div class="form-item">
-            <label class="form-label">文件描述</label>
+            <label class="form-label is-required">文件描述</label>
             <el-input
               v-model="currentFileForm.description"
               type="textarea"
@@ -923,7 +933,7 @@ async function handleUploadSubmit() {
             />
           </div>
           <div class="form-item">
-            <label class="form-label">关键词</label>
+            <label class="form-label is-required">关键词</label>
             <template v-if="uploadForm.keywordOptions.length > 0">
               <el-checkbox-group
                 v-model="uploadForm.checkedKeywords"
@@ -964,7 +974,7 @@ async function handleUploadSubmit() {
             </el-radio-group>
           </div>
           <div class="form-item">
-            <label class="form-label">文件描述</label>
+            <label class="form-label is-required">文件描述</label>
             <el-input
               v-model="uploadForm.description"
               type="textarea"
@@ -1153,6 +1163,12 @@ async function handleUploadSubmit() {
   font-weight: 500;
   color: #303133;
   margin-bottom: 8px;
+}
+
+.form-label.is-required::after {
+  content: '*';
+  color: var(--color-danger);
+  margin-left: var(--spacing-xs);
 }
 
 .form-input {

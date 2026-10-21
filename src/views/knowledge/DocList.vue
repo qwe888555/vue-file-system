@@ -4,7 +4,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Download, Edit, Delete, WarningFilled, Grid } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getKeywordsApi, batchDeleteDocsApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getKeywordsApi, isValidKeywordId, batchDeleteDocsApi } from '@/api/knowledge'
 import { cacheDesc, cacheKeywords, getCachedDesc, getCachedKeywords, hasCachedDesc } from '@/utils/docCache'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 import DocUploadPanel from '@/components/knowledge/DocUploadPanel.vue'
@@ -40,6 +40,18 @@ const totalFiles = ref(0)
 const uploadedFiles = ref<KnowledgeFile[]>([])
 const allFiles = ref<KnowledgeFile[]>([])
 
+/** 归一化后端关键词字段（兼容 phrase / keyword / name 命名） */
+function normalizeKeywordList(list: any[] | undefined | null): Keyword[] {
+  return (list || [])
+    .map((kw: any) => ({
+      id: kw.id,
+      phrase: kw.phrase || kw.keyword || kw.name || '',
+      match_type: kw.match_type || 'exact',
+      weight: kw.weight || 1,
+    }))
+    .filter((kw: Keyword) => kw.phrase)
+}
+
 async function fetchFiles(keyword?: string) {
   loading.value = true
   listError.value = ''
@@ -73,19 +85,8 @@ async function fetchFiles(keyword?: string) {
     }
 
     newFiles.forEach((file) => {
-      const cachedKws = getCachedKeywords(file.id)
-      if (cachedKws) {
-        file.keywords = cachedKws
-      } else if (!file.keywords) {
-        file.keywords = []
-      } else if (Array.isArray(file.keywords)) {
-        file.keywords = file.keywords.map((kw: any) => ({
-          id: kw.id,
-          phrase: kw.phrase || kw.keyword || kw.name || '',
-          match_type: kw.match_type || 'exact',
-          weight: kw.weight || 1,
-        })).filter((kw: Keyword) => kw.phrase)
-      }
+      // 关键词始终以服务端数据为准，本地缓存仅用于搜索，避免 id: 0 进入编辑流程
+      file.keywords = normalizeKeywordList(file.keywords)
 
       // 后端蛇形命名 → 前端驼峰命名映射
       if (file.created_at && !file.createdAt) {
@@ -284,8 +285,9 @@ const keywordResults = computed(() => {
       file.updatedAt ? formatDate(file.updatedAt) : '',
       // 格式化后的文件大小（如 "1.5 MB"）
       file.fileSize != null ? formatFileSize(file.fileSize) : '',
-      // 关键词（短语 + ID）
-      ...(file.keywords || []).flatMap((kw) => [kw.phrase, String(kw.id)]),
+      // 关键词（短语 + ID）；服务端未返回关键词时回退本地缓存，仅用于搜索
+      ...((file.keywords?.length ? file.keywords : getCachedKeywords(file.id)) || [])
+        .flatMap((kw) => (isValidKeywordId(kw.id) ? [kw.phrase, String(kw.id)] : [kw.phrase])),
     ]
     const searchText = normalizeSearchText(
       searchableParts
@@ -381,23 +383,17 @@ function formatFileSize(bytes: number): string {
 }
 
 async function handleEdit(file: KnowledgeFile) {
+  // 编辑始终拉取服务端关键词，不使用本地缓存（缓存中的 id 可能为 0）
+  let keywords = normalizeKeywordList(file.keywords)
   try {
-    if (!file.keywords || file.keywords.length === 0) {
-      const keywords = await getKeywordsApi(file.id)
-      file.keywords = keywords.map((kw: any) => ({
-        id: kw.id,
-        phrase: kw.phrase || kw.keyword || kw.name || '',
-        match_type: kw.match_type || 'exact',
-        weight: kw.weight || 1,
-      })).filter((kw: Keyword) => kw.phrase)
-    }
-    editingFile.value = file
-    showEditDialog.value = true
+    keywords = normalizeKeywordList(await getKeywordsApi(file.id))
   } catch (error) {
     console.error('获取关键词失败:', error)
-    editingFile.value = file
-    showEditDialog.value = true
+    ElMessage.warning('获取关键词失败，当前关键词可能不是最新数据')
   }
+  file.keywords = keywords
+  editingFile.value = file
+  showEditDialog.value = true
 }
 
 function handleEditSubmit(data: { title: string; description: string; keywords: Keyword[] }) {
