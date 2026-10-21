@@ -158,6 +158,7 @@ async function handleSubmit() {
 
   try {
     if (props.file?.id) {
+      // 描述清空后传空字符串保存（依赖后端序列化器 allow_blank 修复，见 2026-09-28 沟通）
       await updateDocApi(props.file.id, {
         title: form.value.title.trim(),
         description: form.value.description.trim(),
