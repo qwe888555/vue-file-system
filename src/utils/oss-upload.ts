@@ -160,6 +160,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     title,
     description,
     scope,
+    keywords,
     partSize = 5 * 1024 * 1024, // 默认 5MB 分片
     parallel = 4, // 默认 4 个并发上传
     onProgress,
@@ -246,6 +247,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
       size: file.size,
       college_id: userCollegeId,
       scope: scope === 'public' ? 'school' : 'college',
+      keywords,
     })
 
     return callbackResult
@@ -347,6 +349,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
       size: file.size,
       college_id: userCollegeId,
       scope: scope === 'public' ? 'school' : 'college',
+      keywords,
     })
 
     return callbackResult

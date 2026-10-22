@@ -103,6 +103,8 @@ export function uploadCallbackApi(data: {
   department_id?: number | null
   category_id?: number
   scope?: string
+  /** 关键词列表：由回调接口随文档一起落库，上传后无需再单独补写 */
+  keywords?: string[]
 }): Promise<KnowledgeFile> {
   return request.post('/knowledge/upload/callback/', data)
 }

@@ -4,7 +4,7 @@ import { ref, computed, triggerRef } from 'vue'
 import { ElMessage, ElLoading } from 'element-plus'
 import { Upload, Close, Plus, Check, Document, WarningFilled, Loading } from '@element-plus/icons-vue'
 import type { KnowledgeFile } from '@/types'
-import { uploadTextApi, uploadFileApi, aiClassifyApi, addKeywordsApi, getKeywordsApi } from '@/api/knowledge'
+import { uploadTextApi, uploadFileApi, aiClassifyApi, getKeywordsApi } from '@/api/knowledge'
 import { uploadFileToOss } from '@/utils/oss-upload'
 import { cacheDesc, cacheKeywords } from '@/utils/docCache'
 
@@ -665,12 +665,13 @@ async function handleUploadSubmit() {
           result = await uploadFileApi(formData)
         }
 
-        // 上传成功后的统一处理：缓存描述、写入关键词
+        // 上传成功后的统一处理：缓存描述、拉取服务端关键词
+        // 关键词已由上传接口（小文件/降级）或回调接口（OSS 直传）随文档写库，
+        // 这里只读取真实 id 做缓存，避免重复提交和错误被静默吞掉。
         if (result.id) {
           item.docId = result.id
           cacheDesc(result.id, item.description.trim())
           if (uploadKeywords.length > 0) {
-            try { await addKeywordsApi(result.id, uploadKeywords) } catch {}
             try {
               // 优先缓存服务端真实 id；缓存仅用于搜索提示，不参与编辑/删除
               const realKeywords = await getKeywordsApi(result.id)
