@@ -8,6 +8,7 @@ import { ssoLoginUrl, ssoCallbackApi, dingtalkQrApi } from '@/api/auth'
 import { setAccessToken, setRefreshToken } from '@/api/request'
 import request from '@/api/request'
 import { isAdminRole } from '@/config/roles'
+import { markPageInitialized } from '@/router'
 import AccountLoginForm from '@/components/login/AccountLoginForm.vue'
 import DingTalkQRLogin from '@/components/login/DingTalkQRLogin.vue'
 
@@ -66,6 +67,7 @@ async function loadDingTalkQr() {
           userStore.userInfo = statusData.user
           // 回调 user 仅用于展示，归属/权限以合并后的 /admin/me/ 结果为准
           await userStore.getUserInfo()
+          if (userStore.role) markPageInitialized()
           ElMessage.success('登录成功')
           navTimeout = setTimeout(() => {
             const target = isAdminRole(userStore.role) ? '/knowledge/list' : '/chat'
@@ -136,6 +138,7 @@ onMounted(async () => {
     localStorage.setItem('user', JSON.stringify(ssoRes.user))
     // 回调 user 仅用于展示，归属/权限以合并后的 /admin/me/ 结果为准
     await userStore.getUserInfo()
+    if (userStore.role) markPageInitialized()
     const role = userStore.role
     const welcomeRole = role === 'super_admin' ? '超级管理员' : isAdminRole(role) ? '普通管理员' : '普通用户'
     ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
@@ -157,9 +160,10 @@ async function handleLogin(username: string, password: string) {
   errorMsg.value = ''
   try {
     await userStore.login({ username, password })
-    if (!userStore.role) {
-      try { await userStore.getUserInfo() } catch {}
-    }
+    // 登录接口可能只返回令牌：统一补拉用户信息，确保角色与权限已就绪，
+    // 并标记页面已初始化，避免路由守卫在跳转时重复请求。
+    await userStore.getUserInfo()
+    if (userStore.role) markPageInitialized()
     const role = userStore.role
     const welcomeRole = role === 'super_admin' ? '超级管理员' : isAdminRole(role) ? '普通管理员' : '普通用户'
     ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
@@ -235,6 +239,7 @@ async function handleSSOSelect(code: string) {
     userStore.userInfo = ssoRes.user
     // 回调 user 仅用于展示，归属/权限以合并后的 /admin/me/ 结果为准
     await userStore.getUserInfo()
+    if (userStore.role) markPageInitialized()
     const role = userStore.role
     const welcomeRole = role === 'super_admin' ? '超级管理员' : isAdminRole(role) ? '普通管理员' : '普通用户'
     ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)

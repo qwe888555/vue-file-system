@@ -43,6 +43,15 @@ function isMobileDevice(): boolean {
 // ── 页面级初始化标记（刷新时重置，同页导航不复请求） ──
 let pageInitialized = false
 
+/**
+ * 登录流程已自行拉取用户信息后调用，标记本次页面已完成初始化。
+ * 否则登录后的首次路由跳转会命中下方守卫，再次请求 /auth/me/ 与 /admin/me/，
+ * 导致「提示登录成功」之后跳转被这两次请求阻塞。
+ */
+export function markPageInitialized() {
+  pageInitialized = true
+}
+
 // ── 路由守卫：权限拦截 + 登录校验 ──
 router.beforeEach(async (to, _from, next) => {
   const userStore = useUserStore()
