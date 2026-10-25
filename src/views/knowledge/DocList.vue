@@ -4,7 +4,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Download, Edit, Delete, View, WarningFilled, Grid } from '@element-plus/icons-vue'
-import type { DocPickerOption, KnowledgeFile, Keyword } from '@/types'
+import type { KnowledgeFile, Keyword } from '@/types'
 import { deleteDocApi, getDocListApi, getKeywordsApi, isValidKeywordId, batchDeleteDocsApi } from '@/api/knowledge'
 import { cacheDesc, cacheKeywords, getCachedDesc, getCachedKeywords, hasCachedDesc } from '@/utils/docCache'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
@@ -43,12 +43,7 @@ const totalFiles = ref(0)
 const uploadedFiles = ref<KnowledgeFile[]>([])
 const allFiles = ref<KnowledgeFile[]>([])
 
-/** 上传面板选择关联目标时的候选文档 */
-const docPickerOptions = computed<DocPickerOption[]>(() =>
-  allFiles.value.map((file) => ({ id: file.id, title: file.title })),
-)
-
-/** 进入文档详情页（查看/管理标签与文件网关联） */
+/** 进入文档详情页（查看标签与 AI 自动关联） */
 function goDocDetail(file: KnowledgeFile) {
   router.push({ name: 'DocDetail', params: { id: file.id } })
 }
@@ -552,7 +547,6 @@ function saveFiles(files: KnowledgeFile[]) {
 
     <DocUploadPanel
       :existing-titles="uploadedFiles.map(f => f.title)"
-      :existing-docs="docPickerOptions"
       @uploaded="fetchFiles"
       @preview-file="onPreviewFile"
     />

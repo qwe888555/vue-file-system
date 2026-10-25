@@ -118,27 +118,6 @@ export interface DocRelation {
   created_at: string
 }
 
-/** 建边入参（relation_type 缺省时后端按 supplement 处理） */
-export interface DocRelationInput {
-  target_doc_id: number
-  relation_type?: DocRelationType
-}
-
-/** AI 推荐候选（仅推荐，未落库） */
-export interface DocRelationRecommendation {
-  target_doc_id: number
-  target_doc_title: string
-  relation_type: DocRelationType
-  relation_type_name: string
-  reason: string
-}
-
-/** 关联选择器的文档候选项 */
-export interface DocPickerOption {
-  id: number
-  title: string
-}
-
 // ── 知识库文件 ──
 export interface KnowledgeFile {
   id: number

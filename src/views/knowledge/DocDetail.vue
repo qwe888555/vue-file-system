@@ -3,9 +3,9 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Check, Close, ArrowLeft, Edit, Download, Delete, View, Loading, CollectionTag, Connection, MagicStick } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Check, Close, ArrowLeft, Edit, Download, Delete, View, Loading, CollectionTag, Connection, Refresh } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
-import type { DocPickerOption, DocRelationInput, DocRelationRecommendation, KnowledgeFile } from '@/types'
+import type { DocRelation, KnowledgeFile } from '@/types'
 import {
   getDocDetailApi,
   deleteDocApi,
@@ -17,17 +17,13 @@ import {
   addDocTagsApi,
   removeDocTagApi,
   getDocRelationsApi,
-  createDocRelationApi,
   deleteDocRelationApi,
-  recommendDocRelationsApi,
-  getAllDocsForPickerApi,
 } from '@/api/knowledge'
 import DOMPurify from 'dompurify'
 import { useUserStore } from '@/store/user'
-import { RELATION_TYPE_OPTIONS } from '@/config/relation'
+import { relationTypeLabel } from '@/config/relation'
 import FileInfoCard from '@/components/knowledge/FileInfoCard.vue'
 import TagSelector from '@/components/knowledge/TagSelector.vue'
-import RelationPicker from '@/components/knowledge/RelationPicker.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,21 +40,9 @@ const rawContent = ref('')
 const userStore = useUserStore()
 
 // ── 标签 / 文档关联（文件网）──
-/** 文档关联功能暂时关闭：隐藏关联卡片与 AI 推荐；恢复时改为 true */
-const RELATIONS_ENABLED = false
-
-const pickerDocs = ref<DocPickerOption[]>([])
 const savingTags = ref(false)
-const savingRelations = ref(false)
-const recommendLoading = ref(false)
-const recommendApplying = ref(false)
-const recommendVisible = ref(false)
-
-interface RecommendRow extends DocRelationRecommendation {
-  checked: boolean
-}
-
-const recommendRows = ref<RecommendRow[]>([])
+const refreshingRelations = ref(false)
+const deletingRelationId = ref<number | null>(null)
 
 /** 超管可管理任意文档；其他管理员仅能管理自己上传的文档；普通用户只读 */
 const canManage = computed(() => {
@@ -75,18 +59,8 @@ const canManage = computed(() => {
 /** 标签草稿：与后端状态解耦，避免异步保存期间控件回跳 */
 const tagDraft = ref<string[]>([])
 
-/** 关联草稿：同上 */
-const relationDraft = ref<DocRelationInput[]>([])
-
 function syncTagDraft() {
   tagDraft.value = (file.value?.tags || []).map((tag) => tag.tag_name)
-}
-
-function syncRelationDraft() {
-  relationDraft.value = (file.value?.relations || []).map((rel) => ({
-    target_doc_id: rel.target_doc_id,
-    relation_type: rel.relation_type,
-  }))
 }
 
 function handleTagChange(names: string[]) {
@@ -94,23 +68,10 @@ function handleTagChange(names: string[]) {
   void persistTags(names)
 }
 
-function handleRelationChange(list: DocRelationInput[]) {
-  relationDraft.value = list
-  void persistRelations(list)
+/** 关联类型中文名（优先使用后端 display 值） */
+function relationLabel(rel: DocRelation): string {
+  return rel.relation_type_name || relationTypeLabel(rel.relation_type)
 }
-
-/** 关联候选：全量文档 + 当前文档已有目标（保证标题可回显） */
-const relationDocOptions = computed<DocPickerOption[]>(() => {
-  const map = new Map<number, DocPickerOption>()
-  pickerDocs.value.forEach((doc) => map.set(doc.id, doc))
-  ;(file.value?.relations || []).forEach((rel) => {
-    map.set(rel.target_doc_id, { id: rel.target_doc_id, title: rel.target_doc_title })
-  })
-  if (file.value) {
-    map.set(file.value.id, { id: file.value.id, title: file.value.title })
-  }
-  return [...map.values()]
-})
 
 const md = new MarkdownIt({
   html: true,
@@ -492,8 +453,6 @@ async function fetchDocDetail(id: number) {
     const result = await getDocDetailApi(id)
     file.value = normalizeDocDetail(result)
     syncTagDraft()
-    syncRelationDraft()
-    resetRelationState()
     loadFileContent()
   } catch (error) {
     console.error('获取文档详情失败:', error)
@@ -548,108 +507,43 @@ async function persistTags(names: string[]) {
   }
 }
 
-// ── 文档关联维护 ──
+// ── 文档关联（只读展示，管理员可撤除 AI 错误关联）──
 async function refreshRelations() {
   if (!file.value) return
+  refreshingRelations.value = true
   try {
     file.value.relations = await getDocRelationsApi(file.value.id)
-    syncRelationDraft()
   } catch (error) {
     console.warn('[DocDetail] 刷新关联失败:', error)
-  }
-}
-
-function resetRelationState() {
-  recommendRows.value = []
-  recommendVisible.value = false
-}
-
-/** 按差异增量同步关联：新增建边，移除/改类型先删后建 */
-async function persistRelations(list: DocRelationInput[]) {
-  if (!file.value || savingRelations.value) return
-  const current = file.value.relations || []
-  const currentByTarget = new Map(current.map((rel) => [rel.target_doc_id, rel]))
-  const nextByTarget = new Map(list.map((rel) => [rel.target_doc_id, rel]))
-
-  const removed = current.filter((rel) => {
-    const next = nextByTarget.get(rel.target_doc_id)
-    return !next || next.relation_type !== rel.relation_type
-  })
-  const added = list.filter((rel) => {
-    const prev = currentByTarget.get(rel.target_doc_id)
-    return !prev || prev.relation_type !== rel.relation_type
-  })
-  if (removed.length === 0 && added.length === 0) return
-
-  savingRelations.value = true
-  try {
-    for (const rel of removed) {
-      await deleteDocRelationApi(file.value.id, rel.id)
-    }
-    for (const rel of added) {
-      await createDocRelationApi(file.value.id, rel)
-    }
-    await refreshRelations()
-    ElMessage.success('关联已更新')
-  } catch (error) {
-    console.error('更新关联失败:', error)
-    await refreshRelations()
   } finally {
-    savingRelations.value = false
+    refreshingRelations.value = false
   }
 }
 
-// ── AI 推荐关联 ──
-async function handleRecommend() {
-  if (!file.value || recommendLoading.value) return
-  recommendLoading.value = true
+async function handleDeleteRelation(rel: DocRelation) {
+  if (!file.value || deletingRelationId.value != null) return
+
   try {
-    const result = await recommendDocRelationsApi(file.value.id)
-    const recommendations = result?.recommendations || []
-    if (recommendations.length === 0) {
-      ElMessage.info('AI 暂未给出关联推荐，可手动添加关联')
-      return
-    }
-    recommendRows.value = recommendations.map((item) => ({ ...item, checked: true }))
-    recommendVisible.value = true
-  } catch (error) {
-    console.error('AI 推荐关联失败:', error)
-  } finally {
-    recommendLoading.value = false
-  }
-}
-
-async function applyRecommendations() {
-  if (!file.value) return
-  const selected = recommendRows.value.filter((row) => row.checked)
-  if (selected.length === 0) {
-    ElMessage.warning('请至少勾选一条推荐')
+    await ElMessageBox.confirm(
+      `确定撤除与「${rel.target_doc_title}」的关联（${relationLabel(rel)}）吗？`,
+      '撤除关联',
+      { confirmButtonText: '撤除', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
     return
   }
 
-  recommendApplying.value = true
-  let created = 0
+  deletingRelationId.value = rel.id
   try {
-    for (const row of selected) {
-      try {
-        await createDocRelationApi(file.value.id, {
-          target_doc_id: row.target_doc_id,
-          relation_type: row.relation_type,
-        })
-        created++
-      } catch (error) {
-        console.error('创建关联失败:', error)
-      }
-    }
-    recommendVisible.value = false
-    if (created > 0) {
-      ElMessage.success(`已创建 ${created} 条关联`)
-      await refreshRelations()
-    } else {
-      ElMessage.error('关联创建失败，请重试')
-    }
+    await deleteDocRelationApi(file.value.id, rel.id)
+    file.value.relations = (file.value.relations || []).filter((item) => item.id !== rel.id)
+    ElMessage.success('关联已撤除')
+  } catch (error) {
+    console.error('撤除关联失败:', error)
+    ElMessage.error('撤除关联失败，请重试')
+    await refreshRelations()
   } finally {
-    recommendApplying.value = false
+    deletingRelationId.value = null
   }
 }
 
@@ -658,18 +552,9 @@ function openTargetDoc(targetDocId: number) {
   router.push({ name: 'DocDetail', params: { id: targetDocId } })
 }
 
-async function loadPickerDocs() {
-  try {
-    pickerDocs.value = await getAllDocsForPickerApi()
-  } catch (error) {
-    console.warn('[DocDetail] 加载关联候选文档失败:', error)
-  }
-}
-
 onMounted(() => {
   const id = parseInt(route.params.id as string)
   fetchDocDetail(id)
-  if (RELATIONS_ENABLED) loadPickerDocs()
 })
 
 // 详情页内点击关联目标时仅 params 变化，组件会被复用，需要重新拉取详情
@@ -826,14 +711,14 @@ watch(
     </div>
 
     <!-- 标签 + 文件网关联 -->
-    <div class="meta-cards" :class="{ 'is-single': !RELATIONS_ENABLED }">
+    <div class="meta-cards">
       <div class="meta-card">
         <div class="meta-card-header">
           <h4 class="meta-title">
             <el-icon><CollectionTag /></el-icon>
             文档标签
           </h4>
-          <span v-if="!canManage" class="meta-hint">仅上传者可编辑</span>
+          <span v-if="!canManage" class="meta-hint">上传者 / 超级管理员可编辑</span>
         </div>
 
         <template v-if="canManage">
@@ -855,92 +740,48 @@ watch(
         <p v-else class="meta-empty">暂无标签</p>
       </div>
 
-      <!-- 文档关联（文件网）暂时关闭；恢复时将 RELATIONS_ENABLED 改为 true -->
-      <div v-if="RELATIONS_ENABLED" class="meta-card">
+      <!-- 关联由后端 AI 异步生成，前端只读展示；管理员可撤除错误关联 -->
+      <div class="meta-card">
         <div class="meta-card-header">
           <h4 class="meta-title">
             <el-icon><Connection /></el-icon>
             文档关联（文件网）
           </h4>
-          <el-button
-            v-if="canManage"
-            type="primary"
-            plain
-            size="small"
-            :loading="recommendLoading"
-            @click="handleRecommend"
-          >
-            <el-icon><MagicStick /></el-icon>
-            AI 推荐关联
-          </el-button>
-        </div>
-
-        <template v-if="canManage">
-          <RelationPicker
-            :model-value="relationDraft"
-            :docs="relationDocOptions"
-            :exclude-doc-id="file?.id"
-            :source-title="file?.title"
-            :disabled="savingRelations"
-            @update:model-value="handleRelationChange"
-            @open="openTargetDoc"
-          />
-        </template>
-        <div v-else-if="file?.relations?.length" class="readonly-relations">
-          <el-tag
-            v-for="rel in file.relations"
-            :key="rel.id"
-            type="info"
-            effect="plain"
-            class="relation-tag"
-            @click="openTargetDoc(rel.target_doc_id)"
-          >本文档 → {{ rel.target_doc_title }} · {{ rel.relation_type_name }}</el-tag>
-        </div>
-        <p v-else class="meta-empty">暂无关联</p>
-      </div>
-    </div>
-
-    <!-- AI 推荐关联候选（勾选确认后才落库） -->
-    <el-dialog
-      v-if="RELATIONS_ENABLED"
-      v-model="recommendVisible"
-      title="AI 推荐关联"
-      width="720px"
-      top="8vh"
-    >
-      <el-alert
-        title="以下是 AI 推荐的候选文档，请勾选并确认关联类型后添加；推荐结果不会自动落库。"
-        type="info"
-        :closable="false"
-        show-icon
-        class="recommend-alert"
-      />
-      <div class="recommend-list">
-        <div v-for="row in recommendRows" :key="row.target_doc_id" class="recommend-item">
-          <el-checkbox v-model="row.checked" class="recommend-check" />
-          <div class="recommend-main">
-            <div class="recommend-head">
-              <span class="recommend-title">{{ row.target_doc_title }}</span>
-              <el-select v-model="row.relation_type" size="small" class="recommend-type">
-                <el-option
-                  v-for="opt in RELATION_TYPE_OPTIONS"
-                  :key="opt.value"
-                  :label="opt.label"
-                  :value="opt.value"
-                />
-              </el-select>
-            </div>
-            <p class="recommend-reason">{{ row.reason || 'AI 未给出推荐理由' }}</p>
+          <div class="meta-card-actions">
+            <span v-if="canManage" class="meta-hint">AI 自动关联，可撤除错误关联</span>
+            <el-button
+              type="primary"
+              link
+              size="small"
+              :loading="refreshingRelations"
+              @click="refreshRelations"
+            >
+              <el-icon><Refresh /></el-icon>
+              刷新
+            </el-button>
           </div>
         </div>
+
+        <div v-if="file?.relations?.length" class="relation-list">
+          <div v-for="rel in file.relations" :key="rel.id" class="relation-item">
+            <div class="relation-link" @click="openTargetDoc(rel.target_doc_id)">
+              <span class="relation-arrow">本文档 →</span>
+              <span class="relation-target">{{ rel.target_doc_title }}</span>
+              <el-tag size="small" type="info" effect="plain">{{ relationLabel(rel) }}</el-tag>
+            </div>
+            <el-button
+              v-if="canManage"
+              type="danger"
+              link
+              size="small"
+              :loading="deletingRelationId === rel.id"
+              @click="handleDeleteRelation(rel)"
+            >撤除</el-button>
+          </div>
+        </div>
+        <p v-else class="meta-empty">暂无关联（AI 自动关联完成后点击刷新查看）</p>
       </div>
-      <template #footer>
-        <el-button @click="recommendVisible = false">取消</el-button>
-        <el-button type="primary" :loading="recommendApplying" @click="applyRecommendations">
-          确认添加
-        </el-button>
-      </template>
-    </el-dialog>
+    </div>
   </div>
 </template>
 
@@ -1343,11 +1184,6 @@ watch(
   margin-top: var(--spacing-lg);
 }
 
-/* 关联文档功能关闭时，标签卡片占满整行 */
-.meta-cards.is-single {
-  grid-template-columns: 1fr;
-}
-
 .meta-card {
   background: #fff;
   border-radius: var(--radius-lg);
@@ -1385,71 +1221,64 @@ watch(
   color: var(--color-text-secondary);
 }
 
-.readonly-tags,
-.readonly-relations {
+.readonly-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.relation-tag {
+.meta-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.relation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.relation-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.relation-item:hover {
+  border-color: #409eff;
+  background: #f5faff;
+}
+
+.relation-link {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
 }
 
-.recommend-alert {
-  margin-bottom: 12px;
-}
-
-.recommend-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: 55vh;
-  overflow-y: auto;
-}
-
-.recommend-item {
-  display: flex;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-}
-
-.recommend-check {
+.relation-arrow {
   flex-shrink: 0;
-  height: auto;
+  font-size: 13px;
+  color: var(--color-text-secondary);
 }
 
-.recommend-main {
-  flex: 1;
+.relation-target {
   min-width: 0;
-}
-
-.recommend-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.recommend-title {
   font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text);
+  color: #409eff;
   word-break: break-all;
 }
 
-.recommend-type {
-  width: 130px;
-  flex-shrink: 0;
-}
-
-.recommend-reason {
-  margin: 6px 0 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--color-text-secondary);
+.relation-link:hover .relation-target {
+  text-decoration: underline;
 }
 
 @media (max-width: 768px) {

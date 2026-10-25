@@ -17,7 +17,7 @@
 import OSS from 'ali-oss'
 import { getUploadCredentialApi, uploadCallbackApi } from '@/api/knowledge'
 import { useUserStore } from '@/store/user'
-import type { DocRelationInput, KnowledgeFile } from '@/types'
+import type { KnowledgeFile } from '@/types'
 
 /** OSS 分片上传进度回调 */
 export type ProgressCallback = (percent: number, checkpoint?: OSS.Checkpoint) => void
@@ -39,8 +39,6 @@ export interface OssUploadOptions {
   keywords?: string[]
   /** 标签名称列表（人工打标，与关键词分离） */
   tags?: string[]
-  /** 文档关联（文件网有向边） */
-  relations?: DocRelationInput[]
   /** 分片大小，默认 5MB */
   partSize?: number
   /** 并发数，默认 4 */
@@ -166,7 +164,6 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     scope,
     keywords,
     tags,
-    relations,
     partSize = 5 * 1024 * 1024, // 默认 5MB 分片
     parallel = 4, // 默认 4 个并发上传
     onProgress,
@@ -261,7 +258,6 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
       visibility: scope === 'public' ? 'public' : 'private',
       keywords,
       tags,
-      relations,
     })
 
     return callbackResult
@@ -370,7 +366,6 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
       visibility: scope === 'public' ? 'public' : 'private',
       keywords,
       tags,
-      relations,
     })
 
     return callbackResult

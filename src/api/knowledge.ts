@@ -2,10 +2,7 @@
 // 人员 C 实现
 import request from './request'
 import type {
-  DocPickerOption,
   DocRelation,
-  DocRelationInput,
-  DocRelationRecommendation,
   DocTag,
   KnowledgeFile,
   PaginatedResult,
@@ -143,8 +140,6 @@ export function uploadCallbackApi(data: {
   keywords?: string[]
   /** 标签名称列表（人工打标，与关键词分离） */
   tags?: string[]
-  /** 文档关联（文件网有向边） */
-  relations?: DocRelationInput[]
 }): Promise<KnowledgeFile> {
   return request.post('/knowledge/upload/callback/', data)
 }
@@ -268,8 +263,6 @@ export function uploadTextApi(data: {
   keywords?: string[]
   /** 标签名称列表（人工打标，与关键词分离） */
   tags?: string[]
-  /** 文档关联（文件网有向边） */
-  relations?: DocRelationInput[]
   /** 可见性（后端只识别 public/private，不再使用旧的 scope 字段） */
   visibility?: 'public' | 'private'
 }): Promise<KnowledgeFile> {
@@ -277,22 +270,14 @@ export function uploadTextApi(data: {
 }
 
 /**
- * 为 multipart/form-data 上传附加标签与关联入参。
- * - tags：重复字段 tags=a&tags=b（后端兼容 JSON 字符串与 tags[] 两种写法）
- * - relations：JSON 字符串，后端解析为 [{target_doc_id, relation_type}]
+ * 为 multipart/form-data 上传附加标签入参。
+ * tags 使用重复字段 tags=a&tags=b（后端兼容 JSON 字符串与 tags[] 两种写法）。
  */
-export function appendUploadMeta(
-  formData: FormData,
-  tags: string[] = [],
-  relations: DocRelationInput[] = [],
-): void {
+export function appendUploadMeta(formData: FormData, tags: string[] = []): void {
   tags.forEach((tag) => {
     const name = tag.trim()
     if (name) formData.append('tags', name)
   })
-  if (relations.length > 0) {
-    formData.append('relations', JSON.stringify(relations))
-  }
 }
 
 export interface Keyword {
@@ -362,59 +347,15 @@ export function removeDocTagApi(docId: number, tagId: number): Promise<void> {
   return request.delete(`/knowledge/docs/${docId}/tags/${tagId}/delete/`)
 }
 
-// ── 文档关联（文件网有向边） ──
+// ── 文档关联（文件网有向边，由后端 AI 自动生成，仅查询与撤除） ──
 /** 某文档的对外关联（出边，按创建时间倒序） */
 export function getDocRelationsApi(docId: number): Promise<DocRelation[]> {
   return request.get(`/knowledge/docs/${docId}/relations/`)
 }
 
-/** 创建一条文档关联（重复边幂等） */
-export function createDocRelationApi(
-  docId: number,
-  data: DocRelationInput,
-): Promise<DocRelation> {
-  return request.post(`/knowledge/docs/${docId}/relations/create/`, data)
-}
-
-/** 删除一条文档关联（软删除） */
+/** 删除一条文档关联（软删除，用于撤除 AI 错误关联） */
 export function deleteDocRelationApi(docId: number, relationId: number): Promise<void> {
   return request.delete(`/knowledge/docs/${docId}/relations/${relationId}/delete/`)
-}
-
-/** AI 推荐关联（同步 LLM 调用，可能耗时数秒，不落库） */
-export function recommendDocRelationsApi(
-  docId: number,
-): Promise<{ recommendations: DocRelationRecommendation[] }> {
-  return request.post(
-    `/knowledge/docs/${docId}/relations/recommend/`,
-    {},
-    { timeout: 120000 },
-  )
-}
-
-/**
- * 拉取全量文档精简列表（id + 标题），供关联选择器使用。
- * 列表接口按 DRF 固定分页，这里按 next 循环取全量，最多 100 页。
- */
-export async function getAllDocsForPickerApi(): Promise<DocPickerOption[]> {
-  const docs: DocPickerOption[] = []
-  let page = 1
-
-  while (page <= 100) {
-    const res: any = await getDocListApi({ page, page_size: 1000 })
-    const data = res?.results || res?.data || res
-    if (Array.isArray(data)) {
-      docs.push(
-        ...data
-          .filter((item: any) => item && item.id != null)
-          .map((item: any) => ({ id: Number(item.id), title: String(item.title || '') })),
-      )
-    }
-    if (Array.isArray(res) || !res?.next) break
-    page++
-  }
-
-  return docs
 }
 
 /** 三级分类树形数据 */
