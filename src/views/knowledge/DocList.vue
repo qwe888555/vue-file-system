@@ -1,15 +1,18 @@
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Download, Edit, Delete, WarningFilled, Grid } from '@element-plus/icons-vue'
-import type { KnowledgeFile, Keyword } from '@/types'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Download, Edit, Delete, View, WarningFilled, Grid } from '@element-plus/icons-vue'
+import type { DocPickerOption, KnowledgeFile, Keyword } from '@/types'
 import { deleteDocApi, getDocListApi, getKeywordsApi, isValidKeywordId, batchDeleteDocsApi } from '@/api/knowledge'
 import { cacheDesc, cacheKeywords, getCachedDesc, getCachedKeywords, hasCachedDesc } from '@/utils/docCache'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 import DocUploadPanel from '@/components/knowledge/DocUploadPanel.vue'
 import DocFilterBar from '@/components/knowledge/DocFilterBar.vue'
 import DocPreviewDialog from '@/components/knowledge/DocPreviewDialog.vue'
+
+const router = useRouter()
 
 const searchQuery = ref('')
 const formatFilter = ref('')
@@ -39,6 +42,16 @@ const totalFiles = ref(0)
 
 const uploadedFiles = ref<KnowledgeFile[]>([])
 const allFiles = ref<KnowledgeFile[]>([])
+
+/** 上传面板选择关联目标时的候选文档 */
+const docPickerOptions = computed<DocPickerOption[]>(() =>
+  allFiles.value.map((file) => ({ id: file.id, title: file.title })),
+)
+
+/** 进入文档详情页（查看/管理标签与文件网关联） */
+function goDocDetail(file: KnowledgeFile) {
+  router.push({ name: 'DocDetail', params: { id: file.id } })
+}
 
 /** 归一化后端关键词字段（兼容 phrase / keyword / name 命名） */
 function normalizeKeywordList(list: any[] | undefined | null): Keyword[] {
@@ -539,6 +552,7 @@ function saveFiles(files: KnowledgeFile[]) {
 
     <DocUploadPanel
       :existing-titles="uploadedFiles.map(f => f.title)"
+      :existing-docs="docPickerOptions"
       @uploaded="fetchFiles"
       @preview-file="onPreviewFile"
     />
@@ -642,11 +656,14 @@ function saveFiles(files: KnowledgeFile[]) {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="280" align="center" fixed="right">
+        <el-table-column label="操作" width="350" align="center" fixed="right">
           <template #default="scope">
             <div class="action-buttons">
               <el-button size="small" type="primary" plain :icon="Download" @click.stop="handleDownload(scope.row)">
                 下载
+              </el-button>
+              <el-button size="small" type="info" plain :icon="View" @click.stop="goDocDetail(scope.row)">
+                详情
               </el-button>
               <el-button size="small" type="warning" plain :icon="Edit" @click.stop="handleEdit(scope.row)">
                 编辑

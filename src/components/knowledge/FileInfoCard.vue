@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { KnowledgeFile } from '@/types'
-import { InfoFilled, PriceTag } from '@element-plus/icons-vue'
+import { CollectionTag, InfoFilled, PriceTag } from '@element-plus/icons-vue'
 
 defineProps<{
   file: KnowledgeFile | null
@@ -77,6 +77,22 @@ function formatFileSize(bytes: number): string {
       </h4>
       <div class="keyword-tags">
         <el-tag v-for="kw in file.keywords" :key="kw.id" size="small" effect="plain">{{ kw.phrase }}</el-tag>
+      </div>
+    </div>
+
+    <div v-if="file?.tags?.length" class="info-keywords">
+      <h4 class="desc-title">
+        <el-icon><CollectionTag /></el-icon>
+        标签
+      </h4>
+      <div class="keyword-tags">
+        <el-tag
+          v-for="tag in file.tags"
+          :key="tag.id"
+          size="small"
+          type="success"
+          effect="plain"
+        >{{ tag.tag_name }}</el-tag>
       </div>
     </div>
   </div>

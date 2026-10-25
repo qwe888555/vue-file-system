@@ -1,7 +1,16 @@
 // ── 知识库文件管理接口 ──
 // 人员 C 实现
 import request from './request'
-import type { KnowledgeFile, PaginatedResult } from '@/types'
+import type {
+  DocPickerOption,
+  DocRelation,
+  DocRelationInput,
+  DocRelationRecommendation,
+  DocTag,
+  KnowledgeFile,
+  PaginatedResult,
+  Tag,
+} from '@/types'
 
 /** 文档列表（分页 + 筛选） */
 export function getDocListApi(params: {
@@ -38,29 +47,55 @@ export function uploadDocApi(data: FormData): Promise<KnowledgeFile> {
   })
 }
 
+/** OSS STS 临时凭证（multipartUpload 必需） */
+export interface UploadStsCredentials {
+  access_key_id: string
+  access_key_secret: string
+  security_token: string
+  expire?: string
+  endpoint?: string
+  region?: string
+  bucket?: string
+  object_key?: string
+}
+
+/**
+ * 上传凭证响应。
+ * 当前后端返回 { oss_key, upload_url, sts_credentials, dev_mode, duplicate }；
+ * 同时保留旧接口的扁平字段（兼容 PostObject / 直接上传模式）。
+ */
+export interface UploadCredential {
+  oss_key?: string
+  upload_url?: string
+  sts_credentials?: UploadStsCredentials | null
+  dev_mode?: boolean
+  /** MD5 秒传命中时为 true，此时不返回可上传凭证 */
+  duplicate?: boolean
+  knowledge_doc_id?: number
+  // PostObject 凭证（兼容旧接口）
+  file_name?: string
+  file_type?: string
+  file_size?: number
+  policy?: string
+  signature?: string
+  // 扁平 STS 字段（兼容旧接口）
+  access_key_id?: string
+  access_key_secret?: string
+  security_token?: string
+  expire?: string
+  endpoint?: string
+  region?: string
+  bucket?: string
+  object_key?: string
+}
+
 /** 获取 OSS 上传凭证（STS 临时凭证，用于前端直传） */
 export function getUploadCredentialApi(data: {
   file_name: string
   file_size: number
   md5: string
   file_type?: string
-}): Promise<{
-  // PostObject 凭证（兼容旧接口）
-  file_name: string
-  file_type: string
-  file_size: number
-  policy: string
-  signature: string
-  // STS 临时凭证（multipartUpload 必需）
-  access_key_id: string
-  access_key_secret: string
-  security_token: string
-  expire: string
-  endpoint: string
-  region: string
-  bucket: string
-  object_key: string
-}> {
+}): Promise<UploadCredential> {
   // 使用 FormData 发送，Django/DRF 兼容性最好
   const formData = new FormData()
   formData.append('file_name', data.file_name)
@@ -92,19 +127,24 @@ export function uploadFileApi(data: FormData): Promise<KnowledgeFile> {
 
 /** 上传完成回调 */
 export function uploadCallbackApi(data: {
-  object_key: string
+  oss_key: string
   title: string
   description?: string
   file_name: string
   file_type: string
-  hash: string
-  size: number
+  /** 文件哈希（后端字段名为 md5） */
+  md5: string
+  file_size: number
   college_id?: number | null
   department_id?: number | null
   category_id?: number
-  scope?: string
+  visibility?: 'public' | 'private'
   /** 关键词列表：由回调接口随文档一起落库，上传后无需再单独补写 */
   keywords?: string[]
+  /** 标签名称列表（人工打标，与关键词分离） */
+  tags?: string[]
+  /** 文档关联（文件网有向边） */
+  relations?: DocRelationInput[]
 }): Promise<KnowledgeFile> {
   return request.post('/knowledge/upload/callback/', data)
 }
@@ -226,10 +266,33 @@ export function uploadTextApi(data: {
   college_id?: number
   category_id?: number
   keywords?: string[]
+  /** 标签名称列表（人工打标，与关键词分离） */
+  tags?: string[]
+  /** 文档关联（文件网有向边） */
+  relations?: DocRelationInput[]
   visibility?: string
   scope?: 'school' | 'college' | 'department'
 }): Promise<KnowledgeFile> {
   return request.post('/knowledge/upload/text/', data)
+}
+
+/**
+ * 为 multipart/form-data 上传附加标签与关联入参。
+ * - tags：重复字段 tags=a&tags=b（后端兼容 JSON 字符串与 tags[] 两种写法）
+ * - relations：JSON 字符串，后端解析为 [{target_doc_id, relation_type}]
+ */
+export function appendUploadMeta(
+  formData: FormData,
+  tags: string[] = [],
+  relations: DocRelationInput[] = [],
+): void {
+  tags.forEach((tag) => {
+    const name = tag.trim()
+    if (name) formData.append('tags', name)
+  })
+  if (relations.length > 0) {
+    formData.append('relations', JSON.stringify(relations))
+  }
 }
 
 export interface Keyword {
@@ -273,6 +336,85 @@ export function deleteKeywordApi(id: number): Promise<void> {
     return Promise.reject(new Error(`无效的关键词 ID：${id}`))
   }
   return request.delete(`/knowledge/keywords/${id}/delete/`)
+}
+
+// ── 标签（全平台共享词表） ──
+/** 标签词表（软删除的不返回，按创建顺序） */
+export function getTagListApi(): Promise<Tag[]> {
+  return request.get('/knowledge/tags/')
+}
+
+/** 某文档被打上的标签 */
+export function getDocTagsApi(docId: number): Promise<DocTag[]> {
+  return request.get(`/knowledge/docs/${docId}/tags/`)
+}
+
+/** 为文档批量打标签（名称不存在则自动创建，重复打标幂等） */
+export function addDocTagsApi(
+  docId: number,
+  names: string[],
+): Promise<{ created: number; tags: DocTag[] }> {
+  return request.post(`/knowledge/docs/${docId}/tags/create/`, { names })
+}
+
+/** 移除文档上的标签（仅删关联，不删词条） */
+export function removeDocTagApi(docId: number, tagId: number): Promise<void> {
+  return request.delete(`/knowledge/docs/${docId}/tags/${tagId}/delete/`)
+}
+
+// ── 文档关联（文件网有向边） ──
+/** 某文档的对外关联（出边，按创建时间倒序） */
+export function getDocRelationsApi(docId: number): Promise<DocRelation[]> {
+  return request.get(`/knowledge/docs/${docId}/relations/`)
+}
+
+/** 创建一条文档关联（重复边幂等） */
+export function createDocRelationApi(
+  docId: number,
+  data: DocRelationInput,
+): Promise<DocRelation> {
+  return request.post(`/knowledge/docs/${docId}/relations/create/`, data)
+}
+
+/** 删除一条文档关联（软删除） */
+export function deleteDocRelationApi(docId: number, relationId: number): Promise<void> {
+  return request.delete(`/knowledge/docs/${docId}/relations/${relationId}/delete/`)
+}
+
+/** AI 推荐关联（同步 LLM 调用，可能耗时数秒，不落库） */
+export function recommendDocRelationsApi(
+  docId: number,
+): Promise<{ recommendations: DocRelationRecommendation[] }> {
+  return request.post(
+    `/knowledge/docs/${docId}/relations/recommend/`,
+    {},
+    { timeout: 120000 },
+  )
+}
+
+/**
+ * 拉取全量文档精简列表（id + 标题），供关联选择器使用。
+ * 列表接口按 DRF 固定分页，这里按 next 循环取全量，最多 100 页。
+ */
+export async function getAllDocsForPickerApi(): Promise<DocPickerOption[]> {
+  const docs: DocPickerOption[] = []
+  let page = 1
+
+  while (page <= 100) {
+    const res: any = await getDocListApi({ page, page_size: 1000 })
+    const data = res?.results || res?.data || res
+    if (Array.isArray(data)) {
+      docs.push(
+        ...data
+          .filter((item: any) => item && item.id != null)
+          .map((item: any) => ({ id: Number(item.id), title: String(item.title || '') })),
+      )
+    }
+    if (Array.isArray(res) || !res?.next) break
+    page++
+  }
+
+  return docs
 }
 
 /** 三级分类树形数据 */

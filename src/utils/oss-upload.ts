@@ -17,7 +17,7 @@
 import OSS from 'ali-oss'
 import { getUploadCredentialApi, uploadCallbackApi } from '@/api/knowledge'
 import { useUserStore } from '@/store/user'
-import type { KnowledgeFile } from '@/types'
+import type { DocRelationInput, KnowledgeFile } from '@/types'
 
 /** OSS 分片上传进度回调 */
 export type ProgressCallback = (percent: number, checkpoint?: OSS.Checkpoint) => void
@@ -37,6 +37,10 @@ export interface OssUploadOptions {
   scope: 'public' | 'private'
   /** 关键词列表 */
   keywords?: string[]
+  /** 标签名称列表（人工打标，与关键词分离） */
+  tags?: string[]
+  /** 文档关联（文件网有向边） */
+  relations?: DocRelationInput[]
   /** 分片大小，默认 5MB */
   partSize?: number
   /** 并发数，默认 4 */
@@ -161,6 +165,8 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     description,
     scope,
     keywords,
+    tags,
+    relations,
     partSize = 5 * 1024 * 1024, // 默认 5MB 分片
     parallel = 4, // 默认 4 个并发上传
     onProgress,
@@ -210,10 +216,11 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
   if (credential.upload_url && !credential.sts_credentials) {
     const userStore = useUserStore()
     const userCollegeId = userStore.userInfo?.college_id ?? null
+    const uploadUrl = credential.upload_url
 
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
-      xhr.open('PUT', credential.upload_url)
+      xhr.open('PUT', uploadUrl)
 
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) {
@@ -237,17 +244,24 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
       xhr.send(file)
     })
 
+    const directObjectKey = credential.oss_key || credential.object_key
+    if (!directObjectKey) {
+      throw new Error('上传凭证缺少 oss_key，请检查后端返回')
+    }
+
     const callbackResult = await uploadCallbackApi({
-      object_key: credential.oss_key,
+      oss_key: directObjectKey,
       title,
       description,
       file_name: file.name,
       file_type: file.name.split('.').pop() || '',
-      hash: md5,
-      size: file.size,
+      md5,
+      file_size: file.size,
       college_id: userCollegeId,
-      scope: scope === 'public' ? 'school' : 'college',
+      visibility: scope === 'public' ? 'public' : 'private',
       keywords,
+      tags,
+      relations,
     })
 
     return callbackResult
@@ -259,18 +273,21 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
   const accessKeySecret = stsCreds.access_key_secret
   const stsToken = stsCreds.security_token
 
-  let region = stsCreds.region
-  let bucket = stsCreds.bucket
+  let region = stsCreds.region || ''
+  let bucket = stsCreds.bucket || ''
 
   if (!region && stsCreds.endpoint) {
-    region = parseRegionFromEndpoint(stsCreds.endpoint)
+    region = parseRegionFromEndpoint(stsCreds.endpoint) || ''
   }
   if (!bucket && stsCreds.endpoint) {
-    bucket = parseBucketFromEndpoint(stsCreds.endpoint)
+    bucket = parseBucketFromEndpoint(stsCreds.endpoint) || ''
   }
 
-  const objectKey = stsCreds.object_key || credential.oss_key
+  const objectKey = stsCreds.object_key || credential.oss_key || ''
 
+  if (!objectKey) {
+    throw new Error('上传凭证缺少 object_key，请检查后端返回')
+  }
   if (!accessKeyId || !accessKeySecret) {
     throw new Error('STS 凭证缺少 accessKeyId 或 accessKeySecret，请检查后端返回')
   }
@@ -301,10 +318,12 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
         md5,
         file_type: stsFileType,
       })
+      // 后端新版返回嵌套 sts_credentials，旧版为扁平字段
+      const newSts = newCred.sts_credentials || newCred
       return {
-        accessKeyId: newCred.access_key_id,
-        accessKeySecret: newCred.access_key_secret,
-        stsToken: newCred.security_token,
+        accessKeyId: newSts.access_key_id || '',
+        accessKeySecret: newSts.access_key_secret || '',
+        stsToken: newSts.security_token || '',
       }
     },
     // 提前 10 分钟自动刷新凭证
@@ -340,16 +359,18 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     const userCollegeId = userStore.userInfo?.college_id ?? null
 
     const callbackResult = await uploadCallbackApi({
-      object_key: objectKey,
+      oss_key: objectKey,
       title,
       description,
       file_name: file.name,
       file_type: file.name.split('.').pop() || '',
-      hash: md5, // 传入计算好的 MD5，支持秒传
-      size: file.size,
+      md5, // 传入计算好的 MD5，支持秒传
+      file_size: file.size,
       college_id: userCollegeId,
-      scope: scope === 'public' ? 'school' : 'college',
+      visibility: scope === 'public' ? 'public' : 'private',
       keywords,
+      tags,
+      relations,
     })
 
     return callbackResult

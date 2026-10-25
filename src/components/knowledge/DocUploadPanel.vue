@@ -3,15 +3,28 @@
 import { ref, computed, triggerRef } from 'vue'
 import { ElMessage, ElLoading } from 'element-plus'
 import { Upload, Close, Plus, Check, Document, WarningFilled, Loading } from '@element-plus/icons-vue'
-import type { KnowledgeFile } from '@/types'
-import { uploadTextApi, uploadFileApi, aiClassifyApi, getKeywordsApi } from '@/api/knowledge'
+import type { DocPickerOption, DocRelationInput, KnowledgeFile } from '@/types'
+import {
+  uploadTextApi,
+  uploadFileApi,
+  aiClassifyApi,
+  getKeywordsApi,
+  appendUploadMeta,
+} from '@/api/knowledge'
 import { uploadFileToOss } from '@/utils/oss-upload'
 import { cacheDesc, cacheKeywords } from '@/utils/docCache'
+import TagSelector from '@/components/knowledge/TagSelector.vue'
+import RelationPicker from '@/components/knowledge/RelationPicker.vue'
 
 const props = defineProps<{
   /** 已存在的资料标题列表（用于重名校验） */
   existingTitles?: string[]
+  /** 已存在的文档（用于上传时选择关联目标） */
+  existingDocs?: DocPickerOption[]
 }>()
+
+/** 关联选择器的候选文档（避免每次渲染生成新数组） */
+const relationDocOptions = computed<DocPickerOption[]>(() => props.existingDocs || [])
 
 const emit = defineEmits<{
   (e: 'uploaded'): void
@@ -31,6 +44,10 @@ interface FileItem {
   keywords: string
   keywordOptions: string[]
   checkedKeywords: string[]
+  /** 人工标签（与关键词独立） */
+  tags: string[]
+  /** 上传时同时建立的文档关联 */
+  relations: DocRelationInput[]
   description: string
   scope: 'public' | 'private'
   isAnalyzing: boolean
@@ -65,6 +82,8 @@ const uploadForm = ref({
   keywords: '',
   keywordOptions: [] as string[],
   checkedKeywords: [] as string[],
+  tags: [] as string[],
+  relations: [] as DocRelationInput[],
   description: '',
   content: '',
   scope: 'public',
@@ -81,6 +100,8 @@ function resetUploadForm() {
     keywords: '',
     keywordOptions: [],
     checkedKeywords: [],
+    tags: [],
+    relations: [],
     description: '',
     content: '',
     scope: 'public',
@@ -219,6 +240,8 @@ async function handleFileChange(file: File) {
     keywords: '',
     keywordOptions: [] as string[],
     checkedKeywords: [] as string[],
+    tags: [] as string[],
+    relations: [] as DocRelationInput[],
     description: '',
     scope: 'public' as const,
     isAnalyzing: !errorMsg,
@@ -557,6 +580,8 @@ async function handleUploadSubmit() {
         content: uploadForm.value.content,
         description: uploadForm.value.description.trim(),
         keywords,
+        tags: uploadForm.value.tags,
+        relations: uploadForm.value.relations,
         scope: uploadForm.value.scope === 'public' ? 'school' : 'college',
       })
       // 缓存描述，防止 fetchFiles 刷新后丢失
@@ -616,6 +641,9 @@ async function handleUploadSubmit() {
 
         // 将用户勾选后的关键词整理成数组
         const uploadKeywords = keywordsOf(item)
+        // 人工标签与关联随上传接口一同落库
+        const uploadTags = item.tags
+        const uploadRelations = item.relations
 
         let result: KnowledgeFile
 
@@ -628,6 +656,8 @@ async function handleUploadSubmit() {
               description: item.description.trim(),
               scope: item.scope,
               keywords: uploadKeywords,
+              tags: uploadTags,
+              relations: uploadRelations,
               // 文件哈希计算进度回调
               onMd5Progress: (percent) => {
                 loadingInstance.setText(`正在校验文件... ${i + 1}/${totalCount}：${file.name}（${percent}%）`)
@@ -647,6 +677,7 @@ async function handleUploadSubmit() {
             formData.append('title', item.title || fileName)
             formData.append('description', item.description.trim())
             uploadKeywords.forEach((kw: string) => formData.append('keywords', kw))
+            appendUploadMeta(formData, uploadTags, uploadRelations)
             formData.append('scope', item.scope === 'public' ? 'school' : 'college')
 
             result = await uploadFileApi(formData)
@@ -660,6 +691,7 @@ async function handleUploadSubmit() {
           formData.append('title', item.title || fileName)
           formData.append('description', item.description.trim())
           uploadKeywords.forEach((kw: string) => formData.append('keywords', kw))
+          appendUploadMeta(formData, uploadTags, uploadRelations)
           formData.append('scope', item.scope === 'public' ? 'school' : 'college')
 
           result = await uploadFileApi(formData)
@@ -879,6 +911,22 @@ async function handleUploadSubmit() {
             />
           </div>
           <div class="form-item">
+            <label class="form-label">标签</label>
+            <TagSelector
+              v-model="currentFileForm.tags"
+              :disabled="currentFileForm.isAnalyzing"
+            />
+          </div>
+          <div class="form-item">
+            <label class="form-label">关联文档</label>
+            <RelationPicker
+              :key="selectedFileIndex"
+              v-model="currentFileForm.relations"
+              :docs="relationDocOptions"
+              :disabled="currentFileForm.isAnalyzing"
+            />
+          </div>
+          <div class="form-item">
             <label class="form-label">公开/私密</label>
             <el-radio-group v-model="currentFileForm.scope" class="scope-group">
               <el-tooltip content="公开文件：全校共享资源，登录后全校所有师生均可在知识库中查看、搜索和下载。" placement="top" effect="dark">
@@ -968,6 +1016,14 @@ async function handleUploadSubmit() {
               placeholder="关键词，用逗号或空格分隔"
               class="form-input"
             />
+          </div>
+          <div class="form-item">
+            <label class="form-label">标签</label>
+            <TagSelector v-model="uploadForm.tags" />
+          </div>
+          <div class="form-item">
+            <label class="form-label">关联文档</label>
+            <RelationPicker v-model="uploadForm.relations" :docs="relationDocOptions" />
           </div>
           <div class="form-item">
             <label class="form-label">公开/私密</label>

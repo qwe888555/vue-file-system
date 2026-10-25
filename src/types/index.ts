@@ -86,6 +86,59 @@ export interface Keyword {
   weight: number
 }
 
+// ── 标签（全平台共享词表，与关键词独立） ──
+export interface Tag {
+  id: number
+  name: string
+  created_at: string
+}
+
+export interface DocTag {
+  id: number
+  tag_id: number
+  tag_name: string
+  created_at: string
+}
+
+// ── 文档关联（文件网有向边：源文档 → 目标文档） ──
+export type DocRelationType =
+  | 'prerequisite'
+  | 'supplement'
+  | 'same_course'
+  | 'citation'
+  | 'replaces'
+
+export interface DocRelation {
+  id: number
+  source_doc_id: number
+  target_doc_id: number
+  target_doc_title: string
+  relation_type: DocRelationType
+  relation_type_name: string
+  created_at: string
+}
+
+/** 建边入参（relation_type 缺省时后端按 supplement 处理） */
+export interface DocRelationInput {
+  target_doc_id: number
+  relation_type?: DocRelationType
+}
+
+/** AI 推荐候选（仅推荐，未落库） */
+export interface DocRelationRecommendation {
+  target_doc_id: number
+  target_doc_title: string
+  relation_type: DocRelationType
+  relation_type_name: string
+  reason: string
+}
+
+/** 关联选择器的文档候选项 */
+export interface DocPickerOption {
+  id: number
+  title: string
+}
+
 // ── 知识库文件 ──
 export interface KnowledgeFile {
   id: number
@@ -105,6 +158,15 @@ export interface KnowledgeFile {
   updatedAt: string
   content?: string
   fileData?: string
+  description?: string
+  /** 后端详情接口返回的上传者 id / 用户名（用于判断能否编辑标签与关联） */
+  uploader?: number
+  uploader_name?: string
+  visibility?: string
+  /** 文档标签（仅详情接口返回） */
+  tags?: DocTag[]
+  /** 文档对外关联（文件网出边，仅详情接口返回） */
+  relations?: DocRelation[]
   // OSS 相关字段（后端新增）
   oss_url?: string           // 签名内联预览 URL（7天有效）
   download_url?: string      // 附件下载 URL，带原始文件名（7天有效）
