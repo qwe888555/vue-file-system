@@ -270,8 +270,8 @@ export function uploadTextApi(data: {
   tags?: string[]
   /** 文档关联（文件网有向边） */
   relations?: DocRelationInput[]
-  visibility?: string
-  scope?: 'school' | 'college' | 'department'
+  /** 可见性（后端只识别 public/private，不再使用旧的 scope 字段） */
+  visibility?: 'public' | 'private'
 }): Promise<KnowledgeFile> {
   return request.post('/knowledge/upload/text/', data)
 }
@@ -427,7 +427,9 @@ export function aiClassifyApi(data: FormData | { content: string }): Promise<{
   title: string
   keywords: string[]
   description: string
-  scope: string
+  /** 后端返回的推荐可见性（public/private） */
+  visibility: 'public' | 'private'
+  confidence?: string
 }> {
   if (data instanceof FormData) {
     return request.post('/knowledge/upload/ai-classify/', data, {

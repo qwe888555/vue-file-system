@@ -77,13 +77,25 @@ const currentFileForm = computed(() => {
   return null
 })
 
-const uploadForm = ref({
+interface UploadFormState {
+  title: string
+  keywords: string
+  keywordOptions: string[]
+  checkedKeywords: string[]
+  tags: string[]
+  relations: DocRelationInput[]
+  description: string
+  content: string
+  scope: 'public' | 'private'
+}
+
+const uploadForm = ref<UploadFormState>({
   title: '',
   keywords: '',
-  keywordOptions: [] as string[],
-  checkedKeywords: [] as string[],
-  tags: [] as string[],
-  relations: [] as DocRelationInput[],
+  keywordOptions: [],
+  checkedKeywords: [],
+  tags: [],
+  relations: [],
   description: '',
   content: '',
   scope: 'public',
@@ -282,7 +294,7 @@ async function classifyFile(fileItem: FileItem, file: File) {
       }
     }
 
-    let result: { title: string; keywords: string[]; description: string; scope: string }
+    let result: { title: string; keywords: string[]; description: string; visibility: 'public' | 'private' }
     if (isBinaryNoText) {
       // 音视频/压缩包走 JSON 分支，只发 content 字符串
       result = await aiClassifyApi({ content })
@@ -307,8 +319,8 @@ async function classifyFile(fileItem: FileItem, file: File) {
     if (result.description) {
       fileItem.description = result.description
     }
-    if (result.scope) {
-      fileItem.scope = result.scope === 'school' ? 'public' : 'private'
+    if (result.visibility === 'public' || result.visibility === 'private') {
+      fileItem.scope = result.visibility
     }
 
     // AI 解析完成，更新状态
@@ -489,8 +501,8 @@ async function handleConfirmInfo() {
     if (result.description) {
       uploadForm.value.description = result.description
     }
-    if (result.scope) {
-      uploadForm.value.scope = result.scope === 'school' ? 'public' : 'private'
+    if (result.visibility === 'public' || result.visibility === 'private') {
+      uploadForm.value.scope = result.visibility
     }
 
     showCreateForm.value = true
@@ -582,7 +594,7 @@ async function handleUploadSubmit() {
         keywords,
         tags: uploadForm.value.tags,
         relations: uploadForm.value.relations,
-        scope: uploadForm.value.scope === 'public' ? 'school' : 'college',
+        visibility: uploadForm.value.scope,
       })
       // 缓存描述，防止 fetchFiles 刷新后丢失
       if (result.id) {
@@ -678,7 +690,7 @@ async function handleUploadSubmit() {
             formData.append('description', item.description.trim())
             uploadKeywords.forEach((kw: string) => formData.append('keywords', kw))
             appendUploadMeta(formData, uploadTags, uploadRelations)
-            formData.append('scope', item.scope === 'public' ? 'school' : 'college')
+            formData.append('visibility', item.scope)
 
             result = await uploadFileApi(formData)
           }
@@ -692,7 +704,7 @@ async function handleUploadSubmit() {
           formData.append('description', item.description.trim())
           uploadKeywords.forEach((kw: string) => formData.append('keywords', kw))
           appendUploadMeta(formData, uploadTags, uploadRelations)
-          formData.append('scope', item.scope === 'public' ? 'school' : 'college')
+          formData.append('visibility', item.scope)
 
           result = await uploadFileApi(formData)
         }
