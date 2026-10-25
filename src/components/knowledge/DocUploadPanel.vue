@@ -26,6 +26,9 @@ const props = defineProps<{
 /** 关联选择器的候选文档（避免每次渲染生成新数组） */
 const relationDocOptions = computed<DocPickerOption[]>(() => props.existingDocs || [])
 
+/** 文件网关联功能暂时关闭：隐藏「关联文档」字段，恢复时改为 true */
+const RELATIONS_ENABLED = false
+
 const emit = defineEmits<{
   (e: 'uploaded'): void
   (e: 'preview-file', file: File, docId?: number): void
@@ -929,7 +932,8 @@ async function handleUploadSubmit() {
               :disabled="currentFileForm.isAnalyzing"
             />
           </div>
-          <div class="form-item">
+          <!-- 关联文档（文件网）暂时关闭；恢复时将 RELATIONS_ENABLED 改为 true -->
+          <div v-if="RELATIONS_ENABLED" class="form-item">
             <label class="form-label">关联文档</label>
             <RelationPicker
               :key="selectedFileIndex"
@@ -1033,7 +1037,8 @@ async function handleUploadSubmit() {
             <label class="form-label">标签</label>
             <TagSelector v-model="uploadForm.tags" />
           </div>
-          <div class="form-item">
+          <!-- 关联文档（文件网）暂时关闭；恢复时将 RELATIONS_ENABLED 改为 true -->
+          <div v-if="RELATIONS_ENABLED" class="form-item">
             <label class="form-label">关联文档</label>
             <RelationPicker v-model="uploadForm.relations" :docs="relationDocOptions" />
           </div>

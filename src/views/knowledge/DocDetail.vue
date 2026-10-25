@@ -44,6 +44,9 @@ const rawContent = ref('')
 const userStore = useUserStore()
 
 // ── 标签 / 文档关联（文件网）──
+/** 文档关联功能暂时关闭：隐藏关联卡片与 AI 推荐；恢复时改为 true */
+const RELATIONS_ENABLED = false
+
 const pickerDocs = ref<DocPickerOption[]>([])
 const savingTags = ref(false)
 const savingRelations = ref(false)
@@ -666,7 +669,7 @@ async function loadPickerDocs() {
 onMounted(() => {
   const id = parseInt(route.params.id as string)
   fetchDocDetail(id)
-  loadPickerDocs()
+  if (RELATIONS_ENABLED) loadPickerDocs()
 })
 
 // 详情页内点击关联目标时仅 params 变化，组件会被复用，需要重新拉取详情
@@ -823,7 +826,7 @@ watch(
     </div>
 
     <!-- 标签 + 文件网关联 -->
-    <div class="meta-cards">
+    <div class="meta-cards" :class="{ 'is-single': !RELATIONS_ENABLED }">
       <div class="meta-card">
         <div class="meta-card-header">
           <h4 class="meta-title">
@@ -852,7 +855,8 @@ watch(
         <p v-else class="meta-empty">暂无标签</p>
       </div>
 
-      <div class="meta-card">
+      <!-- 文档关联（文件网）暂时关闭；恢复时将 RELATIONS_ENABLED 改为 true -->
+      <div v-if="RELATIONS_ENABLED" class="meta-card">
         <div class="meta-card-header">
           <h4 class="meta-title">
             <el-icon><Connection /></el-icon>
@@ -898,6 +902,7 @@ watch(
 
     <!-- AI 推荐关联候选（勾选确认后才落库） -->
     <el-dialog
+      v-if="RELATIONS_ENABLED"
       v-model="recommendVisible"
       title="AI 推荐关联"
       width="720px"
@@ -1336,6 +1341,11 @@ watch(
   grid-template-columns: 400px 1fr;
   gap: var(--spacing-lg);
   margin-top: var(--spacing-lg);
+}
+
+/* 关联文档功能关闭时，标签卡片占满整行 */
+.meta-cards.is-single {
+  grid-template-columns: 1fr;
 }
 
 .meta-card {
