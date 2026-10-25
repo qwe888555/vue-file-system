@@ -67,6 +67,8 @@ let dragCounter = 0
 const emptyFileList = ref<never[]>([])
 const uploadRef = ref()
 const showCreateForm = ref(false)
+// 上传模式确认弹窗
+const showUploadConfirm = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
 // ── 创建文件状态弹窗（确认信息 / 确认创建 期间展示进度提示）──
@@ -573,6 +575,33 @@ async function handleUploadSubmit() {
   }
 
   if (createMode.value) {
+    doCreateSubmit()
+    return
+  }
+
+  // ── 上传模式：重复名/已存在校验通过后，弹出确认弹窗，确认后执行 confirmUploadFiles ──
+  const titles = selectedFiles.value.map((item) => item.title)
+  for (let i = 0; i < titles.length; i++) {
+    for (let j = i + 1; j < titles.length; j++) {
+      if (titles[i] === titles[j]) {
+        ElMessage.warning(`存在两个文件名相同的文件（文件名：${titles[i]}），请修改后再上传`)
+        return
+      }
+    }
+  }
+  const existingTitles = props.existingTitles || []
+  for (const item of selectedFiles.value) {
+    if (existingTitles.includes(item.title)) {
+      ElMessage.warning(`文件 "${item.title}" 已存在，请勿重复上传`)
+      return
+    }
+  }
+  showUploadConfirm.value = true
+}
+
+/** 创建文件模式：校验并创建 */
+async function doCreateSubmit() {
+  {
     if (!uploadForm.value.title) {
       ElMessage.warning('请输入文件名')
       return
@@ -612,31 +641,12 @@ async function handleUploadSubmit() {
     } finally {
       createStatusVisible.value = false
     }
-  } else {
-    if (selectedFiles.value.length === 0) {
-      ElMessage.warning('请选择要上传的文件')
-      return
-    }
+  }
+}
 
-    for (let i = 0; i < selectedFiles.value.length; i++) {
-      for (let j = i + 1; j < selectedFiles.value.length; j++) {
-        const item1 = selectedFiles.value[i]
-        const item2 = selectedFiles.value[j]
-        if (item1.title === item2.title) {
-          ElMessage.warning(`存在两个文件名相同的文件（文件名：${item1.title}），请修改后再上传`)
-          return
-        }
-      }
-    }
-
-    const existingTitles = props.existingTitles || []
-    for (const item of selectedFiles.value) {
-      if (existingTitles.includes(item.title)) {
-        ElMessage.warning(`文件 "${item.title}" 已存在，请勿重复上传`)
-        return
-      }
-    }
-
+/** 确认弹窗点击"确认上传"后执行真正上传 */
+async function confirmUploadFiles() {
+  {
     const loadingInstance = ElLoading.service({
       lock: true,
       text: `正在上传中... 0/${selectedFiles.value.length}`,
@@ -746,6 +756,17 @@ async function handleUploadSubmit() {
     }
   }
 }
+/** 文件大小格式化 */
+function formatFileSize(size: number): string {
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(2)} MB`
+  return `${(size / 1024).toFixed(1)} KB`
+}
+
+/** 确认弹窗：点击"确认上传" */
+function onConfirmUpload() {
+  showUploadConfirm.value = false
+  confirmUploadFiles()
+}
 </script>
 
 <template>
@@ -799,6 +820,17 @@ async function handleUploadSubmit() {
         </div>
         <div class="upload-content-left">
           <div class="file-preview-list">
+            <div class="queue-header">
+              <div class="queue-title">
+                上传队列
+                <span class="queue-count">{{ selectedFiles.length }} 个文件</span>
+              </div>
+              <div class="batch-badge" title="所选文件将一次性批量上传，无需逐个上传">
+                <span class="batch-dots"><i></i><i></i><i></i></span>
+                批量同时上传
+              </div>
+            </div>
+            <div class="batch-group">
             <div
               v-for="(item, index) in selectedFiles"
               :key="index"
@@ -838,6 +870,7 @@ async function handleUploadSubmit() {
                   <Close />
                 </el-icon>
               </div>
+            </div>
             </div>
             <div
               class="file-preview-item add-file-item"
@@ -1092,6 +1125,29 @@ async function handleUploadSubmit() {
         <p class="create-status-tip">请勿关闭页面或重复提交</p>
       </div>
     </el-dialog>
+    <!-- 上传确认弹窗：展示待上传文件清单，确认后才开始上传 -->
+    <el-dialog
+      v-model="showUploadConfirm"
+      title="上传确认"
+      width="720px"
+      :close-on-click-modal="false"
+      align-center
+      append-to-body
+    >
+      <div class="confirm-upload-tip">确认上传以下文件？</div>
+      <div class="confirm-file-list">
+        <div v-for="item in selectedFiles" :key="item.file.name + item.file.size" class="confirm-file-item">
+          <el-icon class="confirm-file-icon" color="#409eff"><Document /></el-icon>
+          <span class="confirm-file-name" :title="item.file.name">{{ item.file.name }}</span>
+          <span class="confirm-file-size">{{ formatFileSize(item.file.size) }}</span>
+        </div>
+      </div>
+      <div class="confirm-upload-summary">共 {{ selectedFiles.length }} 个文件</div>
+      <template #footer>
+        <el-button @click="showUploadConfirm = false">取消</el-button>
+        <el-button type="primary" @click="onConfirmUpload">确认上传</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1188,6 +1244,7 @@ async function handleUploadSubmit() {
 }
 
 .file-preview-item {
+  position: relative;
   display: flex;
   align-items: center;
   padding: 12px;
@@ -1540,5 +1597,183 @@ async function handleUploadSubmit() {
   margin: 0;
   font-size: 12px;
   color: #909399;
+}
+
+/* ── 上传确认弹窗 ── */
+.confirm-upload-tip {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.confirm-file-list {
+  max-height: 65vh;
+  overflow-y: auto;
+  margin: 12px 0;
+  border: 1px solid #eef1f6;
+  border-radius: 8px;
+  background: #fafbfc;
+  padding: 6px 0;
+}
+
+.confirm-file-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.confirm-file-list::-webkit-scrollbar-thumb {
+  background: #dcdfe6;
+  border-radius: 3px;
+}
+
+.confirm-file-list::-webkit-scrollbar-thumb:hover {
+  background: #c0c4cc;
+}
+
+.confirm-file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+}
+
+.confirm-file-item + .confirm-file-item {
+  border-top: 1px dashed #eef1f6;
+}
+
+.confirm-file-icon {
+  flex-shrink: 0;
+  font-size: 18px;
+}
+
+.confirm-file-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  color: #303133;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.confirm-file-size {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #909399;
+}
+
+.confirm-upload-summary {
+  font-size: 13px;
+  color: #606266;
+  text-align: right;
+}
+
+/* ── 上传队列：批量上传标识 ── */
+.queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 10px;
+}
+
+.queue-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.queue-count {
+  font-size: 12px;
+  font-weight: normal;
+  color: #409eff;
+  background: #ecf5ff;
+  border: 1px solid #d9ecff;
+  border-radius: 10px;
+  padding: 1px 8px;
+}
+
+.batch-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #409eff;
+  background: #ecf5ff;
+  border: 1px solid #d9ecff;
+  border-radius: 12px;
+  padding: 3px 10px;
+  animation: badgeGlow 2s ease-in-out infinite;
+}
+
+@keyframes badgeGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.2); }
+  50% { box-shadow: 0 0 8px 2px rgba(64, 158, 255, 0.3); }
+}
+
+.batch-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.batch-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #409eff;
+  animation: dotFlow 1.2s ease-in-out infinite;
+}
+
+.batch-dots i:nth-child(2) { animation-delay: 0.15s; }
+.batch-dots i:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes dotFlow {
+  0%, 100% { opacity: 0.3; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-3px); }
+}
+
+/* 批量分组：左侧流动连接线，表达多个文件一起上传 */
+.batch-group {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 14px;
+}
+
+.batch-group::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 24px;
+  bottom: 24px;
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgba(64, 158, 255, 0.15), #409eff, rgba(64, 158, 255, 0.15));
+  background-size: 100% 200%;
+  animation: railFlow 1.8s linear infinite;
+}
+
+@keyframes railFlow {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 -200%; }
+}
+
+.batch-group .file-preview-item::after {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2.5px solid #409eff;
+  box-shadow: 0 0 4px rgba(64, 158, 255, 0.4);
+  z-index: 1;
 }
 </style>
