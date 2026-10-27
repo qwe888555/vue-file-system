@@ -14,6 +14,7 @@ export const ROLE_CONFIG: Record<UserRole, RoleMeta> = {
   admin:         { label: '管理员',     tagType: 'warning' },
   college_admin: { label: '学院管理员', tagType: 'warning' },
   dept_admin:    { label: '部门管理员', tagType: 'warning' },
+  reviewer:      { label: '审核员',     tagType: 'success' },
   super_admin:   { label: '超级管理员', tagType: 'danger' },
 }
 
@@ -29,4 +30,15 @@ export const ADMIN_ROLES: UserRole[] = ['super_admin', 'admin', 'college_admin',
 /** 角色是否为管理员（登录后跳转 / 侧边栏渲染 / 欢迎语统一走此判定） */
 export function isAdminRole(role?: UserRole | string | null): boolean {
   return !!role && (ADMIN_ROLES as string[]).includes(role)
+}
+
+/** 审核员是独立角色，不属于管理员：无上传、无后台管理权限 */
+export function isReviewerRole(role?: UserRole | string | null): boolean {
+  return role === 'reviewer'
+}
+
+/** 登录成功后的默认首页（审核员进审核页，管理员进知识库，其余进问答） */
+export function getRoleHomePath(role?: UserRole | string | null): string {
+  if (isReviewerRole(role)) return '/review'
+  return isAdminRole(role) ? '/knowledge/list' : '/chat'
 }

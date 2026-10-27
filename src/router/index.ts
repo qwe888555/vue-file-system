@@ -2,12 +2,13 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import type { UserRole } from '@/types'
 import { getAllowedPaths } from '@/config/permission'
-import { isAdminRole } from '@/config/roles'
+import { getRoleHomePath } from '@/config/roles'
 
 import authRoutes from './common'
 import chatRoutes from './chat'
 import faqRoutes from './faq'
 import knowledgeRoutes from './knowledge'
+import reviewRoutes from './review'
 import adminRoutes from './account'
 import departmentRoutes from './department'
 import logRoutes from './log'
@@ -20,6 +21,7 @@ const routes: RouteRecordRaw[] = [
   ...chatRoutes,
   ...faqRoutes,
   ...knowledgeRoutes,
+  ...reviewRoutes,
   ...adminRoutes,
   ...departmentRoutes,
   ...logRoutes,
@@ -139,7 +141,7 @@ router.beforeEach(async (to, _from, next) => {
       `[权限守卫] 路径 "${to.path}" 不在角色 "${currentRole}" 的允许列表中，跳转角色首页`,
       allowedPaths,
     )
-    const home = isAdminRole(currentRole) ? '/knowledge/list' : '/chat'
+    const home = getRoleHomePath(currentRole)
     next({ path: home })
     return
   }

@@ -7,6 +7,8 @@ export const roleMenuMap: Record<UserRole, string[]> = {
   admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/departments'],
   college_admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/departments'],
   dept_admin: ['/chat', '/faq-manage', '/knowledge', '/departments'],
+  // 审核员只有审核权限：无上传、无后台管理入口
+  reviewer: ['/review'],
   super_admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/logs', '/departments'],
 }
 
@@ -19,6 +21,12 @@ export const allMenus: MenuItem[] = [
     children: [
       { path: '/knowledge/list', name: 'DocList', title: '文档列表' },
     ],
+  },
+  {
+    path: '/review',
+    name: 'DocReview',
+    title: '文档审核',
+    icon: 'DocumentChecked',
   },
   {
     path: '/chat',

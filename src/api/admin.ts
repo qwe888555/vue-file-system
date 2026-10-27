@@ -37,8 +37,9 @@ export function createAccountApi(data: {
   first_name?: string
   last_name?: string
   role?: string
-  college?: number
-  department?: number
+  /** 未选中的归属侧显式传 null，避免切换角色/归属时旧值残留 */
+  college?: number | null
+  department?: number | null
   phone?: string
 }): Promise<Account> {
   return request.post('/admin/users/', data)
@@ -52,8 +53,9 @@ export function updateAccountApi(
     first_name?: string
     last_name?: string
     role?: string
-    college?: number
-    department?: number
+    /** 未选中的归属侧显式传 null，避免切换角色/归属时旧值残留 */
+    college?: number | null
+    department?: number | null
     phone?: string
     is_active?: boolean
   },

@@ -3,9 +3,9 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Download, Edit, Delete, View, WarningFilled, Grid, CollectionTag } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Download, Edit, Delete, View, WarningFilled, Grid, CollectionTag, Refresh } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
-import { deleteDocApi, getDocListApi, getKeywordsApi, isValidKeywordId, batchDeleteDocsApi } from '@/api/knowledge'
+import { deleteDocApi, getDocListApi, getKeywordsApi, isValidKeywordId, batchDeleteDocsApi, resubmitDocReviewApi } from '@/api/knowledge'
 import { cacheDesc, cacheKeywords, getCachedDesc, getCachedKeywords, hasCachedDesc } from '@/utils/docCache'
 import { useUserStore } from '@/store/user'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
@@ -13,6 +13,7 @@ import DocUploadPanel from '@/components/knowledge/DocUploadPanel.vue'
 import DocFilterBar from '@/components/knowledge/DocFilterBar.vue'
 import DocPreviewDialog from '@/components/knowledge/DocPreviewDialog.vue'
 import TagManageDialog from '@/components/knowledge/TagManageDialog.vue'
+import ReviewStatusTag from '@/components/knowledge/ReviewStatusTag.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -300,6 +301,24 @@ function uploaderOf(file: KnowledgeFile): string {
   return file.author && String(file.author).trim() ? String(file.author).trim() : '未知'
 }
 
+/** 列表接口只返回 uploader_name（username 全站唯一），据此判断当前用户是否为上传者 */
+function isUploaderOf(file: KnowledgeFile): boolean {
+  const username = userStore.userInfo?.username
+  return !!username && !!file.uploader_name && file.uploader_name === username
+}
+
+/** 当前用户被驳回的文档：列表顶部提示，避免只在行内小徽章里才能看到 */
+const myRejectedFiles = computed(() =>
+  allFiles.value.filter((f) => f.review_status === 'rejected' && isUploaderOf(f)),
+)
+
+/** 驳回提示中的文档名（最多列 3 个，避免提示条过长） */
+const myRejectedTitleText = computed(() => {
+  const titles = myRejectedFiles.value.map((f) => f.title).filter(Boolean)
+  if (titles.length <= 3) return titles.join('、')
+  return `${titles.slice(0, 3).join('、')} 等 ${titles.length} 个文档`
+})
+
 /** 关键词搜索后的结果（文件格式/单位/上传者选项以此为数据源，随搜索实时更新） */
 const keywordResults = computed(() => {
   const query = normalizeSearchText(searchQuery.value)
@@ -546,6 +565,26 @@ function handleSelectionChange(val: KnowledgeFile[]) {
   selectedDocIds.value = val.map(item => item.id)
 }
 
+/** 被驳回后由上传者本人重新提交审核（文件沿用，无需重传） */
+async function handleResubmit(file: KnowledgeFile) {
+  try {
+    await ElMessageBox.confirm(
+      `确定重新提交「${file.title}」吗？提交后将重新进入审核队列。`,
+      '重新提交审核',
+      { confirmButtonText: '重新提交', cancelButtonText: '取消', type: 'info' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await resubmitDocReviewApi(file.id)
+    ElMessage.success('已重新提交，等待审核')
+    fetchFiles()
+  } catch (error) {
+    console.error('重新提交审核失败:', error)
+  }
+}
+
 async function handleDelete(file: KnowledgeFile) {
   ElMessageBox.confirm('确定要删除该文件吗？', '提示', {
     confirmButtonText: '确定',
@@ -603,6 +642,17 @@ function saveFiles(files: KnowledgeFile[]) {
           标签词表
         </el-button>
       </div>
+
+      <el-alert
+        v-if="myRejectedFiles.length"
+        :title="`你有 ${myRejectedFiles.length} 个文档被驳回，请查看驳回理由并重新提交`"
+        type="error"
+        :closable="false"
+        show-icon
+        class="review-alert"
+      >
+        <div class="review-alert-docs">{{ myRejectedTitleText }}</div>
+      </el-alert>
 
       <el-alert
         title="点击文件名可预览文件内容。可在线预览：Markdown/文本、图片、音视频、PDF、Word(.docx)、Excel(.xls/.xlsx)、PPT(.pptx)；不支持在线预览需下载：Word(.doc)、PPT(.ppt)、压缩包(.zip/.rar/.7z)、设计源(.psd/.ai)、3D模型(.stl/.obj/.fbx)、电子书(.epub/.pub)。大文件请打包成压缩包后上传。Office 文件在线预览由微软服务渲染，超过 10MB 的大文件可能无法预览，请下载后本地查看。预览失败或需修改内容时，请下载后本地查看，修改完成再重新上传。"
@@ -682,6 +732,17 @@ function saveFiles(files: KnowledgeFile[]) {
           </template>
         </el-table-column>
 
+        <el-table-column label="审核状态" min-width="110" align="center">
+          <template #default="scope">
+            <ReviewStatusTag
+              :status="scope.row.review_status"
+              :comment="scope.row.review_comment"
+              :reviewer="scope.row.reviewer_name"
+              :reviewed-at="scope.row.reviewed_at"
+            />
+          </template>
+        </el-table-column>
+
         <el-table-column prop="collegeName" label="上传单位" min-width="120" align="center">
           <template #default="scope">
             <el-tag size="small" type="primary" effect="plain">
@@ -710,7 +771,7 @@ function saveFiles(files: KnowledgeFile[]) {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="350" align="center" fixed="right">
+        <el-table-column label="操作" width="430" align="center" fixed="right">
           <template #default="scope">
             <div class="action-buttons">
               <el-button size="small" type="primary" plain :icon="Download" @click.stop="handleDownload(scope.row)">
@@ -721,6 +782,16 @@ function saveFiles(files: KnowledgeFile[]) {
               </el-button>
               <el-button size="small" type="warning" plain :icon="Edit" @click.stop="handleEdit(scope.row)">
                 编辑
+              </el-button>
+              <el-button
+                v-if="scope.row.review_status === 'rejected' && isUploaderOf(scope.row)"
+                size="small"
+                type="success"
+                plain
+                :icon="Refresh"
+                @click.stop="handleResubmit(scope.row)"
+              >
+                重新提交
               </el-button>
               <el-button size="small" type="danger" plain :icon="Delete" @click.stop="handleDelete(scope.row)">
                 删除
@@ -1032,5 +1103,15 @@ function saveFiles(files: KnowledgeFile[]) {
 
 .preview-hint {
   margin-bottom: var(--spacing-md);
+}
+
+.review-alert {
+  margin-bottom: var(--spacing-md);
+}
+
+.review-alert-docs {
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-word;
 }
 </style>

@@ -4,8 +4,11 @@ import request from './request'
 import type {
   DocRelation,
   DocTag,
+  DRFPaginated,
   KnowledgeFile,
   PaginatedResult,
+  ReviewDoc,
+  ReviewRecord,
   Tag,
 } from '@/types'
 
@@ -369,6 +372,42 @@ export function mergeTagsApi(
 /** 软删标签词条（同时移除该标签在全部文档上的关联） */
 export function deleteTagApi(tagId: number): Promise<void> {
   return request.delete(`/knowledge/tags/${tagId}/delete/`)
+}
+
+// ── 文档审核（reviewer 专用；super_admin 调审核接口会 403） ──
+/** 待审列表：后端按审核员归属自动收窄范围，前端不传部门/学院 */
+export function getPendingReviewsApi(params: {
+  page?: number
+  search?: string
+  file_type?: string
+  start_date?: string
+  end_date?: string
+}): Promise<DRFPaginated<ReviewDoc>> {
+  return request.get('/knowledge/reviews/pending/', { params })
+}
+
+/** 本人已审记录（approve / reject / resubmit 流水） */
+export function getReviewHistoryApi(params: {
+  page?: number
+  action?: string
+  search?: string
+}): Promise<DRFPaginated<ReviewRecord>> {
+  return request.get('/knowledge/reviews/history/', { params })
+}
+
+/** 审核通过：通过后后端才会派发解析 + 向量化 + AI 关联任务 */
+export function approveDocReviewApi(id: number): Promise<ReviewDoc> {
+  return request.post(`/knowledge/docs/${id}/review/approve/`)
+}
+
+/** 审核驳回：理由必填，文件保留 */
+export function rejectDocReviewApi(id: number, comment: string): Promise<ReviewDoc> {
+  return request.post(`/knowledge/docs/${id}/review/reject/`, { comment })
+}
+
+/** 上传者重新提交审核：rejected → pending，文件沿用，无需重传 */
+export function resubmitDocReviewApi(id: number, comment = ''): Promise<ReviewDoc> {
+  return request.post(`/knowledge/docs/${id}/review/resubmit/`, { comment })
 }
 
 // ── 文档关联（文件网有向边，由后端 AI 自动生成，仅查询与撤除） ──

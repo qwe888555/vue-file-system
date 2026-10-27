@@ -18,12 +18,14 @@ import {
   removeDocTagApi,
   getDocRelationsApi,
   deleteDocRelationApi,
+  resubmitDocReviewApi,
 } from '@/api/knowledge'
 import DOMPurify from 'dompurify'
 import { useUserStore } from '@/store/user'
 import { relationTypeLabel } from '@/config/relation'
 import FileInfoCard from '@/components/knowledge/FileInfoCard.vue'
 import TagSelector from '@/components/knowledge/TagSelector.vue'
+import ReviewStatusTag from '@/components/knowledge/ReviewStatusTag.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -55,6 +57,37 @@ const canManage = computed(() => {
   }
   return !!file.value.uploader_name && file.value.uploader_name === userStore.userInfo?.username
 })
+
+/** 是否为上传者本人（重新提交仅限上传者，后端会校验） */
+const isOwner = computed(() => {
+  if (!file.value) return false
+  const userId = userStore.userInfo?.id
+  if (file.value.uploader != null && userId != null) {
+    return Number(file.value.uploader) === Number(userId)
+  }
+  return !!file.value.uploader_name && file.value.uploader_name === userStore.userInfo?.username
+})
+
+/** 审核人 / 审核时间展示文本 */
+const reviewInfoText = computed(() => {
+  if (!file.value) return ''
+  const parts: string[] = []
+  if (file.value.reviewer_name) parts.push(`审核人：${file.value.reviewer_name}`)
+  if (file.value.reviewed_at) parts.push(`审核时间：${formatReviewTime(file.value.reviewed_at)}`)
+  return parts.join('　')
+})
+
+function formatReviewTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 /** 标签草稿：与后端状态解耦，避免异步保存期间控件回跳 */
 const tagDraft = ref<string[]>([])
@@ -415,6 +448,30 @@ async function handleDelete() {
     .catch(() => {})
 }
 
+/** 被驳回后由上传者本人重新提交审核（文件沿用，无需重传） */
+async function handleResubmit() {
+  if (!file.value) return
+  try {
+    await ElMessageBox.confirm(
+      `确定重新提交「${file.value.title}」吗？提交后将重新进入审核队列。`,
+      '重新提交审核',
+      { confirmButtonText: '重新提交', cancelButtonText: '取消', type: 'info' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await resubmitDocReviewApi(file.value.id)
+    file.value.review_status = 'pending'
+    file.value.review_comment = ''
+    file.value.reviewer_name = ''
+    file.value.reviewed_at = null
+    ElMessage.success('已重新提交，等待审核')
+  } catch (error) {
+    console.error('重新提交审核失败:', error)
+  }
+}
+
 async function handleExtractFreshness() {
   if (!file.value) return
   
@@ -577,7 +634,16 @@ watch(
           <el-icon><ArrowLeft /></el-icon>
           返回
         </el-button>
-        <h2 class="page-title">{{ file?.title }}</h2>
+        <div class="title-row">
+          <h2 class="page-title">{{ file?.title }}</h2>
+          <ReviewStatusTag
+            v-if="file?.review_status"
+            :status="file.review_status"
+            :comment="file.review_comment"
+            :reviewer="file.reviewer_name"
+            :reviewed-at="file.reviewed_at"
+          />
+        </div>
       </div>
       <div class="header-actions">
         <el-button @click="handleExtractFreshness" type="primary">
@@ -598,6 +664,33 @@ watch(
         </el-button>
       </div>
     </div>
+
+    <el-alert
+      v-if="file?.review_status === 'rejected'"
+      type="error"
+      :closable="false"
+      show-icon
+      class="review-banner"
+    >
+      <template #title>
+        该文档已被驳回：{{ file.review_comment || '未填写驳回理由' }}
+      </template>
+      <div class="review-banner-body">
+        <span v-if="reviewInfoText" class="review-banner-meta">{{ reviewInfoText }}</span>
+        <el-button v-if="isOwner" type="danger" size="small" @click="handleResubmit">
+          重新提交审核
+        </el-button>
+      </div>
+    </el-alert>
+
+    <el-alert
+      v-else-if="file?.review_status === 'pending'"
+      title="该文档正在审核中，审核通过后才会被 AI 问答检索。"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="review-banner"
+    />
 
     <div class="detail-content">
       <FileInfoCard
@@ -805,6 +898,13 @@ watch(
   margin-bottom: var(--spacing-sm);
 }
 
+.title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .page-title {
   font-size: 24px;
   font-weight: 600;
@@ -815,6 +915,23 @@ watch(
 .header-actions {
   display: flex;
   gap: var(--spacing-sm);
+}
+
+.review-banner {
+  margin-bottom: var(--spacing-lg);
+}
+
+.review-banner-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  margin-top: 6px;
+}
+
+.review-banner-meta {
+  font-size: 12px;
+  color: #909399;
 }
 
 .detail-content {

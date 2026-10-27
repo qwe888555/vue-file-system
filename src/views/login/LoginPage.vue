@@ -7,7 +7,7 @@ import { ElMessage } from 'element-plus'
 import { ssoLoginUrl, ssoCallbackApi, dingtalkQrApi } from '@/api/auth'
 import { setAccessToken, setRefreshToken } from '@/api/request'
 import request from '@/api/request'
-import { isAdminRole } from '@/config/roles'
+import { getRoleHomePath, isAdminRole } from '@/config/roles'
 import { markPageInitialized } from '@/router'
 import AccountLoginForm from '@/components/login/AccountLoginForm.vue'
 import DingTalkQRLogin from '@/components/login/DingTalkQRLogin.vue'
@@ -17,6 +17,13 @@ const route = useRoute()
 const userStore = useUserStore()
 
 const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
+
+/** 登录成功提示中的角色称呼（审核员为独立角色，不能归入管理员） */
+function roleWelcomeText(role?: string | null): string {
+  if (role === 'super_admin') return '超级管理员'
+  if (role === 'reviewer') return '审核员'
+  return isAdminRole(role) ? '普通管理员' : '普通用户'
+}
 
 const loading = ref(false)
 const errorMsg = ref('')
@@ -70,7 +77,7 @@ async function loadDingTalkQr() {
           if (userStore.role) markPageInitialized()
           ElMessage.success('登录成功')
           navTimeout = setTimeout(() => {
-            const target = isAdminRole(userStore.role) ? '/knowledge/list' : '/chat'
+            const target = getRoleHomePath(userStore.role)
             if (props.embedded) window.location.href = target
             else router.push(target)
           }, 600)
@@ -140,9 +147,9 @@ onMounted(async () => {
     await userStore.getUserInfo()
     if (userStore.role) markPageInitialized()
     const role = userStore.role
-    const welcomeRole = role === 'super_admin' ? '超级管理员' : isAdminRole(role) ? '普通管理员' : '普通用户'
+    const welcomeRole = roleWelcomeText(role)
     ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
-    router.push(isAdminRole(role) ? '/knowledge/list' : '/chat')
+    router.push(getRoleHomePath(role))
   } catch (e) {
     // HTTP / 网络错误已由 request 拦截器统一提示，避免重复 toast
     console.error('[SSO] 回调登录失败:', e)
@@ -165,9 +172,9 @@ async function handleLogin(username: string, password: string) {
     await userStore.getUserInfo()
     if (userStore.role) markPageInitialized()
     const role = userStore.role
-    const welcomeRole = role === 'super_admin' ? '超级管理员' : isAdminRole(role) ? '普通管理员' : '普通用户'
+    const welcomeRole = roleWelcomeText(role)
     ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
-    router.push(isAdminRole(role) ? '/knowledge/list' : '/chat')
+    router.push(getRoleHomePath(role))
   } catch (e: any) {
     errorMsg.value = e?.response?.data?.detail || e?.message || '登录失败，请检查账号密码'
   } finally {
@@ -241,9 +248,9 @@ async function handleSSOSelect(code: string) {
     await userStore.getUserInfo()
     if (userStore.role) markPageInitialized()
     const role = userStore.role
-    const welcomeRole = role === 'super_admin' ? '超级管理员' : isAdminRole(role) ? '普通管理员' : '普通用户'
+    const welcomeRole = roleWelcomeText(role)
     ElMessage.success(`登录成功，欢迎 ${welcomeRole}`)
-    router.push(isAdminRole(role) ? '/knowledge/list' : '/chat')
+    router.push(getRoleHomePath(role))
   } catch (e) {
     // HTTP / 网络错误已由 request 拦截器统一提示，避免重复 toast
     console.error('[SSO] Mock 登录失败:', e)

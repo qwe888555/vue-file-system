@@ -11,6 +11,7 @@ import {
   ChatDotSquare,
   Setting,
   Document,
+  DocumentChecked,
   OfficeBuilding,
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
@@ -34,6 +35,7 @@ const iconMap: Record<string, Component> = {
   ChatDotSquare,
   Setting,
   Document,
+  DocumentChecked,
   OfficeBuilding,
 }
 

@@ -95,7 +95,8 @@
           :colleges="colleges"
           :departments="departments"
           :org-options="flattenOrgs"
-          :hide-college="false"
+          :hide-college="!isSuperAdmin"
+          :is-super-admin="isSuperAdmin"
         />
       </template>
     </BaseTable>
@@ -237,6 +238,7 @@ const roleOptions = computed(() => {
     return [
       { value: 'user', label: '普通用户' },
       { value: '__admin__', label: '管理员' },
+      { value: 'reviewer', label: '审核员' },
     ]
   }
   return []
@@ -292,20 +294,23 @@ async function getLocalAccounts(params: {
   }
 }
 
-/** 从 prefixed ID（col_1 / dept_5）+ role 提取 org 入参 */
-function buildOrgParams(orgId: string | undefined, role?: string) {
-  if (!orgId) return {}
+/**
+ * 从 prefixed ID（col_1 / dept_5）提取 org 入参。
+ * 未选中的一侧显式传 null：审核员/管理员切换「学院 ↔ 部门」归属时，
+ * 若只传选中项，后端旧值会残留并触发「二选一」校验失败。
+ */
+function buildOrgParams(orgId: string | undefined) {
+  if (!orgId) return { college: null, department: null }
   const id = Number(orgId.replace(/^(col_|dept_)/, ''))
-  if (isNaN(id)) return {}
-  // dept_admin 角色 → 部门 ID；其他 → 学院 ID
-  if (role === 'dept_admin' || orgId.startsWith('dept_')) {
-    return { department: id }
-  }
-  return { college: id }
+  if (isNaN(id)) return { college: null, department: null }
+  return orgId.startsWith('dept_')
+    ? { college: null, department: id }
+    : { college: id, department: null }
 }
 
 /** 新增账号 → 调后端 */
 async function createLocalAccount(data: any) {
+  const isSuper = isSuperAdmin.value
   await createAccountApi({
     username: data.username,
     email: data.email || '',
@@ -313,19 +318,28 @@ async function createLocalAccount(data: any) {
     password_confirm: data.password,
     first_name: data.first_name || '',
     last_name: data.last_name || '',
-    role: data.role,
-    ...buildOrgParams(data.college_id, data.role),
+    // 后端会把非超管新建的账号强制置为 user 并绑定其自身归属，这里如实提交，避免界面选了审核员却被静默降级
+    role: isSuper ? data.role : 'user',
+    ...(isSuper ? buildOrgParams(data.college_id) : { college: null, department: null }),
   })
   tableRef.value?.refresh()
 }
 
 /** 编辑账号 → 调后端 */
 async function updateLocalAccount(id: number, data: any) {
-  await updateAccountApi(id, {
+  // 非超管提交 role / college / department 会被后端直接 400（防提权），因此只提交可编辑字段
+  const base = {
     first_name: data.first_name,
     last_name: data.last_name,
+  }
+  if (!isSuperAdmin.value) {
+    await updateAccountApi(id, base)
+    return
+  }
+  await updateAccountApi(id, {
+    ...base,
     role: data.role,
-    ...buildOrgParams(data.college_id, data.role),
+    ...buildOrgParams(data.college_id),
   })
 }
 

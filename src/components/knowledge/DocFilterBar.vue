@@ -83,6 +83,7 @@ defineEmits<{
 }
 
 .filter-select.college-filter {
-  width: 170px;
+  /* 需完整容纳“计算机与软件学院”等长单位名，170px 会截断 */
+  width: 210px;
 }
 </style>

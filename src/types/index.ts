@@ -23,7 +23,7 @@ export interface UserInfo {
   }
 }
 
-export type UserRole = 'user' | 'admin' | 'college_admin' | 'dept_admin' | 'super_admin'
+export type UserRole = 'user' | 'admin' | 'college_admin' | 'dept_admin' | 'reviewer' | 'super_admin'
 
 export interface LoginParams {
   username: string
@@ -154,6 +154,63 @@ export interface KnowledgeFile {
   file_name?: string         // 原始文件名
   file_ext?: string          // 真实扩展名（小写不含点，后端从 file_name 解析，空时兜底为 file_type 类别码）
   oss_key?: string           // OSS 对象键（UUID）
+  /** 审核状态（列表/详情接口均返回，2026-10-27 新增） */
+  review_status?: ReviewStatus
+  reviewer_name?: string
+  reviewed_at?: string | null
+  /** 驳回理由（仅 review_status=rejected 时有值） */
+  review_comment?: string
+}
+
+// ── 文档审核（对齐后端 /api/knowledge/reviews/* 与 review/*） ──
+export type ReviewStatus = 'pending' | 'approved' | 'rejected'
+export type ReviewAction = 'approve' | 'reject' | 'resubmit'
+
+/** 待审列表 / 审核动作返回的文档（后端 KnowledgeDocListSerializer） */
+export interface ReviewDoc {
+  id: number
+  title: string
+  file_name: string
+  file_type: string
+  file_ext: string
+  file_size: number
+  /** 索引流水线状态，与 review_status 是两个维度 */
+  status: string
+  review_status: ReviewStatus
+  reviewer?: number | null
+  reviewer_name: string
+  reviewed_at: string | null
+  review_comment: string
+  college_name: string
+  uploader_name: string
+  uploader_college_name: string
+  uploader_department_name: string
+  chunk_count: number
+  created_at: string
+  created_at_display: string
+}
+
+/** 本人已审记录（后端 KnowledgeDocReviewRecordSerializer） */
+export interface ReviewRecord {
+  id: number
+  doc: number
+  doc_title: string
+  doc_file_name: string
+  action: ReviewAction
+  action_display: string
+  reviewer: number
+  reviewer_name: string
+  comment: string
+  created_at: string
+  created_at_display: string
+}
+
+/** DRF PageNumberPagination 响应结构 */
+export interface DRFPaginated<T> {
+  count: number
+  next: string | null
+  previous: string | null
+  results: T[]
 }
 
 // ── 追问建议 ──

@@ -22,6 +22,7 @@
   </el-form-item>
 
   <el-form-item
+    v-if="isSuperAdmin"
     label="角色"
     prop="role"
     :rules="[{ required: true, message: '请选择角色', trigger: 'change' }]"
@@ -51,6 +52,16 @@
       />
     </el-select>
   </el-form-item>
+
+  <div v-if="!isSuperAdmin" class="org-hint">
+    {{ isEdit
+      ? '当前账号只能管理普通用户，角色与所属单位由超级管理员维护。'
+      : '当前账号新增的账号固定为普通用户；审核员、管理员账号需由超级管理员创建。' }}
+  </div>
+
+  <div v-if="isSuperAdmin && !hideCollege && form.role === 'reviewer'" class="org-hint">
+    审核员归属二选一：选学院 → 审核该学院的学院级文档；选部门 → 审核该部门上传的文档。
+  </div>
   </template>
 </template>
 
@@ -76,6 +87,8 @@ interface Props {
   departments?: Department[]
   orgOptions?: OrgOption[]
   hideCollege?: boolean
+  /** 当前登录账号是否为超级管理员：只有超管能指定角色/归属，后端会强制回退非超管的入参 */
+  isSuperAdmin?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -83,6 +96,7 @@ const props = withDefaults(defineProps<Props>(), {
   departments: () => [],
   orgOptions: () => [],
   hideCollege: false,
+  isSuperAdmin: false,
 })
 
 /** 角色下拉选项（排除 super_admin，UI 上不允许创建超级管理员） */
@@ -134,6 +148,16 @@ const orgRules = computed(() => {
 <style scoped>
 .superadmin-hint {
   text-align: center; padding: 24px 0; color: #909399;
+}
+
+.org-hint {
+  margin: -10px 0 18px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--color-bg, #f5f7fa);
+  color: var(--color-text-secondary, #64748b);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 :deep(.el-form-item) {
