@@ -1,13 +1,26 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
+import VueDevTools from 'vite-plugin-vue-devtools'
 import { fileURLToPath, URL } from 'url'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
 
   return {
-    plugins: [vue(), tailwindcss()],
+    plugins: [
+      VueDevTools({
+        // 点击页面元素直接跳转到 VS Code 对应源码
+        launchEditor: 'code',
+        componentInspector: {
+          // 常驻右下角切换按钮：点一下进入检查模式，再点页面元素即可打开源码
+          toggleButtonVisibility: 'always',
+          toggleButtonPos: 'bottom-right',
+        },
+      }),
+      vue(),
+      tailwindcss(),
+    ],
     build: {
       // ── chunk 拆分说明 ──
       // 保持 Rolldown 默认分包（lib/shared 分离 + 按异步路由分发），实测优于自定义 manualChunks。

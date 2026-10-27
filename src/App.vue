@@ -1,13 +1,13 @@
 <template>
   <!-- 路由页面渲染出口，必须要有这个标签 -->
   <!-- KeepAlive：缓存问答页组件，切走时草稿/对话状态保留、SSE 后台继续生成 -->
-  <!-- Transition：仅在进出问答页时使用方案 C 动画；其他模块切换直接渲染，无动画 -->
+  <!-- Transition：进出问答页时仅做交叉淡入淡出；其他模块切换直接渲染，无动画 -->
   <router-view v-slot="{ Component }">
     <!-- 有动画时包裹 transition -->
     <transition
       v-if="transitionName"
       :name="transitionName"
-      :duration="340"
+      :duration="220"
       mode="default"
     >
       <keep-alive :include="['ChatHome']">
@@ -28,7 +28,8 @@ import { useRoute } from 'vue-router'
 const route = useRoute()
 const transitionName = ref('')
 
-// 路由切换过渡：仅进出问答页（Chat）时加动画，其余切换保持原状（无动画）
+// 路由切换过渡：仅进出问答页（Chat）时加淡入淡出，其余切换保持原状（无动画）
+//   - 问答页与其他模块共用全局侧栏，整页位移/缩放会让侧栏跟着跳，故只做透明度过渡
 //   - 从其他模块切进问答页 → 反向（page-slide-reverse）
 //   - 从问答页切到其他模块 → 正向（page-slide）
 //   - 其他模块之间切换 / 涉及登录页 → 不加动画（直切）
@@ -58,35 +59,25 @@ watch(
 
 <style>
 /* ════════════════════════════════════════════════════════════════════
-   方案 C · 分层叙事动画（340ms · cubic-bezier(0.32, 0.72, 0, 1)）
-   ── 旧页"缩回"（轻微下沉 + scale 缩小 + 淡出）
-   ── 新页"轻推入"（同向 8px 偏移 + scale 0.985 + 淡入）
-   ── 避免新旧页同时大面积占满视口，方向跟随 rail 纵向轴
+   问答页进出过渡（220ms · 纯交叉淡入淡出）
+   ── 问答页与其他模块现在共用同一个 222px 全局侧栏；
+      若整页做位移/缩放，侧栏会跟着移动，产生"跳一下"的观感
+   ── 因此只保留透明度过渡：两层页面严格重叠，侧栏原地不动
    ════════════════════════════════════════════════════════════════════ */
 
 /* ── 正向（page-slide）：从问答页切到其他模块 ── */
 .page-slide-enter-active,
 .page-slide-leave-active {
-  transition:
-    transform 0.34s cubic-bezier(0.32, 0.72, 0, 1),
-    opacity 0.34s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: opacity 0.22s ease;
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   width: 100%;
-  will-change: transform, opacity;
+  height: 100%;
+  will-change: opacity;
 }
 
-/* 旧页退场：向下沉 8px + 缩到 0.97 + 淡出（"被按回抽屉"） */
-.page-slide-leave-to {
-  transform: translate3d(0, 8px, 0) scale(0.97);
-  opacity: 0;
-}
-
-/* 新页进场：从上方 -8px 轻推入 + 缩到 0.985 → 0 + 淡入 */
-.page-slide-enter-from {
-  transform: translate3d(0, -8px, 0) scale(0.985);
-  opacity: 0;
-}
+.page-slide-enter-from { opacity: 0; }
+.page-slide-leave-to { opacity: 0; }
 
 .page-slide-enter-active { z-index: 2; }
 .page-slide-leave-active  { z-index: 1; }
@@ -95,26 +86,16 @@ watch(
 /* ── 反向（page-slide-reverse）：从其他模块切进问答页 ── */
 .page-slide-reverse-enter-active,
 .page-slide-reverse-leave-active {
-  transition:
-    transform 0.34s cubic-bezier(0.32, 0.72, 0, 1),
-    opacity 0.34s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: opacity 0.22s ease;
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   width: 100%;
-  will-change: transform, opacity;
+  height: 100%;
+  will-change: opacity;
 }
 
-/* 旧页退场：向上升 8px + 缩到 0.97 + 淡出（"让位给问答页"） */
-.page-slide-reverse-leave-to {
-  transform: translate3d(0, -8px, 0) scale(0.97);
-  opacity: 0;
-}
-
-/* 新页进场：从下方 +8px 轻推入 + 缩到 0.985 → 0 + 淡入（"升起进入"） */
-.page-slide-reverse-enter-from {
-  transform: translate3d(0, 8px, 0) scale(0.985);
-  opacity: 0;
-}
+.page-slide-reverse-enter-from { opacity: 0; }
+.page-slide-reverse-leave-to { opacity: 0; }
 
 .page-slide-reverse-enter-active { z-index: 2; }
 .page-slide-reverse-leave-active  { z-index: 1; }

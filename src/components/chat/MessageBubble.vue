@@ -2,7 +2,7 @@
 // ── 消息气泡组件（豆包风格）──
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import type { Message, KnowledgeFile, UserRole, SuggestedItem } from '@/types'
+import type { Message, KnowledgeFile, UserRole, SuggestedItem, ImageItem } from '@/types'
 import MarkdownViewer from './MarkdownViewer.vue'
 import SseRenderer from './SseRenderer.vue'
 import ReferencesPopover from './ReferencesPopover.vue'
