@@ -3,21 +3,29 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Download, Edit, Delete, View, WarningFilled, Grid } from '@element-plus/icons-vue'
+import { Document, Files, Picture, Headset, VideoCamera, FolderOpened, Download, Edit, Delete, View, WarningFilled, Grid, CollectionTag } from '@element-plus/icons-vue'
 import type { KnowledgeFile, Keyword } from '@/types'
 import { deleteDocApi, getDocListApi, getKeywordsApi, isValidKeywordId, batchDeleteDocsApi } from '@/api/knowledge'
 import { cacheDesc, cacheKeywords, getCachedDesc, getCachedKeywords, hasCachedDesc } from '@/utils/docCache'
+import { useUserStore } from '@/store/user'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 import DocUploadPanel from '@/components/knowledge/DocUploadPanel.vue'
 import DocFilterBar from '@/components/knowledge/DocFilterBar.vue'
 import DocPreviewDialog from '@/components/knowledge/DocPreviewDialog.vue'
+import TagManageDialog from '@/components/knowledge/TagManageDialog.vue'
 
 const router = useRouter()
+const userStore = useUserStore()
 
 const searchQuery = ref('')
 const formatFilter = ref('')
 const collegeFilter = ref('')
 const uploaderFilter = ref('')
+
+// 标签筛选（点击列表标签徽章触发，按 tag_id 交由后端筛选）
+const activeTagId = ref<number | null>(null)
+const activeTagName = ref('')
+const showTagManager = ref(false)
 
 const showEditDialog = ref(false)
 const editingFile = ref<KnowledgeFile | null>(null)
@@ -48,6 +56,31 @@ function goDocDetail(file: KnowledgeFile) {
   router.push({ name: 'DocDetail', params: { id: file.id } })
 }
 
+/** 列表行标签：列表接口返回 {id, name} 简版，详情接口返回 {tag_id, tag_name}，这里统一取名 */
+function rowTags(file: KnowledgeFile): { id: number; name: string }[] {
+  const list: any[] = (file as any).tags || []
+  return list
+    .map((t) => ({ id: t.tag_id ?? t.id, name: t.name || t.tag_name || '' }))
+    .filter((t) => t.id != null && t.name)
+}
+
+/** 点击标签徽章：按该标签筛选文档列表 */
+function setTagFilter(tag: { id: number; name: string }) {
+  activeTagId.value = tag.id
+  activeTagName.value = tag.name
+  currentPage.value = 1
+  fetchFiles()
+}
+
+/** 清除标签筛选 */
+function clearTagFilter() {
+  if (!activeTagId.value) return
+  activeTagId.value = null
+  activeTagName.value = ''
+  currentPage.value = 1
+  fetchFiles()
+}
+
 /** 归一化后端关键词字段（兼容 phrase / keyword / name 命名） */
 function normalizeKeywordList(list: any[] | undefined | null): Keyword[] {
   return (list || [])
@@ -69,6 +102,7 @@ async function fetchFiles(keyword?: string) {
       page: 1,
       page_size: 1000,
       keyword: keyword || undefined,
+      tagId: activeTagId.value || undefined,
     })
     const data = res.results || res.data || res
     let newFiles = Array.isArray(data) ? data : []
@@ -81,6 +115,7 @@ async function fetchFiles(keyword?: string) {
           page,
           page_size: 1000,
           keyword: keyword || undefined,
+          tagId: activeTagId.value || undefined,
         })
         const nextData = nextRes.results || nextRes.data || []
         if (Array.isArray(nextData) && nextData.length > 0) {
@@ -558,6 +593,15 @@ function saveFiles(files: KnowledgeFile[]) {
           全部资料
           <span class="file-count">{{ displayTotalFiles }}</span>
         </h3>
+        <el-button
+          v-if="userStore.role === 'super_admin'"
+          size="small"
+          class="tag-manager-btn"
+          @click="showTagManager = true"
+        >
+          <el-icon class="tag-manager-icon"><CollectionTag /></el-icon>
+          标签词表
+        </el-button>
       </div>
 
       <el-alert
@@ -577,6 +621,11 @@ function saveFiles(files: KnowledgeFile[]) {
         :college-options="collegeOptions"
         :uploader-options="uploaderOptions"
       />
+
+      <div v-if="activeTagId" class="active-tag-filter">
+        <span class="active-tag-label">按标签筛选：</span>
+        <el-tag type="warning" effect="light" closable @close="clearTagFilter">{{ activeTagName }}</el-tag>
+      </div>
 
       <div v-if="filteredFiles.length === 0 && !loading">
         <div v-if="listError" class="empty-state">
@@ -618,6 +667,17 @@ function saveFiles(files: KnowledgeFile[]) {
                 <component :is="fileTypeIcons[scope.row.fileType] || 'Document'" />
               </el-icon>
               <span class="file-title cursor-pointer" @click="openDocPreview(scope.row.id, scope.row.title)">{{ scope.row.title }}</span>
+              <div v-if="rowTags(scope.row).length" class="file-tag-row">
+                <el-tag
+                  v-for="tag in rowTags(scope.row)"
+                  :key="tag.id"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                  class="file-tag cursor-pointer"
+                  @click.stop="setTagFilter(tag)"
+                >{{ tag.name }}</el-tag>
+              </div>
             </div>
           </template>
         </el-table-column>
@@ -693,6 +753,9 @@ function saveFiles(files: KnowledgeFile[]) {
     />
 
     <DocPreviewDialog ref="previewRef" />
+
+    <!-- 标签词表管理（仅超级管理员） -->
+    <TagManageDialog v-model:visible="showTagManager" @changed="fetchFiles()" />
   </div>
 </template>
 
@@ -738,7 +801,40 @@ function saveFiles(files: KnowledgeFile[]) {
 .section-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   margin-bottom: var(--spacing-md);
+}
+
+.tag-manager-icon {
+  margin-right: 4px;
+}
+
+/* 标签筛选提示条 */
+.active-tag-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.active-tag-label {
+  font-size: 13px;
+  color: #606266;
+}
+
+/* 资料名下的标签徽章行 */
+.file-tag-row {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.file-tag:hover {
+  border-color: #f56c6c;
+  color: #f56c6c;
 }
 
 .section-title {
@@ -842,6 +938,7 @@ function saveFiles(files: KnowledgeFile[]) {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 8px;
   min-width: 0; /* flex 容器需要此属性，子元素才能正确省略文本 */
   width: 100%;

@@ -91,6 +91,8 @@ export interface Tag {
   id: number
   name: string
   created_at: string
+  /** 当前用户可浏览范围内打了该标签的文档数（词表接口返回） */
+  doc_count?: number
 }
 
 export interface DocTag {

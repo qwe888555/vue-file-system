@@ -18,8 +18,9 @@ export function getDocListApi(params: {
   collegeId?: number
   startDate?: string
   endDate?: string
+  tagId?: number
 }): Promise<PaginatedResult<KnowledgeFile>> {
-  return request.get('/knowledge/docs/', { 
+  return request.get('/knowledge/docs/', {
     params: {
       page: params.page,
       page_size: params.page_size,
@@ -28,6 +29,7 @@ export function getDocListApi(params: {
       college_id: params.collegeId,
       start_date: params.startDate,
       end_date: params.endDate,
+      tag_id: params.tagId,
     }
   })
 }
@@ -345,6 +347,28 @@ export function addDocTagsApi(
 /** 移除文档上的标签（仅删关联，不删词条） */
 export function removeDocTagApi(docId: number, tagId: number): Promise<void> {
   return request.delete(`/knowledge/docs/${docId}/tags/${tagId}/delete/`)
+}
+
+// ── 标签词表管理（仅 super_admin） ──
+/** 重命名标签（词表全平台共享，重命名影响所有人） */
+export function renameTagApi(tagId: number, name: string): Promise<Tag> {
+  return request.post(`/knowledge/tags/${tagId}/rename/`, { name })
+}
+
+/** 合并重复标签：source 并入 target（source 软删） */
+export function mergeTagsApi(
+  sourceTagId: number,
+  targetTagId: number,
+): Promise<{ detail: string; moved: number; tag: Tag }> {
+  return request.post('/knowledge/tags/merge/', {
+    source_tag_id: sourceTagId,
+    target_tag_id: targetTagId,
+  })
+}
+
+/** 软删标签词条（同时移除该标签在全部文档上的关联） */
+export function deleteTagApi(tagId: number): Promise<void> {
+  return request.delete(`/knowledge/tags/${tagId}/delete/`)
 }
 
 // ── 文档关联（文件网有向边，由后端 AI 自动生成，仅查询与撤除） ──
