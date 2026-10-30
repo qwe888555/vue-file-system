@@ -4,7 +4,7 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { KnowledgeFile, UserRole } from '@/types'
-import { isAdminRole } from '@/config/roles'
+import { isTeachingQaRole } from '@/config/roles'
 import { previewDocApi } from '@/api/knowledge'
 import { useUserStore } from '@/store/user'
 import { classifyDocPreview, resolvePreviewMediaUrl } from '@/utils/filePreview'
@@ -30,9 +30,9 @@ const isOfficePreview = ref(false)
 // 内嵌媒体类型（图片/音频/视频/PDF），通过 previewFileUrl 承载 src
 const previewMediaKind = ref<'image' | 'audio' | 'video' | 'pdf' | ''>('')
 
-// 权限判断：管理员角色可见全部引用，普通 user 仅可见公开（status=1）文件
+// 权限判断：管理员/审核员可见全部引用，普通 user 仅可见公开（status=1）文件
 const accessibleFiles = computed(() => {
-  if (!props.userRole || isAdminRole(props.userRole)) {
+  if (!props.userRole || isTeachingQaRole(props.userRole)) {
     return props.references
   }
   // user 角色仅显示状态为 1（已发布/公开）的文件

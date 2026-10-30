@@ -37,6 +37,15 @@ export function isReviewerRole(role?: UserRole | string | null): boolean {
   return role === 'reviewer'
 }
 
+/**
+ * 是否使用管理员端的「教研问答」页面。
+ * 审核员已开放教研问答：与管理员共用 /chat 页面，标题、助手名与引用展示保持一致。
+ * 注意不要直接用 isAdminRole 判断——审核员不是管理员，不能被授予管理入口。
+ */
+export function isTeachingQaRole(role?: UserRole | string | null): boolean {
+  return isAdminRole(role) || isReviewerRole(role)
+}
+
 /** 登录成功后的默认首页（审核员进审核页，管理员进知识库，其余进问答） */
 export function getRoleHomePath(role?: UserRole | string | null): string {
   if (isReviewerRole(role)) return '/review'

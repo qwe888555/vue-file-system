@@ -7,7 +7,7 @@ import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watc
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { isAdminRole } from '@/config/roles'
+import { isAdminRole, isTeachingQaRole } from '@/config/roles'
 import type { Conversation, KnowledgeFile, SuggestedItem, ImageItem } from '@/types'
 import { useChat } from '@/composables/useChat'
 import { useSSE } from '@/composables/useSSE'
@@ -72,17 +72,18 @@ const streamingSuggested = computed(() => currentStreaming.value?.suggested ?? [
 const streamingImages = computed(() => currentStreaming.value?.images ?? [])
 
 const isLoggedIn = computed(() => !!userStore.token)
-const isAdminUser = computed(() => isAdminRole(userStore.role))
+// 管理员与审核员共用「教研问答」品牌（审核员不具备管理入口，仅问答页可见）
+const isTeachingQa = computed(() => isTeachingQaRole(userStore.role))
 const hasActiveConversation = computed(() => chat.currentConversationId.value !== null)
 const hasMessages = computed(() => chat.currentMessages.value.length > 0)
 
-const pageTitle = computed(() => (isAdminUser.value ? '教研问答' : '智能问答'))
-const assistantName = computed(() => (isAdminUser.value ? '教研助手' : '智能助手'))
+const pageTitle = computed(() => (isTeachingQa.value ? '教研问答' : '智能问答'))
+const assistantName = computed(() => (isTeachingQa.value ? '教研助手' : '智能助手'))
 const topbarSub = computed(() => (
-  isAdminUser.value ? '基于校内教研知识库 · 引用可溯源' : '基于校内知识库 · 引用可溯源'
+  isTeachingQa.value ? '基于校内教研知识库 · 引用可溯源' : '基于校内知识库 · 引用可溯源'
 ))
 const welcomeSubtitle = computed(() => (
-  isAdminUser.value
+  isTeachingQa.value
     ? '基于校内教研知识库回答，每条结论都可追溯到原文出处，方便核对与引用。'
     : '基于校内知识库回答，每条结论都可追溯到原文出处，方便核对与引用。'
 ))
@@ -446,7 +447,7 @@ async function sendMessage() {
     const onThisConv = chat.currentConversationId.value === convId
     if (!onChatPage) {
       chatUi.setUnread(true)
-      ElMessage.success(`回答已生成，点击左侧「${isAdminUser.value ? '教研问答' : '智能问答'}」查看`)
+      ElMessage.success(`回答已生成，点击左侧「${isTeachingQa.value ? '教研问答' : '智能问答'}」查看`)
     } else if (!onThisConv) {
       chatUi.markConvUnread(convId)
     } else {

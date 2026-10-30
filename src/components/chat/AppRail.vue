@@ -19,7 +19,7 @@ import sealBlue from '@/assets/images/logo-seal-blue.png'
 import { useUserStore } from '@/store/user'
 import { usePermissionStore } from '@/store/permission'
 import { useChatUiStore } from '@/store/chatUi'
-import { isAdminRole, ROLE_CONFIG } from '@/config/roles'
+import { isTeachingQaRole, ROLE_CONFIG } from '@/config/roles'
 import { ElMessageBox } from 'element-plus'
 import PersonalCenter from '@/components/common/PersonalCenter.vue'
 
@@ -29,7 +29,8 @@ const userStore = useUserStore()
 const permissionStore = usePermissionStore()
 const chatUi = useChatUiStore()
 
-const isAdmin = computed(() => isAdminRole(userStore.role))
+// 管理员与审核员均使用「教研问答」菜单名
+const isTeachingQa = computed(() => isTeachingQaRole(userStore.role))
 
 // 菜单图标字符串 → 组件映射（与 Layout 侧边栏一致）
 const iconMap: Record<string, Component> = {
@@ -44,7 +45,7 @@ const iconMap: Record<string, Component> = {
 const items = computed(() =>
   permissionStore.permissionMenus.map((item) => ({
     path: item.children?.[0]?.path ?? item.path,
-    label: item.title === '智能问答' && isAdmin.value ? '教研问答' : item.title,
+    label: item.title === '智能问答' && isTeachingQa.value ? '教研问答' : item.title,
     icon: iconMap[item.icon] || Folder,
   })),
 )

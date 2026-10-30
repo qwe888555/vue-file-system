@@ -2,7 +2,7 @@
 // ── 侧边栏 ──
 // 功能：Logo + 菜单导航（按角色动态过滤）+ 底部用户信息
 
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -17,7 +17,7 @@ import {
 import { useUserStore } from '@/store/user'
 import { usePermissionStore } from '@/store/permission'
 import { useChatUiStore } from '@/store/chatUi'
-import { isAdminRole } from '@/config/roles'
+import { isAdminRole, isTeachingQaRole } from '@/config/roles'
 import SidebarUser from '@/components/common/SidebarUser.vue'
 
 const route = useRoute()
@@ -27,6 +27,8 @@ const permissionStore = usePermissionStore()
 const chatUi = useChatUiStore()
 
 const isAdmin = computed(() => isAdminRole(userStore.role))
+// 管理员与审核员均使用「教研问答」菜单名
+const isTeachingQa = computed(() => isTeachingQaRole(userStore.role))
 
 // 菜单图标字符串 → 组件映射（Element Plus 图标未全局注册，须显式导入）
 const iconMap: Record<string, Component> = {
@@ -43,7 +45,7 @@ const iconMap: Record<string, Component> = {
 const menuItems = computed(() => {
   return permissionStore.permissionMenus.map((item) => ({
     path: item.children?.[0]?.path ?? item.path,
-    label: item.title === '智能问答' && isAdmin.value ? '教研问答' : item.title,
+    label: item.title === '智能问答' && isTeachingQa.value ? '教研问答' : item.title,
     icon: iconMap[item.icon] || Folder,
   }))
 })
@@ -57,6 +59,15 @@ const activeMenu = computed(() => {
 function handleSelect(path: string) {
   router.push(path)
 }
+
+// ── 系统演示视频弹窗 ──
+const showDemoVideo = ref(false)
+
+function onEscKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') showDemoVideo.value = false
+}
+onMounted(() => window.addEventListener('keydown', onEscKey))
+onUnmounted(() => window.removeEventListener('keydown', onEscKey))
 </script>
 
 <template>
@@ -80,7 +91,36 @@ function handleSelect(path: string) {
       </el-menu-item>
     </el-menu>
 
+    <!-- 管理员：系统演示视频入口（个人中心上方） -->
+    <div v-if="isAdmin" class="sidebar-demo">
+      <a class="demo-video-link" href="#" @click.prevent="showDemoVideo = true">
+        系统演示视频
+      </a>
+      <p class="demo-video-tip">测试时若遇到操作问题，请观看本视频。</p>
+    </div>
+
     <SidebarUser @login="router.push('/')" />
+
+    <!-- 系统演示视频：居中弹窗播放 -->
+    <Teleport to="body">
+      <div v-if="showDemoVideo" class="demo-video-overlay" @click.self="showDemoVideo = false">
+        <div class="demo-video-modal">
+          <div class="demo-video-header">
+            <h3>系统演示视频</h3>
+            <button class="demo-video-close" aria-label="关闭" @click="showDemoVideo = false">
+              ✕
+            </button>
+          </div>
+          <video
+            class="demo-video-player"
+            src="/videos/system-demo.mp4"
+            controls
+            autoplay
+            playsinline
+          />
+        </div>
+      </div>
+    </Teleport>
   </aside>
 </template>
 
@@ -191,6 +231,87 @@ function handleSelect(path: string) {
   border-radius: 50%;
   background: var(--color-danger, #f56c6c);
   box-shadow: 0 0 0 2px #fff;
+}
+
+/* ── 管理员：系统演示视频入口 ── */
+.sidebar-demo {
+  flex-shrink: 0;
+  padding: var(--spacing-sm) var(--spacing-lg) var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  text-align: center;
+}
+.demo-video-link {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-danger, #f56c6c);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: opacity 0.15s ease;
+}
+.demo-video-link:hover {
+  opacity: 0.8;
+}
+.demo-video-tip {
+  margin-top: 6px;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  color: var(--color-text-secondary, #64748b);
+}
+
+/* ── 系统演示视频弹窗 ── */
+.demo-video-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.55);
+}
+.demo-video-modal {
+  width: min(960px, 92vw);
+  background: #fff;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+.demo-video-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md) 18px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.demo-video-header h3 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: #1a2332;
+}
+.demo-video-close {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-base);
+  background: transparent;
+  color: #8e95a6;
+  font-size: var(--font-size-base);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.demo-video-close:hover {
+  background: #f0f4fa;
+  color: var(--color-danger, #f56c6c);
+}
+.demo-video-player {
+  display: block;
+  width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  background: #000;
 }
 
 /* ── 个人中心 ── */
