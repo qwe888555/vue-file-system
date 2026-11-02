@@ -5,6 +5,14 @@ import type { AxiosInstance, AxiosResponse, AxiosRequestConfig, InternalAxiosReq
 import { ElMessage } from 'element-plus'
 import { refreshTokenApi } from './auth'
 
+declare module 'axios' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  export interface AxiosRequestConfig<D = any> {
+    /** 为 true 时不弹全局错误提示，由调用方自行处理（如目录接口降级） */
+    silent?: boolean
+  }
+}
+
 const baseURL = import.meta.env.VITE_API_URL || '/api'
 
 const instance: AxiosInstance = axios.create({
@@ -187,8 +195,10 @@ instance.interceptors.response.use(
       }
     }
     error.message = msg
+    // 调用方显式声明 silent 的请求（如目录接口 404 时降级到本地目录）不弹全局提示
+    const silent = Boolean((originalRequest as any)?.silent)
     // SSO 回调的 401 需要展示后端 detail；其他 401 仍交给刷新流程/调用方处理
-    if (error.response?.status !== 401 || isSsoCallback) {
+    if (!silent && (error.response?.status !== 401 || isSsoCallback)) {
       ElMessage.error(msg)
     }
     return Promise.reject(error)

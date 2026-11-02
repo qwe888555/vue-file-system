@@ -154,12 +154,48 @@ export interface KnowledgeFile {
   file_name?: string         // 原始文件名
   file_ext?: string          // 真实扩展名（小写不含点，后端从 file_name 解析，空时兜底为 file_type 类别码）
   oss_key?: string           // OSS 对象键（UUID）
+  /** 所属部门资料目录（为空表示待分类） */
+  folder?: number | null
+  folder_name?: string
+  uploader_college_name?: string
+  uploader_department_name?: string
   /** 审核状态（列表/详情接口均返回，2026-10-27 新增） */
   review_status?: ReviewStatus
   reviewer_name?: string
   reviewed_at?: string | null
   /** 驳回理由（仅 review_status=rejected 时有值） */
   review_comment?: string
+}
+
+/** 目录 ID；本地降级模式使用字符串 ID。 */
+export type FolderId = number | string
+
+/** 部门资料目录（后端 /api/knowledge/folders/）。本地降级模式下 id 为字符串。 */
+export interface KnowledgeFolder {
+  id: number | string
+  name: string
+  parent_id: number | string | null
+  path?: string
+  is_system: boolean
+  system_key?: string
+  sort_order?: number
+  doc_count?: number
+  created_by_name?: string
+  created_at?: string
+  /** 目录树前端构建时挂载的子目录 */
+  children?: KnowledgeFolder[]
+}
+
+export interface FolderListResult {
+  folders: KnowledgeFolder[]
+  unfiled_count: number
+  total_docs: number
+  scope: {
+    kind: 'school' | 'college' | 'department'
+    college_id: number | null
+    department_id: number | null
+    can_manage: boolean
+  }
 }
 
 // ── 文档审核（对齐后端 /api/knowledge/reviews/* 与 review/*） ──

@@ -5,7 +5,9 @@ import type {
   DocRelation,
   DocTag,
   DRFPaginated,
+  FolderListResult,
   KnowledgeFile,
+  KnowledgeFolder,
   PaginatedResult,
   ReviewDoc,
   ReviewRecord,
@@ -35,6 +37,54 @@ export function getDocListApi(params: {
       tag_id: params.tagId,
     }
   })
+}
+
+// ── 部门资料目录 ──
+/** 目录列表（含待分类数量与当前权限范围；首次访问会初始化系统分类目录） */
+export function getFolderListApi(): Promise<FolderListResult> {
+  // 目录接口尚未部署时静默失败，由 useDeptFolders 降级到本地目录
+  return request.get('/knowledge/folders/', { silent: true })
+}
+
+/** 新建目录（parent_id 为空表示根目录） */
+export function createFolderApi(data: {
+  name: string
+  parent_id?: number | string | null
+}): Promise<KnowledgeFolder> {
+  return request.post('/knowledge/folders/', data)
+}
+
+/** 重命名目录（系统分类目录不可改名） */
+export function updateFolderApi(
+  id: number | string,
+  data: { name: string },
+): Promise<KnowledgeFolder> {
+  return request.patch(`/knowledge/folders/${id}/`, data)
+}
+
+/** 删除目录：其中文件移到上级目录（系统分类目录不可删除） */
+export function deleteFolderApi(id: number | string): Promise<{
+  detail: string
+  deleted_folder_count: number
+  moved_doc_count: number
+}> {
+  return request.delete(`/knowledge/folders/${id}/`)
+}
+
+/** 单个文档归档到目录（folder_id=null 表示移回待分类） */
+export function moveDocApi(
+  docId: number,
+  folderId: number | string | null,
+): Promise<{ detail: string; folder_id: number | null; folder_name: string }> {
+  return request.post(`/knowledge/docs/${docId}/move/`, { folder_id: folderId })
+}
+
+/** 批量归档文档（folder_id=null 表示移回待分类） */
+export function batchMoveDocsApi(
+  ids: number[],
+  folderId: number | string | null,
+): Promise<{ detail: string; moved_count: number; folder_id: number | null }> {
+  return request.post('/knowledge/docs/batch-move/', { ids, folder_id: folderId })
 }
 
 /** 文档详情（JSON 元数据，非 Blob） */
@@ -140,6 +190,7 @@ export function uploadCallbackApi(data: {
   college_id?: number | null
   department_id?: number | null
   category_id?: number
+  folder_id?: number | null
   visibility?: 'public' | 'private'
   /** 关键词列表：由回调接口随文档一起落库，上传后无需再单独补写 */
   keywords?: string[]
@@ -153,6 +204,7 @@ export function uploadCallbackApi(data: {
 export function updateDocApi(id: number, data: {
   title?: string
   description?: string
+  visibility?: 'public' | 'private'
   discipline_id?: number
   college_id?: number
   category_id?: number
@@ -434,6 +486,8 @@ export function aiClassifyApi(data: FormData | { content: string }): Promise<{
   /** 后端返回的推荐可见性（public/private） */
   visibility: 'public' | 'private'
   confidence?: string
+  /** 后端按标题/关键词推荐的系统分类目录 */
+  suggested_folder?: { id: number; name: string } | null
 }> {
   if (data instanceof FormData) {
     return request.post('/knowledge/upload/ai-classify/', data, {

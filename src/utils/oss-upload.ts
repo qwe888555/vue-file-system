@@ -39,6 +39,8 @@ export interface OssUploadOptions {
   keywords?: string[]
   /** 标签名称列表（人工打标，与关键词分离） */
   tags?: string[]
+  /** 资料目录 ID（仅服务端目录可用；本地降级目录由页面在上传后归档） */
+  folderId?: number | null
   /** 分片大小，默认 5MB */
   partSize?: number
   /** 并发数，默认 4 */
@@ -164,6 +166,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     scope,
     keywords,
     tags,
+    folderId,
     partSize = 5 * 1024 * 1024, // 默认 5MB 分片
     parallel = 4, // 默认 4 个并发上传
     onProgress,
@@ -258,6 +261,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
       visibility: scope === 'public' ? 'public' : 'private',
       keywords,
       tags,
+      folder_id: typeof folderId === 'number' ? folderId : null,
     })
 
     return callbackResult
@@ -366,6 +370,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
       visibility: scope === 'public' ? 'public' : 'private',
       keywords,
       tags,
+      folder_id: typeof folderId === 'number' ? folderId : null,
     })
 
     return callbackResult
