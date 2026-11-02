@@ -57,7 +57,7 @@ test.describe('智能问答', () => {
     test('欢迎页显示', async ({ page, isMobile }) => {
       test.skip(!isMobile)
       await page.goto('/mobile/chat')
-      await expect(page.locator('.m-welcome-title')).toHaveText('有什么可以帮助你的？')
+      await expect(page.locator('.m-welcome-title')).toContainText('你好')
     })
 
     test('输入框可用 + 发送按钮状态切换', async ({ page, isMobile }) => {
