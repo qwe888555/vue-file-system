@@ -7,6 +7,8 @@ defineProps<{
   formatOptions: string[]
   collegeOptions: string[]
   uploaderOptions: string[]
+  /** 「全部部门」浏览态已由左侧部门树负责按单位筛选，隐藏重复的学院筛选 */
+  hideCollege?: boolean
 }>()
 
 defineEmits<{
@@ -37,6 +39,7 @@ defineEmits<{
       <el-option v-for="opt in formatOptions" :key="opt" :label="opt" :value="opt" />
     </el-select>
     <el-select
+      v-if="!hideCollege"
       :model-value="college"
       clearable
       placeholder="上传单位"

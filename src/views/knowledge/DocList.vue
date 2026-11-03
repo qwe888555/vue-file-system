@@ -43,6 +43,7 @@ import {
   uploadFileApi,
 } from '@/api/knowledge'
 import { getCollegesApi, getDepartmentsApi } from '@/api/admin'
+import type { Department } from '@/api/admin'
 import { uploadFileToOss } from '@/utils/oss-upload'
 import {
   extractTextFromFile,
@@ -56,6 +57,7 @@ import { useUserStore } from '@/store/user'
 import { useDeptFolders } from '@/composables/useDeptFolders'
 import UploadStagingPanel from '@/components/knowledge/dept/UploadStagingPanel.vue'
 import DeptFolderTree from '@/components/knowledge/dept/DeptFolderTree.vue'
+import DeptScopeTree from '@/components/knowledge/dept/DeptScopeTree.vue'
 import DocInfoPanel from '@/components/knowledge/dept/DocInfoPanel.vue'
 import DirectoryDocList from '@/components/knowledge/dept/DirectoryDocList.vue'
 import EditFileForm from '@/components/knowledge/EditFileForm.vue'
@@ -108,6 +110,9 @@ const PERSONAL_SPACE = 'personal'
 const scopeValue = ref<string>(ALL_DEPARTMENTS)
 const collegeScopeOptions = ref<College[]>([])
 const departmentOptions = ref<DepartmentOption[]>([])
+/** 部门树原始结构（用于「全部部门」浏览态的部门导航） */
+const departmentTree = ref<Department[]>([])
+const scopeOptionsLoading = ref(false)
 
 const scopeMode = computed<'all' | 'personal' | 'college' | 'department'>(() => {
   if (scopeValue.value === PERSONAL_SPACE) return 'personal'
@@ -131,6 +136,56 @@ const departmentScope = computed<number | null>(() => {
   const id = Number(scopeValue.value.split(':')[1])
   return Number.isFinite(id) ? id : null
 })
+
+// ── 「全部部门」浏览时的部门导航范围 ──
+// 仅筛选右侧资料，不改变上传/维护范围；需要维护某部门时使用「进入该部门管理」
+type BrowseScope =
+  | { kind: 'school' }
+  | { kind: 'college'; id: number }
+  | { kind: 'department'; id: number }
+const browseScope = ref<BrowseScope>({ kind: 'school' })
+
+const departmentLookup = computed(() => {
+  const map = new Map<number, { node: Department; path: Department[] }>()
+  const visit = (nodes: Department[], ancestors: Department[]) => {
+    nodes.forEach((node) => {
+      const path = [...ancestors, node]
+      map.set(node.id, { node, path })
+      visit(node.children || [], path)
+    })
+  }
+  visit(departmentTree.value, [])
+  return map
+})
+
+const browseCollege = computed(() => {
+  const scope = browseScope.value
+  if (scope.kind !== 'college') return null
+  return collegeScopeOptions.value.find((item) => item.id === scope.id) || null
+})
+
+const browseDepartmentEntry = computed(() => {
+  const scope = browseScope.value
+  if (scope.kind !== 'department') return null
+  return departmentLookup.value.get(scope.id) || null
+})
+
+const browseDepartment = computed(() => browseDepartmentEntry.value?.node || null)
+const browseDepartmentPath = computed(() => browseDepartmentEntry.value?.path || [])
+
+function collectDepartmentIds(node: Department): number[] {
+  const ids = [node.id]
+  ;(node.children || []).forEach((child) => ids.push(...collectDepartmentIds(child)))
+  return ids
+}
+
+/** 选中部门及其全部下级部门的 ID，父部门筛选包含子部门资料 */
+const browseDepartmentIds = computed<Set<number>>(() => {
+  const entry = browseDepartmentEntry.value
+  if (!entry) return new Set()
+  return new Set(collectDepartmentIds(entry.node))
+})
+
 /** 「全部部门」为只读总览，不展示资料目录；专属空间同样支持目录 */
 const hideFolderRail = computed(() => allDepartmentsMode.value)
 
@@ -152,6 +207,7 @@ watch(canManageDocs, (value) => {
 })
 watch(allDepartmentsMode, (value) => {
   if (value) activeTab.value = 'all'
+  else browseScope.value = { kind: 'school' }
 })
 
 const selectedCollege = computed(() =>
@@ -197,21 +253,28 @@ function flattenDepartments(
 
 async function loadScopeOptions() {
   if (!isSuperAdmin.value) return
-  const [colleges, departments] = await Promise.allSettled([
-    getCollegesApi(),
-    getDepartmentsApi(),
-  ])
-  if (colleges.status === 'fulfilled') {
-    collegeScopeOptions.value = colleges.value.results || []
-  } else {
-    console.warn('[部门资料] 获取学院列表失败', colleges.reason)
-    collegeScopeOptions.value = []
-  }
-  if (departments.status === 'fulfilled') {
-    departmentOptions.value = flattenDepartments(departments.value)
-  } else {
-    console.warn('[部门资料] 获取部门列表失败', departments.reason)
-    departmentOptions.value = []
+  scopeOptionsLoading.value = true
+  try {
+    const [colleges, departments] = await Promise.allSettled([
+      getCollegesApi(),
+      getDepartmentsApi(),
+    ])
+    if (colleges.status === 'fulfilled') {
+      collegeScopeOptions.value = colleges.value.results || []
+    } else {
+      console.warn('[部门资料] 获取学院列表失败', colleges.reason)
+      collegeScopeOptions.value = []
+    }
+    if (departments.status === 'fulfilled') {
+      departmentTree.value = departments.value
+      departmentOptions.value = flattenDepartments(departments.value)
+    } else {
+      console.warn('[部门资料] 获取部门列表失败', departments.reason)
+      departmentTree.value = []
+      departmentOptions.value = []
+    }
+  } finally {
+    scopeOptionsLoading.value = false
   }
 }
 
@@ -232,6 +295,7 @@ async function onScopeChange(value: string) {
   scopeValue.value = value
   if (value === ALL_DEPARTMENTS) activeTab.value = 'all'
   else if (canManageDocs.value) activeTab.value = 'manage'
+  browseScope.value = { kind: 'school' }
   selectedFolder.value = 'root'
   targetFolderId.value = null
   queue.value.forEach((item) => {
@@ -509,6 +573,12 @@ function registerQueueItems(items: UploadQueueItem[]) {
   if (items[0]) focusQueueItem(items[0])
 }
 
+/** 点击左侧队列文件切换到右侧资料确认；已是当前文件时保持原状，避免重置未保存的编辑 */
+function focusQueueItemByKey(key: string) {
+  if (activeInfoKey.value === key) return
+  openInfoTab(key)
+}
+
 /** 聚焦某个队列文件，在右侧立即显示识别中/识别结果 */
 function focusQueueItem(item: UploadQueueItem) {
   detailSeq += 1
@@ -766,6 +836,7 @@ function normalizeDoc(file: any): KnowledgeFile {
   if (file.created_at && !file.createdAt) file.createdAt = file.created_at
   if (file.updated_at && !file.updatedAt) file.updatedAt = file.updated_at
   if (file.college_name && !file.collegeName) file.collegeName = file.college_name
+  if (file.college_id != null && !file.collegeId) file.collegeId = file.college_id
   if (file.uploader && !file.author) file.author = file.uploader
   if (file.uploader_name && !file.author) file.author = file.uploader_name
   if (file.file_size != null && file.fileSize == null) file.fileSize = file.file_size
@@ -994,6 +1065,8 @@ const keywordResults = computed(() => {
       file.author,
       file.uploader_name,
       file.collegeName,
+      file.department_name,
+      file.uploader_department_name,
       file.categoryName,
       file.fileType,
       file.fileSize,
@@ -1016,13 +1089,48 @@ const formatOptions = computed(() => [...new Set(keywordResults.value.map(format
 const collegeOptions = computed(() => [...new Set(keywordResults.value.map(collegeOf))].sort())
 const uploaderOptions = computed(() => [...new Set(keywordResults.value.map(uploaderOf))].sort())
 
-/** 当前搜索 / 格式 / 学院 / 上传者 / 标签筛选后的文件 */
+/** 当前部门导航 / 搜索 / 格式 / 学院 / 上传者 / 标签筛选后的文件 */
 const visibleFiles = computed(() => {
   let rows = keywordResults.value
+  if (allDepartmentsMode.value) {
+    const scope = browseScope.value
+    if (scope.kind === 'college') {
+      rows = rows.filter(
+        (file) => Number(file.college_id ?? file.collegeId ?? 0) === scope.id,
+      )
+    } else if (scope.kind === 'department') {
+      const ids = browseDepartmentIds.value
+      rows = rows.filter((file) => {
+        const id = Number(file.department_id ?? 0)
+        return id > 0 && ids.has(id)
+      })
+    }
+  }
   if (formatFilter.value) rows = rows.filter((file) => formatLabelOf(file) === formatFilter.value)
   if (collegeFilter.value) rows = rows.filter((file) => collegeOf(file) === collegeFilter.value)
   if (uploaderFilter.value) rows = rows.filter((file) => uploaderOf(file) === uploaderFilter.value)
   return rows
+})
+
+/** 部门树的资料数量徽标（基于已加载的全量资料，不受搜索框影响） */
+const collegeDocCounts = computed<Record<number, number>>(() => {
+  const counts: Record<number, number> = {}
+  allFiles.value.forEach((file) => {
+    const id = Number(file.college_id ?? file.collegeId ?? 0)
+    if (!id) return
+    counts[id] = (counts[id] || 0) + 1
+  })
+  return counts
+})
+
+const departmentDocCounts = computed<Record<number, number>>(() => {
+  const counts: Record<number, number> = {}
+  allFiles.value.forEach((file) => {
+    const id = Number(file.department_id ?? 0)
+    if (!id) return
+    counts[id] = (counts[id] || 0) + 1
+  })
+  return counts
 })
 
 function setTagFilter(tag: { id: number; name: string }) {
@@ -1156,7 +1264,11 @@ function handleDocRowSelect(doc: KnowledgeFile) {
 
 const directoryTitle = computed(() => {
   if (personalMode.value) return '我的专属文件'
-  if (allDepartmentsMode.value) return '跨部门资料'
+  if (allDepartmentsMode.value) {
+    if (browseCollege.value) return browseCollege.value.name
+    if (browseDepartment.value) return browseDepartment.value.name
+    return '跨部门资料'
+  }
   if (selectedFolder.value === 'root') return '全部文件'
   if (selectedFolder.value === 'unfiled') return '待分类文件'
   return selectedFolderNode.value?.name || '资料目录'
@@ -1170,7 +1282,7 @@ const directoryCount = computed(() => {
 
 const directoryHint = computed(() => {
   if (personalMode.value) return '专属空间内的文件仅本人可见，不会出现在其他部门或超管的资料中'
-  if (allDepartmentsMode.value) return '校级视角浏览全部部门资料；选择具体学院或部门后可查看目录并维护文件'
+  if (allDepartmentsMode.value) return '点击左侧部门树按学院或部门筛选；选中后可直接进入该部门管理'
   if (isReviewer.value) return '只读浏览部门资料与审核状态，可预览和下载文件'
   if (selectedFolder.value === 'root') return '按目录整理部门资料，待分类文件可直接拖入目录'
   if (selectedFolder.value === 'unfiled') return '尚未归档的资料，可拖拽到任意目录'
@@ -1200,6 +1312,32 @@ function selectFolderNode(folder: KnowledgeFolder) {
   selectedFolder.value = folder.id
   dirSelectedIds.value = []
   folderRailOpen.value = false
+}
+
+function selectBrowseSchool() {
+  browseScope.value = { kind: 'school' }
+  dirSelectedIds.value = []
+  folderRailOpen.value = false
+}
+
+function selectBrowseCollege(college: College) {
+  browseScope.value = { kind: 'college', id: college.id }
+  dirSelectedIds.value = []
+  folderRailOpen.value = false
+}
+
+function selectBrowseDepartment(department: Department) {
+  browseScope.value = { kind: 'department', id: department.id }
+  dirSelectedIds.value = []
+  folderRailOpen.value = false
+}
+
+/** 从浏览态进入该学院/部门的管理范围（上传、目录维护） */
+async function enterBrowseScopeManagement() {
+  const scope = browseScope.value
+  if (scope.kind === 'school') return
+  const value = scope.kind === 'college' ? `college:${scope.id}` : `dept:${scope.id}`
+  await onScopeChange(value)
 }
 
 function toggleDirSelect(payload: { id: number; checked: boolean }) {
@@ -1442,10 +1580,11 @@ function applyAiResult(item: UploadQueueItem, result: Awaited<ReturnType<typeof 
     item.aiTitleUsed = true
   }
   item.description = String(result.description || '').slice(0, 500)
+  // AI 自动识别关键词最多保留 5 个，避免标签过多影响检索与展示
   item.keywords = (result.keywords || [])
     .map((keyword) => String(keyword).trim())
     .filter(Boolean)
-    .slice(0, 20)
+    .slice(0, 5)
   // 加入队列时处于专属空间的文件始终私密，不被 AI 建议改回公开
   item.scope = item.forcedPrivate
     ? 'private'
@@ -1925,6 +2064,7 @@ async function handleResubmit(file: KnowledgeFile) {
           :folder-options="folderOptions"
           :personal-space="personalMode"
           :uploading="uploading"
+          :active-key="activeInfoKey"
           @add-files="addFiles"
           @remove="removeQueueItem"
           @remove-selected="removeQueueItems"
@@ -1932,6 +2072,7 @@ async function handleResubmit(file: KnowledgeFile) {
           @retry-analysis="retryQueueAnalysis"
           @update-title="updateQueueTitle"
           @preview="previewQueueItem"
+          @focus="focusQueueItemByKey"
           @confirm="confirmUpload"
         />
         <DocInfoPanel
@@ -1962,20 +2103,28 @@ async function handleResubmit(file: KnowledgeFile) {
       >
         <el-icon><FolderOpened /></el-icon>
         <h3>请先选择具体学院或部门</h3>
-        <p>「全部部门」为跨部门只读浏览视图。在上方查看范围中选择具体学院或部门后，即可上传文件并维护对应目录。</p>
+        <p>「全部部门」为跨部门只读浏览视图。可在「全部资料」的部门导航中选中目标部门后点击「进入该部门管理」，或直接在上方查看范围中选择。</p>
       </section>
 
-      <section
-        v-show="activeTab === 'all'"
-        class="panel directory-workspace"
-        :class="{ 'no-rail': hideFolderRail }"
-      >
-        <aside
-          v-if="!hideFolderRail"
-          class="directory-rail"
-          :class="{ 'mobile-open': folderRailOpen }"
-        >
+      <section v-show="activeTab === 'all'" class="panel directory-workspace">
+        <aside class="directory-rail" :class="{ 'mobile-open': folderRailOpen }">
+          <DeptScopeTree
+            v-if="allDepartmentsMode"
+            embedded
+            :colleges="collegeScopeOptions"
+            :departments="departmentTree"
+            :college-counts="collegeDocCounts"
+            :department-counts="departmentDocCounts"
+            :total-count="allFiles.length"
+            :selected-kind="browseScope.kind"
+            :selected-id="browseScope.kind === 'school' ? null : browseScope.id"
+            :loading="scopeOptionsLoading"
+            @select-school="selectBrowseSchool"
+            @select-college="selectBrowseCollege"
+            @select-department="selectBrowseDepartment"
+          />
           <DeptFolderTree
+            v-else
             embedded
             :folders="folders"
             :counts="folderCountMap"
@@ -2013,7 +2162,33 @@ async function handleResubmit(file: KnowledgeFile) {
                     已通过 {{ reviewCounts.approved }}
                   </span>
                 </div>
-                <div v-if="selectedFolderNode && !allDepartmentsMode" class="breadcrumb">
+                <div v-if="allDepartmentsMode" class="breadcrumb">
+                  <button
+                    type="button"
+                    class="crumb"
+                    :class="{ current: browseScope.kind === 'school' }"
+                    @click="selectBrowseSchool"
+                  >全校</button>
+                  <template v-if="browseCollege">
+                    <span class="crumb-sep">/</span>
+                    <button
+                      type="button"
+                      class="crumb"
+                      :class="{ current: !browseDepartment }"
+                      @click="selectBrowseCollege(browseCollege)"
+                    >{{ browseCollege.name }}</button>
+                  </template>
+                  <template v-for="(node, index) in browseDepartmentPath" :key="node.id">
+                    <span class="crumb-sep">/</span>
+                    <button
+                      type="button"
+                      class="crumb"
+                      :class="{ current: index === browseDepartmentPath.length - 1 }"
+                      @click="selectBrowseDepartment(node)"
+                    >{{ node.name }}</button>
+                  </template>
+                </div>
+                <div v-else-if="selectedFolderNode" class="breadcrumb">
                   <button type="button" class="crumb" @click="selectRootFolder">全部文件</button>
                   <template v-for="(node, index) in selectedLineage" :key="node.id">
                     <span class="crumb-sep">/</span>
@@ -2031,14 +2206,28 @@ async function handleResubmit(file: KnowledgeFile) {
 
             <div class="directory-tools">
               <button
-                v-if="!hideFolderRail"
                 type="button"
                 class="soft-btn rail-toggle"
                 :class="{ active: folderRailOpen }"
                 @click="folderRailOpen = !folderRailOpen"
               >
-                <el-icon><FolderOpened /></el-icon>
-                {{ folderRailOpen ? '收起目录' : '目录' }}
+                <el-icon>
+                  <OfficeBuilding v-if="allDepartmentsMode" />
+                  <FolderOpened v-else />
+                </el-icon>
+                {{
+                  allDepartmentsMode
+                    ? folderRailOpen ? '收起部门' : '部门筛选'
+                    : folderRailOpen ? '收起目录' : '目录'
+                }}
+              </button>
+              <button
+                v-if="allDepartmentsMode && browseScope.kind !== 'school'"
+                type="button"
+                class="soft-btn primary"
+                @click="enterBrowseScopeManagement"
+              >
+                进入该部门管理 →
               </button>
               <el-select v-model="dirSort" size="small" class="sort-select">
                 <el-option label="最新上传" value="newest" />
@@ -2096,6 +2285,7 @@ async function handleResubmit(file: KnowledgeFile) {
             :format-options="formatOptions"
             :college-options="collegeOptions"
             :uploader-options="uploaderOptions"
+            :hide-college="allDepartmentsMode"
           />
 
           <div v-if="activeTagId" class="active-tag-filter">
@@ -2164,7 +2354,7 @@ async function handleResubmit(file: KnowledgeFile) {
               <div v-else class="directory-empty">
                 <el-icon><FolderOpened /></el-icon>
                 <h3>暂无资料</h3>
-                <p>选择具体部门后可进入该部门目录上传资料。</p>
+                <p>在左侧部门导航中选择学院或部门，即可查看对应资料。</p>
               </div>
             </template>
 
@@ -2361,9 +2551,15 @@ async function handleResubmit(file: KnowledgeFile) {
 
 <style scoped>
 .dept-workbench {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  /* 撑满 Layout 内容区（layout-content 上下各 16px 内边距），让页签卡片直达底部 */
+  min-height: calc(100vh - var(--spacing-lg) - var(--spacing-lg));
   max-width: 1640px;
   margin: 0 auto;
-  padding: 2px 2px 30px;
+  /* 底部不留内边距，卡片才能贴住内容区底边 */
+  padding: 2px 2px 0;
 }
 
 .page-head {
@@ -2569,17 +2765,20 @@ async function handleResubmit(file: KnowledgeFile) {
 
 .workbench {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 16px;
+  min-height: 0;
 }
 
 .workbench-top {
   display: grid;
+  flex: 1;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
   align-items: stretch;
   gap: 16px;
   /* 上传与信息确认占满页面剩余高度，避免文件管理页下方大块留白 */
-  min-height: clamp(480px, calc(100vh - 250px), 720px);
+  min-height: 480px;
 }
 
 .workbench-top > * {
@@ -2589,6 +2788,7 @@ async function handleResubmit(file: KnowledgeFile) {
 /* 超级管理员「全部部门」下不提供上传入口，提示先选择部门 */
 .manage-empty {
   display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -2628,16 +2828,10 @@ async function handleResubmit(file: KnowledgeFile) {
 /* 目录树与文件区共处一张卡片，用竖向分隔代替两张独立卡片 */
 .directory-workspace {
   display: grid;
+  flex: 1;
   grid-template-columns: clamp(208px, 18%, 272px) minmax(0, 1fr);
-  height: clamp(540px, calc(100vh - 245px), 900px);
+  min-height: 540px;
   overflow: hidden;
-}
-
-/* 超级管理员「全部部门」模式无需目录栏：高度随内容收缩，长列表到上限后内部滚动 */
-.directory-workspace.no-rail {
-  grid-template-columns: minmax(0, 1fr);
-  height: auto;
-  max-height: clamp(540px, calc(100vh - 245px), 900px);
 }
 
 .directory-rail {
@@ -2824,6 +3018,19 @@ async function handleResubmit(file: KnowledgeFile) {
   border-color: #bcd2f5;
   background: #eef4ff;
   color: #2563eb;
+}
+
+/* 「全部部门」浏览态的主操作：进入当前选中部门的管理范围 */
+.soft-btn.primary {
+  border-color: #bfd3f4;
+  background: #eef4ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.soft-btn.primary:hover {
+  border-color: #93b4e8;
+  background: #e3edff;
 }
 
 /* 目录树切换仅在窄屏出现 */

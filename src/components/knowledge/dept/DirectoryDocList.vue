@@ -109,6 +109,7 @@ function sizeLabel(file: KnowledgeFile): string {
 
 function departmentOf(file: KnowledgeFile): string {
   return (
+    file.department_name ||
     file.uploader_department_name ||
     file.uploader_college_name ||
     file.collegeName ||

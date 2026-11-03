@@ -184,7 +184,7 @@ function resetForm() {
     props.doc.description || (props.doc as any).summary || (props.doc as any).description || ''
   form.keywords = docKeywords.length
     ? docKeywords
-    : keywordPhrases(props.aiMeta?.keywords)
+    : keywordPhrases(props.aiMeta?.keywords).slice(0, 5)
   form.tags = tagNames(props.doc.tags)
   form.visibility = props.lockPrivate
     ? 'private'

@@ -133,6 +133,10 @@ export interface KnowledgeFile {
   fileType: string
   collegeId: number
   collegeName: string
+  /** 文档归属学院/部门（列表接口返回，超级管理员部门树筛选使用） */
+  college_id?: number | null
+  department_id?: number | null
+  department_name?: string
   keywords: Keyword[]
   status: number
   createdAt: string

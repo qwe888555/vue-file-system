@@ -24,6 +24,8 @@ const props = defineProps<{
   disabledReason?: string
   /** 我的专属空间：文件仅本人可见，目录为专属目录 */
   personalSpace?: boolean
+  /** 右侧「资料确认」当前展示的文件 key，用于高亮队列行 */
+  activeKey?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -33,6 +35,8 @@ const emit = defineEmits<{
   (e: 'update-title', payload: { key: string; title: string }): void
   (e: 'preview', item: UploadQueueItem): void
   (e: 'retry-analysis', key: string): void
+  /** 点击队列文件：在右侧「资料确认」中展示该文件 */
+  (e: 'focus', key: string): void
   (e: 'confirm'): void
   (e: 'assign-folders', payload: { keys: string[]; folderId: FolderId | null }): void
   (e: 'update:targetFolderId', value: FolderId | null): void
@@ -257,8 +261,11 @@ function statusText(item: UploadQueueItem): string {
           {
             failed: !!item.errorMessage && item.status === 'error',
             picked: selectedKeys.has(item.key),
+            active: activeKey === item.key,
           },
         ]"
+        title="点击在右侧查看并编辑该文件的资料"
+        @click="emit('focus', item.key)"
       >
         <label class="queue-check" @click.stop>
           <input
@@ -623,10 +630,22 @@ function statusText(item: UploadQueueItem): string {
   gap: 8px;
   padding: 9px 10px;
   border-bottom: 1px solid #f1f5fa;
+  cursor: pointer;
+  transition: background-color 0.14s ease;
 }
 
 .queue-row.picked {
   background: #f7faff;
+}
+
+.queue-row:hover {
+  background: #f4f8ff;
+}
+
+/* 当前右侧资料确认面板对应的文件 */
+.queue-row.active {
+  background: #eef4ff;
+  box-shadow: inset 2px 0 0 #2563eb;
 }
 
 .queue-row:last-child {
