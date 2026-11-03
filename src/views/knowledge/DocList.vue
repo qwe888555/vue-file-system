@@ -1,27 +1,28 @@
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Clock,
   CollectionTag,
   Delete,
-  Document,
   Edit,
-  Files,
   FolderAdd,
   FolderOpened,
   Grid,
-  Headset,
   List,
-  MoreFilled,
-  Picture,
+  Lock,
+  OfficeBuilding,
   Refresh,
-  VideoCamera,
   WarningFilled,
 } from '@element-plus/icons-vue'
-import type { FolderId, Keyword, KnowledgeFile, KnowledgeFolder } from '@/types'
+import type {
+  College,
+  DepartmentOption,
+  FolderId,
+  Keyword,
+  KnowledgeFile,
+  KnowledgeFolder,
+} from '@/types'
 import type { AiDocMeta, InfoSavePayload, InfoTab, UploadQueueItem } from '@/types/workbench'
 import {
   addDocTagsApi,
@@ -41,6 +42,7 @@ import {
   updateDocApi,
   uploadFileApi,
 } from '@/api/knowledge'
+import { getCollegesApi, getDepartmentsApi } from '@/api/admin'
 import { uploadFileToOss } from '@/utils/oss-upload'
 import {
   extractTextFromFile,
@@ -60,18 +62,15 @@ import EditFileForm from '@/components/knowledge/EditFileForm.vue'
 import DocFilterBar from '@/components/knowledge/DocFilterBar.vue'
 import DocPreviewDialog from '@/components/knowledge/DocPreviewDialog.vue'
 import TagManageDialog from '@/components/knowledge/TagManageDialog.vue'
-import ReviewStatusTag from '@/components/knowledge/ReviewStatusTag.vue'
 
-const router = useRouter()
 const userStore = useUserStore()
 
 const LARGE_FILE_THRESHOLD = 20 * 1024 * 1024
-const UNFILED_PREVIEW_LIMIT = 6
-
-const activeTab = ref<'manage' | 'all'>('manage')
+const MAX_ANALYSIS_CONCURRENCY = 3
 
 const username = computed(() => userStore.userInfo?.username || '')
 const isSuperAdmin = computed(() => userStore.role === 'super_admin')
+const isReviewer = computed(() => userStore.role === 'reviewer')
 const isManagerRole = computed(() =>
   ['super_admin', 'college_admin', 'dept_admin', 'admin'].includes(String(userStore.role)),
 )
@@ -79,14 +78,14 @@ const isManagerRole = computed(() =>
 const {
   folders,
   folderOptions,
-  systemRootFolders,
-  customRootFolders,
+  rootFolders,
   localMode,
   loading: folderLoading,
   loadError: folderLoadError,
   canManage: folderCanManage,
   scopeKind,
   loadFolders,
+  resetFolders,
   createFolder: createFolderRequest,
   renameFolder: renameFolderRequest,
   deleteFolder: deleteFolderRequest,
@@ -96,21 +95,79 @@ const {
   folderById,
   fullPath,
   childFolders,
-  suggestFolder,
   descendantsOf,
 } = useDeptFolders(() => `dept-folders:${userStore.userInfo?.id ?? 'guest'}`)
-
-const canManageFolders = computed(
-  () => isManagerRole.value && (localMode.value || folderCanManage.value),
-)
 
 type FolderSelection = 'root' | 'unfiled' | FolderId
 const selectedFolder = ref<FolderSelection>('root')
 
+// ── 超级管理员查看范围 ──
+// 'all' 全部部门 | 'personal' 我的专属空间 | 'college:<id>' 二级学院 | 'dept:<id>' 行政部门
+const ALL_DEPARTMENTS = 'all'
+const PERSONAL_SPACE = 'personal'
+const scopeValue = ref<string>(ALL_DEPARTMENTS)
+const collegeScopeOptions = ref<College[]>([])
+const departmentOptions = ref<DepartmentOption[]>([])
+
+const scopeMode = computed<'all' | 'personal' | 'college' | 'department'>(() => {
+  if (scopeValue.value === PERSONAL_SPACE) return 'personal'
+  if (scopeValue.value.startsWith('college:')) return 'college'
+  if (scopeValue.value.startsWith('dept:')) return 'department'
+  return 'all'
+})
+const allDepartmentsMode = computed(
+  () => isSuperAdmin.value && scopeMode.value === 'all',
+)
+const personalMode = computed(
+  () => isSuperAdmin.value && scopeMode.value === 'personal',
+)
+const collegeScope = computed<number | null>(() => {
+  if (!isSuperAdmin.value || scopeMode.value !== 'college') return null
+  const id = Number(scopeValue.value.split(':')[1])
+  return Number.isFinite(id) ? id : null
+})
+const departmentScope = computed<number | null>(() => {
+  if (!isSuperAdmin.value || scopeMode.value !== 'department') return null
+  const id = Number(scopeValue.value.split(':')[1])
+  return Number.isFinite(id) ? id : null
+})
+/** 「全部部门」为只读总览，不展示资料目录；专属空间同样支持目录 */
+const hideFolderRail = computed(() => allDepartmentsMode.value)
+
+const canManageFolders = computed(
+  () =>
+    isManagerRole.value &&
+    !hideFolderRail.value &&
+    (localMode.value || folderCanManage.value),
+)
+const canManageDocs = computed(() => isManagerRole.value)
+
+// 上传工作台与资料浏览拆分为两个页签，资料浏览承载「部门目录 + 全部文件」
+type PageTab = 'manage' | 'all'
+const activeTab = ref<PageTab>(
+  canManageDocs.value && !allDepartmentsMode.value ? 'manage' : 'all',
+)
+watch(canManageDocs, (value) => {
+  if (!value) activeTab.value = 'all'
+})
+watch(allDepartmentsMode, (value) => {
+  if (value) activeTab.value = 'all'
+})
+
+const selectedCollege = computed(() =>
+  collegeScopeOptions.value.find((item) => item.id === collegeScope.value) || null,
+)
+const selectedDepartment = computed(() =>
+  departmentOptions.value.find((item) => item.id === departmentScope.value) || null,
+)
+
 const scopeLabel = computed(() => {
+  if (personalMode.value) return '我的专属空间'
+  if (allDepartmentsMode.value) return '全部部门'
+  if (isSuperAdmin.value && selectedCollege.value) return selectedCollege.value.name
+  if (isSuperAdmin.value && selectedDepartment.value) return selectedDepartment.value.full_path
   const info = userStore.userInfo
   if (!info) return '当前部门'
-  if (info.role === 'super_admin') return '校级资料中心'
   if (info.role === 'admin' || info.role === 'college_admin') {
     return info.college_name || '学院资料'
   }
@@ -119,13 +176,83 @@ const scopeLabel = computed(() => {
       info.department_name ||
       '部门资料'
   }
+  if (info.role === 'reviewer') {
+    return [info.college_name, info.department_name].filter(Boolean).join(' / ') || '审核范围资料'
+  }
   return info.department_name || info.college_name || '个人资料'
 })
+
+function flattenDepartments(
+  nodes: Array<{ id: number; name: string; children?: any[] }>,
+  prefix = '',
+  result: DepartmentOption[] = [],
+): DepartmentOption[] {
+  nodes.forEach((node) => {
+    const fullPath = prefix ? `${prefix} / ${node.name}` : node.name
+    result.push({ id: node.id, name: node.name, full_path: fullPath })
+    if (node.children?.length) flattenDepartments(node.children, fullPath, result)
+  })
+  return result
+}
+
+async function loadScopeOptions() {
+  if (!isSuperAdmin.value) return
+  const [colleges, departments] = await Promise.allSettled([
+    getCollegesApi(),
+    getDepartmentsApi(),
+  ])
+  if (colleges.status === 'fulfilled') {
+    collegeScopeOptions.value = colleges.value.results || []
+  } else {
+    console.warn('[部门资料] 获取学院列表失败', colleges.reason)
+    collegeScopeOptions.value = []
+  }
+  if (departments.status === 'fulfilled') {
+    departmentOptions.value = flattenDepartments(departments.value)
+  } else {
+    console.warn('[部门资料] 获取部门列表失败', departments.reason)
+    departmentOptions.value = []
+  }
+}
+
+function resetDirectoryFilters() {
+  selectedFolder.value = 'root'
+  dirSelectedIds.value = []
+  searchQuery.value = ''
+  formatFilter.value = ''
+  collegeFilter.value = ''
+  uploaderFilter.value = ''
+  activeTagId.value = null
+  activeTagName.value = ''
+  tagFilterFiles.value = []
+}
+
+async function onScopeChange(value: string) {
+  if (uploading.value) return
+  scopeValue.value = value
+  if (value === ALL_DEPARTMENTS) activeTab.value = 'all'
+  else if (canManageDocs.value) activeTab.value = 'manage'
+  selectedFolder.value = 'root'
+  targetFolderId.value = null
+  queue.value.forEach((item) => {
+    item.targetFolderId = null
+    // 切到专属空间后，队列中的文件同样固定私密
+    if (value === PERSONAL_SPACE) {
+      item.forcedPrivate = true
+      item.scope = 'private'
+    }
+  })
+  clearInfoSelection()
+  resetDirectoryFilters()
+  await refreshAll()
+}
 
 // ── 上传暂存队列 ──
 const queue = ref<UploadQueueItem[]>([])
 const targetFolderId = ref<FolderId | null>(null)
 const uploading = ref(false)
+const analysisQueue: string[] = []
+let activeAnalysisCount = 0
 let queueSeq = 0
 
 function addFiles(files: File[]) {
@@ -148,6 +275,7 @@ function addFiles(files: File[]) {
     queueSeq += 1
     added.push({
       key: `upload-${Date.now()}-${queueSeq}`,
+      draftId: -queueSeq,
       file,
       title,
       originalTitle: title,
@@ -156,25 +284,120 @@ function addFiles(files: File[]) {
       description: '',
       keywords: [],
       tags: [],
-      scope: 'public',
-      status: 'ready',
+      scope: personalMode.value ? 'private' : 'public',
+      forcedPrivate: personalMode.value,
+      status: 'analyzing',
       errorMessage: '',
+      targetFolderId: targetFolderId.value,
       progress: 0,
     })
   })
   if (!added.length) return
   queue.value.push(...added)
-  ElMessage.success(`已暂存 ${added.length} 个文件，点击「确认上传」开始上传与 AI 识别`)
+  added.forEach((item) => scheduleAnalysis(item.key))
+  registerQueueItems(added)
+  ElMessage.success(`已加入 ${added.length} 个文件，正在立即进行 AI 识别`)
+}
+
+function queueItem(key: string): UploadQueueItem | undefined {
+  return queue.value.find((item) => item.key === key)
+}
+
+function scheduleAnalysis(key: string) {
+  if (!analysisQueue.includes(key)) analysisQueue.push(key)
+  pumpAnalysisQueue()
+}
+
+function pumpAnalysisQueue() {
+  while (activeAnalysisCount < MAX_ANALYSIS_CONCURRENCY && analysisQueue.length) {
+    const key = analysisQueue.shift()!
+    const item = queueItem(key)
+    if (!item || item.status === 'uploading' || item.status === 'done') continue
+    activeAnalysisCount += 1
+    void runAnalysis(key).finally(() => {
+      activeAnalysisCount = Math.max(0, activeAnalysisCount - 1)
+      pumpAnalysisQueue()
+    })
+  }
+}
+
+async function runAnalysis(key: string) {
+  const item = queueItem(key)
+  if (!item) return
+  item.status = 'analyzing'
+  item.analysisError = ''
+  const startTab = infoTabs.value.find((tab) => tab.key === key)
+  if (startTab) startTab.status = 'analyzing'
+  try {
+    const result = await classifyFile(item)
+    // 识别期间文件可能已被撤回或进入上传，丢弃过期结果
+    if (queueItem(key) !== item || item.status === 'uploading' || item.status === 'done') return
+    applyAiResult(item, result)
+    item.status = 'ready'
+    syncQueueTab(item)
+  } catch (error: any) {
+    if (queueItem(key) !== item || item.status === 'uploading' || item.status === 'done') return
+    item.analysisError =
+      error?.response?.data?.detail || error?.message || 'AI 识别失败，可手动填写信息后直接上传'
+    item.status = 'ready'
+    syncQueueTab(item)
+  }
+}
+
+function retryQueueAnalysis(key: string) {
+  const item = queueItem(key)
+  if (!item || item.status === 'analyzing') return
+  scheduleAnalysis(key)
 }
 
 function removeQueueItem(key: string) {
   if (uploading.value) return
   queue.value = queue.value.filter((item) => item.key !== key)
+  dropQueueTabs(new Set([key]))
+}
+
+function removeQueueItems(keys: string[]) {
+  if (uploading.value) return
+  const removed = new Set(keys)
+  queue.value = queue.value.filter((item) => !removed.has(item.key))
+  dropQueueTabs(removed)
+  ElMessage.success(`已撤回 ${removed.size} 个文件`)
+}
+
+/** 撤回文件时同步移除右侧标签页，避免面板停留在已撤回文件上 */
+function dropQueueTabs(keys: Set<string>) {
+  infoTabs.value = infoTabs.value.filter((tab) => !keys.has(tab.key))
+  if (activeInfoKey.value && !keys.has(activeInfoKey.value)) return
+  const next = infoTabs.value[0]
+  if (next) {
+    openInfoTab(next.key)
+    return
+  }
+  activeInfoKey.value = null
+  detailSeq += 1
+  infoDoc.value = null
+  infoAiMeta.value = null
+  detailLoading.value = false
+  infoFormVersion.value += 1
+}
+
+function assignQueueFolders(payload: { keys: string[]; folderId: FolderId | null }) {
+  const targets = new Set(payload.keys)
+  queue.value.forEach((item) => {
+    if (targets.has(item.key)) item.targetFolderId = payload.folderId
+  })
 }
 
 function updateQueueTitle(payload: { key: string; title: string }) {
   const item = queue.value.find((entry) => entry.key === payload.key)
-  if (item) item.title = payload.title
+  if (!item) return
+  item.title = payload.title
+  const tab = infoTabs.value.find((entry) => entry.key === payload.key)
+  if (tab) tab.title = payload.title
+  if (activeInfoKey.value === payload.key) {
+    if (infoDoc.value) infoDoc.value.title = payload.title
+    infoFormVersion.value += 1
+  }
 }
 
 /** 上传前预览本地文件，保留原有「先看内容再上传」的能力 */
@@ -195,12 +418,23 @@ const aiMetaByDocId = ref<Record<number, AiDocMeta>>({})
 const batchDocs = ref<Record<string, KnowledgeFile>>({})
 let detailSeq = 0
 
+/** 当前信息面板对应的待上传文件（已入库的标签页返回 null） */
+const activeQueueItem = computed<UploadQueueItem | null>(() => {
+  const key = activeInfoKey.value
+  if (!key) return null
+  const tab = infoTabs.value.find((item) => item.key === key)
+  if (!tab || tab.status === 'done') return null
+  return queue.value.find((item) => item.key === key) || null
+})
+
 const infoCurrentFolderId = computed<FolderId | null>(() => {
+  if (activeQueueItem.value) return activeQueueItem.value.targetFolderId ?? null
   if (!infoDoc.value) return null
   return folderIdForDoc(infoDoc.value)
 })
 
 const canEditInfo = computed(() => {
+  if (activeQueueItem.value) return activeQueueItem.value.status !== 'uploading'
   const doc = infoDoc.value
   if (!doc) return false
   if (isSuperAdmin.value) return true
@@ -236,6 +470,70 @@ function makeStubDoc(id: number, title: string): KnowledgeFile {
     createdAt: '',
     updatedAt: '',
   }
+}
+
+/** 把待上传文件转换为信息面板可编辑的草稿，复用已入库文档的表单能力 */
+function makeQueueDraft(item: UploadQueueItem): KnowledgeFile {
+  const ext = item.file.name.split('.').pop()?.toLowerCase() || ''
+  return {
+    ...makeStubDoc(item.draftId, item.title),
+    title: item.title,
+    description: item.description,
+    summary: item.description,
+    keywords: item.keywords.map((phrase, index) => ({
+      id: -(index + 1),
+      phrase,
+      match_type: 'exact',
+      weight: 1,
+    })),
+    tags: item.tags.map((name, index) => ({ id: -(index + 1), tag_name: name }) as any),
+    fileSize: item.file.size,
+    fileType: ext,
+    file_ext: ext,
+    file_name: item.file.name,
+    visibility: item.scope,
+  }
+}
+
+/** 同步队列文件到右侧标签页，并聚焦第一个新增文件 */
+function registerQueueItems(items: UploadQueueItem[]) {
+  const knownKeys = new Set(infoTabs.value.map((tab) => tab.key))
+  const newTabs = items
+    .filter((item) => !knownKeys.has(item.key))
+    .map((item) => ({
+      key: item.key,
+      title: item.title,
+      status: item.status,
+    }))
+  if (newTabs.length) infoTabs.value.push(...newTabs)
+  if (items[0]) focusQueueItem(items[0])
+}
+
+/** 聚焦某个队列文件，在右侧立即显示识别中/识别结果 */
+function focusQueueItem(item: UploadQueueItem) {
+  detailSeq += 1
+  activeInfoKey.value = item.key
+  infoDoc.value = makeQueueDraft(item)
+  infoAiMeta.value = item.status === 'ready' ? buildAiMeta(item) : null
+  detailLoading.value = false
+  infoFormVersion.value += 1
+}
+
+/** AI 识别结果返回后刷新右侧面板 */
+function refreshQueueDraft(item: UploadQueueItem) {
+  if (activeInfoKey.value !== item.key) return
+  infoDoc.value = makeQueueDraft(item)
+  infoAiMeta.value = item.status === 'ready' ? buildAiMeta(item) : null
+  infoFormVersion.value += 1
+}
+
+function syncQueueTab(item: UploadQueueItem) {
+  const tab = infoTabs.value.find((entry) => entry.key === item.key)
+  if (tab) {
+    tab.status = item.status === 'ready' ? 'ready' : 'analyzing'
+    tab.title = item.title
+  }
+  refreshQueueDraft(item)
 }
 
 function clearInfoSelection() {
@@ -306,6 +604,11 @@ function openInfoTab(key: string) {
     void loadInfoDetail(doc)
     return
   }
+  const queueItem = queue.value.find((item) => item.key === key)
+  if (queueItem) {
+    focusQueueItem(queueItem)
+    return
+  }
   detailSeq += 1
   infoDoc.value = null
   infoAiMeta.value = aiMetaByKey.value[key] || null
@@ -316,6 +619,29 @@ function openInfoTab(key: string) {
 async function handleInfoSave(payload: InfoSavePayload) {
   const doc = infoDoc.value
   if (!doc || savingInfo.value) return
+
+  // 上传前：修改直接写回待上传队列，随文件一起入库
+  const queueItem = activeQueueItem.value
+  if (queueItem) {
+    savingInfo.value = true
+    try {
+      queueItem.title = payload.title
+      queueItem.description = payload.description
+      queueItem.keywords = payload.keywords
+      queueItem.tags = payload.tags
+      // 专属空间加入队列的文件始终私密
+      queueItem.scope = queueItem.forcedPrivate ? 'private' : payload.scope
+      queueItem.targetFolderId = payload.folderId
+      const tab = infoTabs.value.find((entry) => entry.key === queueItem.key)
+      if (tab) tab.title = payload.title
+      refreshQueueDraft(queueItem)
+      ElMessage.success('待上传信息已保存')
+    } finally {
+      savingInfo.value = false
+    }
+    return
+  }
+
   savingInfo.value = true
   try {
     if (canEditInfo.value) {
@@ -376,9 +702,9 @@ async function handleInfoSave(payload: InfoSavePayload) {
     infoTabs.value.forEach((tab) => {
       if (tab.docId === doc.id) tab.title = payload.title
     })
-    await Promise.all([fetchFiles(), loadFolders()])
+    await refreshAll()
     await loadInfoDetail(doc)
-    ElMessage.success('资料信息已保存')
+    ElMessage.success('资料已确认入库')
   } catch (error: any) {
     if (!error?.response) {
       ElMessage.error(error?.message || '保存失败，请稍后重试')
@@ -389,6 +715,10 @@ async function handleInfoSave(payload: InfoSavePayload) {
 }
 
 function previewInfoDoc(doc: KnowledgeFile) {
+  if (activeQueueItem.value) {
+    previewQueueItem(activeQueueItem.value)
+    return
+  }
   openDocPreview(doc.id, doc.title)
 }
 
@@ -408,21 +738,17 @@ const activeTagId = ref<number | null>(null)
 const activeTagName = ref('')
 const showTagManager = ref(false)
 
-const selectedDocIds = ref<number[]>([])
 const dirSelectedIds = ref<number[]>([])
 const dirViewMode = ref<'list' | 'grid'>('list')
 const dirSort = ref<'newest' | 'oldest' | 'name' | 'size'>('newest')
+// 移动端将目录树收起，避免进入页面时目录与文件两层内容同时铺开
+const folderRailOpen = ref(false)
 const dirMoveTarget = ref<FolderId | null>(null)
 const dirMoving = ref(false)
-const allMoveTarget = ref<FolderId | null>(null)
-const allMoving = ref(false)
 
 const showEditDialog = ref(false)
 const editingFile = ref<KnowledgeFile | null>(null)
 const previewRef = ref<InstanceType<typeof DocPreviewDialog>>()
-
-const currentPage = ref(1)
-const pageSize = ref(10)
 
 function normalizeKeywordList(list: any[] | undefined | null): Keyword[] {
   return (list || [])
@@ -454,6 +780,10 @@ function normalizeDoc(file: any): KnowledgeFile {
 }
 
 async function fetchDocPages(tagId?: number): Promise<KnowledgeFile[]> {
+  const personalOwnerId = personalMode.value ? userStore.userInfo?.id : undefined
+  if (personalMode.value && !personalOwnerId) {
+    throw new Error('无法确定当前用户，请重新登录')
+  }
   let page = 1
   let collected: any[] = []
   let hasNext = true
@@ -462,6 +792,12 @@ async function fetchDocPages(tagId?: number): Promise<KnowledgeFile[]> {
       page,
       page_size: 1000,
       tagId,
+      collegeId: collegeScope.value ?? undefined,
+      departmentId: departmentScope.value ?? undefined,
+      // 专属空间：只看自己上传的私密文件，且不受默认「近一年」限制
+      visibility: personalMode.value ? 'private' : undefined,
+      uploaderId: personalOwnerId,
+      daysBack: personalMode.value ? 0 : undefined,
     })
     const data = res?.results ?? res?.data ?? (Array.isArray(res) ? res : [])
     const batch = Array.isArray(data) ? data : []
@@ -472,18 +808,24 @@ async function fetchDocPages(tagId?: number): Promise<KnowledgeFile[]> {
   return collected.map(normalizeDoc)
 }
 
+let allFilesSeq = 0
+
 async function loadAllFiles() {
+  const seq = ++allFilesSeq
   filesLoading.value = true
   listError.value = ''
   try {
-    allFiles.value = await fetchDocPages()
+    const files = await fetchDocPages()
+    // 快速切换范围时丢弃过期响应，避免旧范围的列表覆盖新范围
+    if (seq !== allFilesSeq) return
+    allFiles.value = files
     const valid = new Set(allFiles.value.map((file) => file.id))
-    selectedDocIds.value = selectedDocIds.value.filter((id) => valid.has(id))
     dirSelectedIds.value = dirSelectedIds.value.filter((id) => valid.has(id))
   } catch {
+    if (seq !== allFilesSeq) return
     listError.value = '文档列表加载失败，请检查网络后重试'
   } finally {
-    filesLoading.value = false
+    if (seq === allFilesSeq) filesLoading.value = false
   }
 }
 
@@ -507,15 +849,28 @@ async function fetchFiles() {
 }
 
 async function refreshAll() {
-  await Promise.all([fetchFiles(), loadFolders()])
+  if (hideFolderRail.value) {
+    resetFolders()
+    await fetchFiles()
+    return
+  }
+  await Promise.all([
+    fetchFiles(),
+    loadFolders({
+      departmentId: departmentScope.value,
+      collegeId: collegeScope.value,
+      personal: personalMode.value,
+    }),
+  ])
 }
 
-onMounted(() => {
-  void refreshAll()
+onMounted(async () => {
+  await loadScopeOptions()
+  await refreshAll()
 })
 
 watch([searchQuery, formatFilter, collegeFilter, uploaderFilter], () => {
-  currentPage.value = 1
+  dirSelectedIds.value = []
 })
 
 function normalizeSearchText(text: string): string {
@@ -589,15 +944,6 @@ function formatLabelOf(file: KnowledgeFile): string {
   return FORMAT_LABELS[ext] || ext.toUpperCase()
 }
 
-function formatCellExt(file: KnowledgeFile): string {
-  const ext = String(file.file_ext || '').toLowerCase().replace(/^\./, '')
-  if (!ext) return formatLabelOf(file)
-  if (['image', 'video', 'audio', 'other'].includes(ext)) {
-    return FORMAT_LABELS[ext] || ext.toUpperCase()
-  }
-  return ext.toUpperCase()
-}
-
 function collegeOf(file: KnowledgeFile): string {
   return file.collegeName?.trim() || '未归属'
 }
@@ -618,6 +964,16 @@ const myRejectedTitleText = computed(() => {
   const titles = myRejectedFiles.value.map((file) => file.title).filter(Boolean)
   if (titles.length <= 3) return titles.join('、')
   return `${titles.slice(0, 3).join('、')} 等 ${titles.length} 个文档`
+})
+
+const reviewCounts = computed(() => {
+  const counts = { pending: 0, approved: 0, rejected: 0 }
+  visibleFiles.value.forEach((file) => {
+    if (file.review_status === 'approved') counts.approved += 1
+    else if (file.review_status === 'rejected') counts.rejected += 1
+    else counts.pending += 1
+  })
+  return counts
 })
 
 const tableSourceFiles = computed(() =>
@@ -660,7 +1016,8 @@ const formatOptions = computed(() => [...new Set(keywordResults.value.map(format
 const collegeOptions = computed(() => [...new Set(keywordResults.value.map(collegeOf))].sort())
 const uploaderOptions = computed(() => [...new Set(keywordResults.value.map(uploaderOf))].sort())
 
-const filteredTableFiles = computed(() => {
+/** 当前搜索 / 格式 / 学院 / 上传者 / 标签筛选后的文件 */
+const visibleFiles = computed(() => {
   let rows = keywordResults.value
   if (formatFilter.value) rows = rows.filter((file) => formatLabelOf(file) === formatFilter.value)
   if (collegeFilter.value) rows = rows.filter((file) => collegeOf(file) === collegeFilter.value)
@@ -668,28 +1025,10 @@ const filteredTableFiles = computed(() => {
   return rows
 })
 
-const displayTotalFiles = computed(() => filteredTableFiles.value.length)
-
-const paginatedTableFiles = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return filteredTableFiles.value.slice(start, start + pageSize.value)
-})
-
-function handleCurrentChange(page: number) {
-  const maxPage = Math.max(1, Math.ceil(displayTotalFiles.value / pageSize.value))
-  currentPage.value = Math.min(Math.max(1, page), maxPage)
-}
-
-function handleSizeChange(size: number) {
-  pageSize.value = size
-  currentPage.value = 1
-}
-
 function setTagFilter(tag: { id: number; name: string }) {
   activeTagId.value = tag.id
   activeTagName.value = tag.name
-  activeTab.value = 'all'
-  currentPage.value = 1
+  dirSelectedIds.value = []
   void loadActiveTagFiles()
 }
 
@@ -698,44 +1037,6 @@ function clearTagFilter() {
   activeTagId.value = null
   activeTagName.value = ''
   tagFilterFiles.value = []
-  currentPage.value = 1
-}
-
-function rowTags(file: KnowledgeFile): Array<{ id: number; name: string }> {
-  const list: any[] = (file as any).tags || []
-  return list
-    .map((tag) => ({ id: tag.tag_id ?? tag.id, name: tag.tag_name ?? tag.name ?? '' }))
-    .filter((tag) => tag.id != null && tag.name)
-}
-
-const EXT_CATEGORY: Record<string, string> = {
-  pdf: 'pdf',
-  doc: 'word', docx: 'word', wps: 'word',
-  xls: 'sheet', xlsx: 'sheet', csv: 'sheet',
-  ppt: 'slide', pptx: 'slide',
-  jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', webp: 'image', bmp: 'image',
-  mp3: 'audio', wav: 'audio', ogg: 'audio', flac: 'audio', m4a: 'audio',
-  mp4: 'video', webm: 'video', mov: 'video', avi: 'video', mkv: 'video',
-  zip: 'archive', rar: 'archive', '7z': 'archive',
-}
-
-const CATEGORY_ICONS: Record<string, any> = {
-  pdf: Document,
-  word: Files,
-  sheet: Grid,
-  slide: Document,
-  image: Picture,
-  audio: Headset,
-  video: VideoCamera,
-  archive: FolderOpened,
-}
-
-function categoryOf(file: KnowledgeFile): string {
-  return EXT_CATEGORY[rowExt(file)] || 'other'
-}
-
-function docIconOf(file: KnowledgeFile): any {
-  return CATEGORY_ICONS[categoryOf(file)] || Document
 }
 
 function formatDate(dateStr: string): string {
@@ -762,7 +1063,7 @@ function formatFileSize(bytes: number): string {
 // 子目录中的文件同时计入所有上级目录：教学资料 / 课程大纲 里的文件也属于教学资料
 const folderCountMap = computed<Record<string, number>>(() => {
   const counts: Record<string, number> = {}
-  allFiles.value.forEach((file) => {
+  visibleFiles.value.forEach((file) => {
     const id = folderIdForDoc(file)
     if (id == null) return
     let current: FolderId | null = id
@@ -781,7 +1082,7 @@ const folderCountMap = computed<Record<string, number>>(() => {
 })
 
 const unfiledFiles = computed(() =>
-  allFiles.value.filter((file) => folderIdForDoc(file) == null),
+  visibleFiles.value.filter((file) => folderIdForDoc(file) == null),
 )
 
 const selectedFolderNode = computed<KnowledgeFolder | null>(() => {
@@ -807,7 +1108,7 @@ const selectedFolderDocs = computed(() => {
   if (selectedFolder.value === 'unfiled') return unfiledFiles.value
   const id = selectedFolder.value
   const scopeIds = new Set([String(id), ...descendantsOf(id).map(String)])
-  return allFiles.value.filter((file) => {
+  return visibleFiles.value.filter((file) => {
     const folderId = folderIdForDoc(file)
     return folderId != null && scopeIds.has(String(folderId))
   })
@@ -843,28 +1144,38 @@ function sortDocs(docs: KnowledgeFile[]): KnowledgeFile[] {
 }
 
 const sortedSelectedFolderDocs = computed(() => sortDocs(selectedFolderDocs.value))
-const sortedUnfiledFiles = computed(() => sortDocs(unfiledFiles.value))
-const rootUnfiledPreview = computed(() =>
-  sortedUnfiledFiles.value.slice(0, UNFILED_PREVIEW_LIMIT),
-)
+const rootVisibleFiles = computed(() => sortDocs(visibleFiles.value))
+
+function handleDocRowSelect(doc: KnowledgeFile) {
+  if (allDepartmentsMode.value || isReviewer.value) {
+    openDocPreview(doc.id, doc.title)
+    return
+  }
+  selectDocForInfo(doc)
+}
 
 const directoryTitle = computed(() => {
+  if (personalMode.value) return '我的专属文件'
+  if (allDepartmentsMode.value) return '跨部门资料'
   if (selectedFolder.value === 'root') return '全部文件'
   if (selectedFolder.value === 'unfiled') return '待分类文件'
   return selectedFolderNode.value?.name || '资料目录'
 })
 
 const directoryCount = computed(() => {
-  if (selectedFolder.value === 'root') return allFiles.value.length
+  if (selectedFolder.value === 'root') return visibleFiles.value.length
   if (selectedFolder.value === 'unfiled') return unfiledFiles.value.length
   return selectedFolderDocs.value.length
 })
 
 const directoryHint = computed(() => {
-  if (selectedFolder.value === 'root') return '按目录整理部门资料，待分类文件可直接拖入左侧目录'
-  if (selectedFolder.value === 'unfiled') return '尚未归档的资料，可拖拽到左侧任意目录'
-  if (selectedFolderHasSubfolders.value) return '含全部子目录中的资料，可拖拽文件行到左侧目录完成移动'
-  return '该目录下的资料，可拖拽文件行到左侧目录完成移动'
+  if (personalMode.value) return '专属空间内的文件仅本人可见，不会出现在其他部门或超管的资料中'
+  if (allDepartmentsMode.value) return '校级视角浏览全部部门资料；选择具体学院或部门后可查看目录并维护文件'
+  if (isReviewer.value) return '只读浏览部门资料与审核状态，可预览和下载文件'
+  if (selectedFolder.value === 'root') return '按目录整理部门资料，待分类文件可直接拖入目录'
+  if (selectedFolder.value === 'unfiled') return '尚未归档的资料，可拖拽到任意目录'
+  if (selectedFolderHasSubfolders.value) return '含全部子目录中的资料，可拖拽文件行到目标目录完成移动'
+  return '该目录下的资料，可拖拽文件行到目标目录完成移动'
 })
 
 function folderPathOf(file: KnowledgeFile): string {
@@ -876,16 +1187,19 @@ function folderPathOf(file: KnowledgeFile): string {
 function selectRootFolder() {
   selectedFolder.value = 'root'
   dirSelectedIds.value = []
+  folderRailOpen.value = false
 }
 
 function selectUnfiledFolder() {
   selectedFolder.value = 'unfiled'
   dirSelectedIds.value = []
+  folderRailOpen.value = false
 }
 
 function selectFolderNode(folder: KnowledgeFolder) {
   selectedFolder.value = folder.id
   dirSelectedIds.value = []
+  folderRailOpen.value = false
 }
 
 function toggleDirSelect(payload: { id: number; checked: boolean }) {
@@ -897,7 +1211,7 @@ function toggleDirSelect(payload: { id: number; checked: boolean }) {
 }
 
 function selectAllRootDocs(checked: boolean) {
-  const ids = rootUnfiledPreview.value.map((file) => file.id)
+  const ids = rootVisibleFiles.value.map((file) => file.id)
   if (checked) {
     dirSelectedIds.value = [...new Set([...dirSelectedIds.value, ...ids])]
   } else {
@@ -927,7 +1241,11 @@ async function moveDocsAndRefresh(
   if (infoDoc.value && docs.some((doc) => doc.id === infoDoc.value!.id)) {
     infoFormVersion.value += 1
   }
-  await loadFolders()
+  await loadFolders({
+    departmentId: departmentScope.value,
+    collegeId: collegeScope.value,
+    personal: personalMode.value,
+  })
   return moved
 }
 
@@ -947,25 +1265,6 @@ async function moveDirSelected() {
     if (!error?.response) ElMessage.error(error?.message || '移动失败')
   } finally {
     dirMoving.value = false
-  }
-}
-
-async function moveAllSelected() {
-  if (!canManageFolders.value) {
-    ElMessage.warning('当前账号无目录维护权限')
-    return
-  }
-  const docs = docsByIds(selectedDocIds.value)
-  if (!docs.length) return
-  allMoving.value = true
-  try {
-    const moved = await moveDocsAndRefresh(docs, allMoveTarget.value)
-    ElMessage.success(`已移动 ${moved || docs.length} 个文件`)
-    selectedDocIds.value = []
-  } catch (error: any) {
-    if (!error?.response) ElMessage.error(error?.message || '移动失败')
-  } finally {
-    allMoving.value = false
   }
 }
 
@@ -1147,27 +1446,17 @@ function applyAiResult(item: UploadQueueItem, result: Awaited<ReturnType<typeof 
     .map((keyword) => String(keyword).trim())
     .filter(Boolean)
     .slice(0, 20)
-  item.scope = result.visibility === 'private' ? 'private' : 'public'
+  // 加入队列时处于专属空间的文件始终私密，不被 AI 建议改回公开
+  item.scope = item.forcedPrivate
+    ? 'private'
+    : result.visibility === 'private' ? 'private' : 'public'
   item.confidence = result.confidence
-
-  let suggestion: KnowledgeFolder | null = null
-  if (!localMode.value && result.suggested_folder) {
-    suggestion =
-      folderOptions.value.find(
-        (folder) => String(folder.id) === String(result.suggested_folder!.id),
-      ) || null
-  }
-  if (!suggestion) suggestion = suggestFolder(item.aiTitle || item.title, item.keywords)
-  item.suggestedFolderId = suggestion?.id ?? null
-  item.suggestedFolderName = suggestion?.name || ''
 }
 
 function buildAiMeta(item: UploadQueueItem): AiDocMeta {
   return {
     confidence: item.confidence,
     recommendedTitle: item.aiTitle,
-    suggestedFolderId: item.suggestedFolderId ?? null,
-    suggestedFolderName: item.suggestedFolderName,
     keywords: item.keywords,
     visibility: item.scope,
     analyzedAt: new Date().toISOString(),
@@ -1186,8 +1475,17 @@ async function uploadViaBackend(
   if (item.description) formData.append('description', item.description)
   item.keywords.forEach((keyword) => formData.append('keywords', keyword))
   appendUploadMeta(formData, item.tags)
-  formData.append('visibility', item.scope)
-  if (folderId != null) formData.append('folder_id', String(folderId))
+  formData.append('visibility', item.forcedPrivate ? 'private' : item.scope)
+  if (folderId != null) {
+    formData.append('folder_id', String(folderId))
+  }
+  if (personalMode.value) formData.append('personal', 'true')
+  if (collegeScope.value != null) {
+    formData.append('college_id', String(collegeScope.value))
+  }
+  if (departmentScope.value != null) {
+    formData.append('department_id', String(departmentScope.value))
+  }
   setUploadProgress(item.key, 12)
   const result = await uploadFileApi(formData)
   setUploadProgress(item.key, 94)
@@ -1196,8 +1494,9 @@ async function uploadViaBackend(
 
 async function uploadOne(item: UploadQueueItem): Promise<KnowledgeFile> {
   const title = item.title.trim() || fileBaseName(item.file)
-  const selectedTarget = targetFolderId.value
+  const selectedTarget = item.targetFolderId
   const numericFolder = typeof selectedTarget === 'number' ? selectedTarget : null
+  const effectiveScope = item.forcedPrivate ? 'private' : item.scope
   let result: KnowledgeFile
 
   if (item.file.size > LARGE_FILE_THRESHOLD) {
@@ -1206,10 +1505,13 @@ async function uploadOne(item: UploadQueueItem): Promise<KnowledgeFile> {
         file: item.file,
         title,
         description: item.description,
-        scope: item.scope,
+        scope: effectiveScope,
         keywords: item.keywords,
         tags: item.tags,
         folderId: numericFolder,
+        collegeId: collegeScope.value,
+        departmentId: departmentScope.value,
+        personal: personalMode.value,
         onProgress: (percent) => setUploadProgress(item.key, percent),
       })
     } catch (error) {
@@ -1226,7 +1528,7 @@ async function uploadOne(item: UploadQueueItem): Promise<KnowledgeFile> {
 
   result.title = title
   result.description = item.description || result.description || ''
-  result.visibility = item.scope
+  result.visibility = effectiveScope
   result.keywords = item.keywords.length
     ? item.keywords.map((phrase) => ({ id: 0, phrase, match_type: 'exact', weight: 1 }))
     : result.keywords || []
@@ -1249,12 +1551,20 @@ async function uploadOne(item: UploadQueueItem): Promise<KnowledgeFile> {
 
 async function confirmUpload() {
   if (uploading.value || !queue.value.length) return
+  if (queue.value.some((item) => item.status === 'analyzing')) {
+    ElMessage.warning('请等待队列中的文件完成 AI 识别后再上传')
+    return
+  }
+  if (isReviewer.value || !canManageDocs.value) {
+    ElMessage.warning('当前账号暂无上传权限')
+    return
+  }
 
   // 保留原有重名校验：已存在同名资料时阻止误重复上传
   const existingTitles = new Set(allFiles.value.map((file) => file.title.trim()))
   const duplicates = queue.value.filter((item) => existingTitles.has(item.title.trim()))
   if (duplicates.length) {
-    ElMessage.warning(`文件「${duplicates[0].title}」已存在，请修改标题或删除后重新上传`)
+    ElMessage.warning(`文件「${duplicates[0].title}」已存在，请修改标题或撤回后重新上传`)
     return
   }
   const seenTitles = new Set<string>()
@@ -1275,7 +1585,7 @@ async function confirmUpload() {
   infoTabs.value = items.map((item) => ({
     key: item.key,
     title: item.title,
-    status: 'pending',
+    status: 'uploading',
     progress: 0,
   }))
   activeInfoKey.value = infoTabs.value[0]?.key ?? null
@@ -1286,32 +1596,18 @@ async function confirmUpload() {
 
   let success = 0
   let failed = 0
-  let aiFallback = 0
+  const analysisFallback = items.filter((item) => item.analysisError).length
 
   try {
     for (const item of items) {
       const tab = infoTabs.value.find((entry) => entry.key === item.key)
       if (!tab) continue
 
-      item.status = 'analyzing'
+      item.status = 'uploading'
       item.errorMessage = ''
       item.progress = 0
-      tab.status = 'analyzing'
-      tab.error = ''
-
-      let classified = false
-      try {
-        const result = await classifyFile(item)
-        applyAiResult(item, result)
-        classified = true
-      } catch (error) {
-        console.warn('[部门文件管理] AI 识别失败', item.file.name, error)
-        aiFallback += 1
-      }
-
-      item.status = 'uploading'
       tab.status = 'uploading'
-      tab.progress = 0
+      tab.error = ''
       setUploadProgress(item.key, 2)
 
       try {
@@ -1340,7 +1636,7 @@ async function confirmUpload() {
         const message =
           error?.message || error?.response?.data?.detail || '上传失败，请重试'
         item.status = 'error'
-        item.errorMessage = aiFallback && !classified ? `AI 识别失败；${message}` : message
+        item.errorMessage = message
         tab.status = 'error'
         tab.error = item.errorMessage
         if (activeInfoKey.value === item.key) {
@@ -1353,32 +1649,26 @@ async function confirmUpload() {
   } finally {
     uploading.value = false
     queue.value = queue.value.filter((item) => item.status !== 'done')
-    await Promise.all([fetchFiles(), loadFolders()])
+    await refreshAll()
   }
 
   if (success && !failed) {
-    ElMessage.success(`${success} 个文件已上传，AI 识别结果已填入右侧信息确认区`)
+    ElMessage.success(
+      `${success} 个文件已上传，请在信息确认区核对后点击「确认入库」`,
+    )
   } else if (success && failed) {
     ElMessage.warning(`${success} 个上传成功，${failed} 个失败；失败文件已保留在队列中`)
   } else if (failed) {
     ElMessage.error('文件上传失败，请检查待上传队列')
   }
-  if (aiFallback) {
-    ElMessage.warning(`${aiFallback} 个文件 AI 识别未成功，已使用文件基础信息`)
+  if (analysisFallback) {
+    ElMessage.warning(`${analysisFallback} 个文件 AI 识别未完成，已使用文件基础信息上传`)
   }
 }
 
 // ── 列表操作 ──
 function openDocPreview(id: number, title: string) {
   previewRef.value?.openDoc(id, title)
-}
-
-function goDocDetail(file: KnowledgeFile) {
-  router.push({ name: 'DocDetail', params: { id: file.id } })
-}
-
-function handleSelectionChange(rows: KnowledgeFile[]) {
-  selectedDocIds.value = rows.map((row) => row.id)
 }
 
 async function handleBatchDelete(ids: number[]) {
@@ -1397,7 +1687,6 @@ async function handleBatchDelete(ids: number[]) {
     ElMessage.success('批量删除成功')
     if (infoDoc.value && ids.includes(infoDoc.value.id)) clearInfoSelection()
     dirSelectedIds.value = dirSelectedIds.value.filter((id) => !ids.includes(id))
-    selectedDocIds.value = selectedDocIds.value.filter((id) => !ids.includes(id))
     await refreshAll()
   } catch (error: any) {
     if (!error?.response) ElMessage.error(error?.message || '批量删除失败')
@@ -1493,7 +1782,6 @@ function handleEditSubmit(data: { title: string; description: string; keywords: 
     file.keywords = data.keywords
     cacheKeywords(file.id, data.keywords)
     if (data.description) cacheDesc(file.id, data.description)
-    saveFiles(paginatedTableFiles.value)
     ElMessage.success('编辑成功')
     void fetchFiles()
     if (infoDoc.value?.id === file.id) {
@@ -1503,11 +1791,6 @@ function handleEditSubmit(data: { title: string; description: string; keywords: 
   }
   showEditDialog.value = false
   void refreshAll()
-}
-
-function handleRowCommand(command: string, row: KnowledgeFile) {
-  if (command === 'edit') void handleEdit(row)
-  else if (command === 'resubmit') void handleResubmit(row)
 }
 
 async function handleResubmit(file: KnowledgeFile) {
@@ -1530,9 +1813,6 @@ async function handleResubmit(file: KnowledgeFile) {
   }
 }
 
-function saveFiles(files: KnowledgeFile[]) {
-  localStorage.setItem('knowledgeFiles', JSON.stringify(files))
-}
 </script>
 
 <template>
@@ -1541,9 +1821,60 @@ function saveFiles(files: KnowledgeFile[]) {
       <div class="head-copy">
         <div class="title-row">
           <h1>部门文件管理</h1>
-          <span class="scope-chip">{{ scopeLabel }}</span>
+          <span v-if="!isSuperAdmin" class="scope-chip">{{ scopeLabel }}</span>
         </div>
-        <p>上传、AI 识别与目录归档一体化工作台，面向部门资料管理员使用。</p>
+        <div v-if="isSuperAdmin" class="scope-field">
+          <span class="scope-field-label">查看范围</span>
+          <el-select
+            :model-value="scopeValue"
+            class="scope-select"
+            size="large"
+            filterable
+            @change="onScopeChange"
+          >
+            <template #prefix>
+              <el-icon><OfficeBuilding /></el-icon>
+            </template>
+            <el-option-group label="我的空间">
+              <el-option
+                label="我的专属空间（仅本人可见）"
+                :value="PERSONAL_SPACE"
+              />
+            </el-option-group>
+            <el-option-group label="全校">
+              <el-option label="全部部门（校级总览）" :value="ALL_DEPARTMENTS" />
+            </el-option-group>
+            <el-option-group label="二级学院（研究院）">
+              <el-option
+                v-for="college in collegeScopeOptions"
+                :key="`college:${college.id}`"
+                :label="college.name"
+                :value="`college:${college.id}`"
+              />
+            </el-option-group>
+            <el-option-group label="行政部门">
+              <el-option
+                v-for="department in departmentOptions"
+                :key="`dept:${department.id}`"
+                :label="department.full_path"
+                :value="`dept:${department.id}`"
+              />
+            </el-option-group>
+          </el-select>
+        </div>
+        <p>
+          {{
+            isReviewer
+              ? '只读查看部门资料目录、审核状态与文件内容。'
+              : personalMode
+                ? '专属空间内的文件仅本人可见，不会出现在其他部门或超管的资料中。'
+                : allDepartmentsMode
+                  ? '查看全校各部门资料；选择具体学院或部门后可进入目录上传与维护。'
+                  : activeTab === 'manage'
+                    ? '上传、即时 AI 识别与目录归档一体化工作台。'
+                    : '按部门目录浏览、检索与归档全部资料。'
+          }}
+        </p>
       </div>
       <div class="head-actions">
         <button
@@ -1569,10 +1900,13 @@ function saveFiles(files: KnowledgeFile[]) {
 
     <nav class="page-tabs">
       <button
+        v-if="canManageDocs"
         type="button"
         :class="{ active: activeTab === 'manage' }"
         @click="activeTab = 'manage'"
-      >文件管理</button>
+      >
+        文件管理
+      </button>
       <button
         type="button"
         :class="{ active: activeTab === 'all' }"
@@ -1583,43 +1917,23 @@ function saveFiles(files: KnowledgeFile[]) {
       </button>
     </nav>
 
-    <div v-show="activeTab === 'manage'" class="workbench-grid">
-      <div class="left-col">
+    <div class="workbench">
+      <div v-show="activeTab === 'manage' && !allDepartmentsMode" class="workbench-top">
         <UploadStagingPanel
           v-model:target-folder-id="targetFolderId"
           :items="queue"
           :folder-options="folderOptions"
+          :personal-space="personalMode"
           :uploading="uploading"
           @add-files="addFiles"
           @remove="removeQueueItem"
+          @remove-selected="removeQueueItems"
+          @assign-folders="assignQueueFolders"
+          @retry-analysis="retryQueueAnalysis"
           @update-title="updateQueueTitle"
           @preview="previewQueueItem"
           @confirm="confirmUpload"
         />
-        <DeptFolderTree
-          :folders="folders"
-          :counts="folderCountMap"
-          :selected-id="selectedFolder"
-          :unfiled-count="unfiledFiles.length"
-          :total-count="allFiles.length"
-          :scope-label="scopeLabel"
-          :scope-kind="scopeKind"
-          :can-manage="canManageFolders"
-          :loading="folderLoading"
-          :load-error="folderLoadError"
-          :local-mode="localMode"
-          @select-root="selectRootFolder"
-          @select-unfiled="selectUnfiledFolder"
-          @select="selectFolderNode"
-          @create="handleCreateFolder"
-          @rename="handleRenameFolder"
-          @delete="handleDeleteFolder"
-          @refresh="loadFolders"
-          @drop-docs="handleDropDocs"
-        />
-      </div>
-
-      <div class="right-col">
         <DocInfoPanel
           :tabs="infoTabs"
           :active-key="activeInfoKey"
@@ -1633,23 +1947,73 @@ function saveFiles(files: KnowledgeFile[]) {
           :can-manage-folder="canManageFolders"
           :can-resubmit="canResubmitInfo"
           :saving="savingInfo"
+          :lock-private="personalMode"
+          :draft-mode="Boolean(activeQueueItem)"
           @select-tab="openInfoTab"
           @save="handleInfoSave"
           @preview="previewInfoDoc"
-          @download="handleDownload"
           @resubmit="handleResubmit"
         />
+      </div>
 
-        <section class="panel directory-panel">
+      <section
+        v-if="activeTab === 'manage' && allDepartmentsMode"
+        class="panel manage-empty"
+      >
+        <el-icon><FolderOpened /></el-icon>
+        <h3>请先选择具体学院或部门</h3>
+        <p>「全部部门」为跨部门只读浏览视图。在上方查看范围中选择具体学院或部门后，即可上传文件并维护对应目录。</p>
+      </section>
+
+      <section
+        v-show="activeTab === 'all'"
+        class="panel directory-workspace"
+        :class="{ 'no-rail': hideFolderRail }"
+      >
+        <aside
+          v-if="!hideFolderRail"
+          class="directory-rail"
+          :class="{ 'mobile-open': folderRailOpen }"
+        >
+          <DeptFolderTree
+            embedded
+            :folders="folders"
+            :counts="folderCountMap"
+            :selected-id="selectedFolder"
+            :unfiled-count="unfiledFiles.length"
+            :total-count="visibleFiles.length"
+            :scope-label="scopeLabel"
+            :scope-kind="scopeKind"
+            :can-manage="canManageFolders"
+            :loading="folderLoading"
+            :load-error="folderLoadError"
+            :local-mode="localMode"
+            @select-root="selectRootFolder"
+            @select-unfiled="selectUnfiledFolder"
+            @select="selectFolderNode"
+            @create="handleCreateFolder"
+            @rename="handleRenameFolder"
+            @delete="handleDeleteFolder"
+            @refresh="refreshAll"
+            @drop-docs="handleDropDocs"
+          />
+        </aside>
+
+        <div class="directory-main">
           <div class="directory-head">
             <div class="directory-title-wrap">
-              <span class="directory-icon"><el-icon><FolderOpened /></el-icon></span>
               <div class="directory-copy">
                 <div class="directory-title">
                   {{ directoryTitle }}
                   <span class="directory-count">{{ directoryCount }}</span>
+                  <span v-if="reviewCounts.pending" class="review-pill pending">
+                    待审核 {{ reviewCounts.pending }}
+                  </span>
+                  <span v-if="reviewCounts.approved" class="review-pill approved">
+                    已通过 {{ reviewCounts.approved }}
+                  </span>
                 </div>
-                <div v-if="selectedFolderNode" class="breadcrumb">
+                <div v-if="selectedFolderNode && !allDepartmentsMode" class="breadcrumb">
                   <button type="button" class="crumb" @click="selectRootFolder">全部文件</button>
                   <template v-for="(node, index) in selectedLineage" :key="node.id">
                     <span class="crumb-sep">/</span>
@@ -1666,6 +2030,16 @@ function saveFiles(files: KnowledgeFile[]) {
             </div>
 
             <div class="directory-tools">
+              <button
+                v-if="!hideFolderRail"
+                type="button"
+                class="soft-btn rail-toggle"
+                :class="{ active: folderRailOpen }"
+                @click="folderRailOpen = !folderRailOpen"
+              >
+                <el-icon><FolderOpened /></el-icon>
+                {{ folderRailOpen ? '收起目录' : '目录' }}
+              </button>
               <el-select v-model="dirSort" size="small" class="sort-select">
                 <el-option label="最新上传" value="newest" />
                 <el-option label="最早上传" value="oldest" />
@@ -1687,7 +2061,7 @@ function saveFiles(files: KnowledgeFile[]) {
                 ><el-icon><Grid /></el-icon></button>
               </div>
               <button
-                v-if="canManageFolders"
+                v-if="canManageFolders && !allDepartmentsMode"
                 type="button"
                 class="soft-btn"
                 @click="handleCreateFolder(selectedFolderNode)"
@@ -1698,9 +2072,46 @@ function saveFiles(files: KnowledgeFile[]) {
             </div>
           </div>
 
+          <div v-if="personalMode" class="personal-banner">
+            <el-icon><Lock /></el-icon>
+            <span>我的专属空间：文件与文件夹仅本人可见。可在左侧专属目录中新建文件夹，并把文件归档进去。</span>
+          </div>
+
+          <el-alert
+            v-if="myRejectedFiles.length"
+            :title="`你有 ${myRejectedFiles.length} 个文档被驳回，请查看驳回理由并重新提交`"
+            type="error"
+            :closable="false"
+            show-icon
+            class="review-alert"
+          >
+            <div class="review-alert-docs">{{ myRejectedTitleText }}</div>
+          </el-alert>
+
+          <DocFilterBar
+            v-model:search="searchQuery"
+            v-model:format="formatFilter"
+            v-model:college="collegeFilter"
+            v-model:uploader="uploaderFilter"
+            :format-options="formatOptions"
+            :college-options="collegeOptions"
+            :uploader-options="uploaderOptions"
+          />
+
+          <div v-if="activeTagId" class="active-tag-filter">
+            <span class="active-tag-label">按标签筛选：</span>
+            <el-tag type="warning" effect="light" closable @close="clearTagFilter">{{ activeTagName }}</el-tag>
+          </div>
+
+          <div v-if="listError" class="list-error">
+            <el-icon><WarningFilled /></el-icon>
+            <span>{{ listError }}</span>
+            <button type="button" class="link-btn" @click="refreshAll">重试</button>
+          </div>
+
           <div v-if="dirSelectedIds.length" class="batch-bar">
             <span class="batch-label">已选 {{ dirSelectedIds.length }} 项</span>
-            <template v-if="canManageFolders">
+            <template v-if="canManageFolders && !allDepartmentsMode">
               <el-select v-model="dirMoveTarget" size="small" class="batch-select" placeholder="移动到目录">
                 <el-option label="待分类（根目录）" :value="null" />
                 <el-option
@@ -1717,108 +2128,55 @@ function saveFiles(files: KnowledgeFile[]) {
                 @click="moveDirSelected"
               >{{ dirMoving ? '移动中…' : '移动' }}</button>
             </template>
-            <button type="button" class="batch-btn danger" @click="handleBatchDelete(dirSelectedIds)">批量删除</button>
+            <button
+              v-if="canManageDocs"
+              type="button"
+              class="batch-btn danger"
+              @click="handleBatchDelete(dirSelectedIds)"
+            >批量删除</button>
             <button type="button" class="batch-btn plain" @click="dirSelectedIds = []">取消选择</button>
           </div>
 
           <div class="directory-body">
-            <template v-if="selectedFolder === 'root'">
-              <div class="dir-section">
-                <div class="section-row">
-                  <span class="section-title">
-                    <el-icon><Clock /></el-icon>
-                    待分类文件
-                    <em>{{ unfiledFiles.length }}</em>
-                  </span>
-                  <button
-                    v-if="unfiledFiles.length > UNFILED_PREVIEW_LIMIT"
-                    type="button"
-                    class="link-btn"
-                    @click="selectUnfiledFolder"
-                  >查看全部</button>
-                </div>
-                <div v-if="tableLoading" class="section-hint">资料加载中…</div>
-                <div v-else-if="!rootUnfiledPreview.length" class="section-empty">
-                  暂无待分类文件。上传时可直接选择存放目录，AI 也会给出归档建议。
-                </div>
-                <DirectoryDocList
-                  v-else
-                  :docs="rootUnfiledPreview"
-                  :view-mode="dirViewMode"
-                  :selected-ids="dirSelectedIds"
-                  :active-doc-id="infoDoc?.id ?? null"
-                  :can-manage="canManageFolders"
-                  :show-folder-path="false"
-                  :folder-path-of="folderPathOf"
-                  :is-uploader="isUploaderOf"
-                  @select="selectDocForInfo"
-                  @toggle-select="toggleDirSelect"
-                  @select-all="selectAllRootDocs"
-                  @preview="openDocPreview($event.id, $event.title)"
-                  @download="handleDownload"
-                  @edit="handleEdit"
-                  @delete="handleDelete"
-                  @resubmit="handleResubmit"
-                  @tag-filter="setTagFilter"
-                />
+            <template v-if="allDepartmentsMode">
+              <div v-if="tableLoading" class="section-hint">资料加载中…</div>
+              <DirectoryDocList
+                v-else-if="rootVisibleFiles.length"
+                :docs="rootVisibleFiles"
+                :view-mode="dirViewMode"
+                :selected-ids="dirSelectedIds"
+                :active-doc-id="infoDoc?.id ?? null"
+                :can-manage="canManageDocs"
+                :show-folder-path="false"
+                :show-department="true"
+                :folder-path-of="folderPathOf"
+                :is-uploader="isUploaderOf"
+                @select="handleDocRowSelect"
+                @toggle-select="toggleDirSelect"
+                @select-all="selectAllRootDocs"
+                @preview="openDocPreview($event.id, $event.title)"
+                @download="handleDownload"
+                @edit="handleEdit"
+                @delete="handleDelete"
+                @resubmit="handleResubmit"
+                @tag-filter="setTagFilter"
+              />
+              <div v-else class="directory-empty">
+                <el-icon><FolderOpened /></el-icon>
+                <h3>暂无资料</h3>
+                <p>选择具体部门后可进入该部门目录上传资料。</p>
               </div>
+            </template>
 
+            <template v-else-if="selectedFolder === 'root'">
               <div class="dir-section">
                 <div class="section-row">
-                  <span class="section-title">
-                    系统自动分类
-                    <em class="ai-em">AI</em>
-                  </span>
-                  <span class="section-note">按资料内容自动归类的默认目录</span>
-                </div>
-                <div v-if="folderLoading && !systemRootFolders.length" class="section-hint">目录加载中…</div>
-                <div v-else class="folder-card-grid">
-                  <div
-                    v-for="folder in systemRootFolders"
-                    :key="folder.id"
-                    class="folder-card system"
-                    :class="{ 'drop-over': dragOverFolderId === String(folder.id) }"
-                    role="button"
-                    tabindex="0"
-                    @click="selectFolderNode(folder)"
-                    @keydown.enter="selectFolderNode(folder)"
-                    @dragover="onFolderCardDragOver(folder, $event)"
-                    @dragleave="onFolderCardDragLeave(folder)"
-                    @drop="onFolderCardDrop(folder, $event)"
-                  >
-                    <span class="folder-card-icon"><el-icon><FolderOpened /></el-icon></span>
-                    <div class="folder-card-main">
-                      <div class="folder-card-name">
-                        {{ folder.name }}
-                        <span class="folder-count">{{ folderCountMap[String(folder.id)] || 0 }}</span>
-                      </div>
-                      <div class="folder-children">
-                        <span
-                          v-for="child in childFolders(folder.id).slice(0, 4)"
-                          :key="child.id"
-                          class="child-chip"
-                        >{{ child.name }}</span>
-                        <span v-if="childFolders(folder.id).length > 4" class="child-more">
-                          +{{ childFolders(folder.id).length - 4 }}
-                        </span>
-                        <span v-if="!childFolders(folder.id).length" class="child-empty">暂无子目录</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div v-if="!systemRootFolders.length" class="section-empty compact">
-                    暂无系统分类目录
-                  </div>
-                </div>
-              </div>
-
-              <div class="dir-section">
-                <div class="section-row">
-                  <span class="section-title">自定义文件夹</span>
-                  <span class="section-note">按业务需要自行维护的目录</span>
+                  <span class="section-title">我的文件夹</span>
+                  <span class="section-hint-inline">{{ rootFolders.length }} 个目录</span>
                 </div>
                 <div class="folder-card-grid">
                   <div
-                    v-for="folder in customRootFolders"
+                    v-for="folder in rootFolders"
                     :key="folder.id"
                     class="folder-card custom"
                     :class="{ 'drop-over': dragOverFolderId === String(folder.id) }"
@@ -1826,9 +2184,9 @@ function saveFiles(files: KnowledgeFile[]) {
                     tabindex="0"
                     @click="selectFolderNode(folder)"
                     @keydown.enter="selectFolderNode(folder)"
-                    @dragover="onFolderCardDragOver(folder, $event)"
+                    @dragover="canManageFolders && onFolderCardDragOver(folder, $event)"
                     @dragleave="onFolderCardDragLeave(folder)"
-                    @drop="onFolderCardDrop(folder, $event)"
+                    @drop="canManageFolders && onFolderCardDrop(folder, $event)"
                   >
                     <span class="folder-card-icon"><el-icon><FolderOpened /></el-icon></span>
                     <div class="folder-card-main">
@@ -1863,15 +2221,59 @@ function saveFiles(files: KnowledgeFile[]) {
                     <span class="folder-card-icon"><el-icon><FolderAdd /></el-icon></span>
                     <div class="folder-card-main">
                       <div class="folder-card-name">新建文件夹</div>
-                      <div class="folder-children"><span class="child-empty">创建自定义归档目录</span></div>
+                      <div class="folder-children"><span class="child-empty">按部门业务创建目录</span></div>
                     </div>
                   </button>
+                  <div v-if="!rootFolders.length && !canManageFolders" class="section-empty compact">
+                    暂无可见文件夹
+                  </div>
+                </div>
+              </div>
+
+              <div class="dir-section">
+                <div class="section-row">
+                  <span class="section-title">文件列表</span>
+                  <span class="section-hint-inline">{{ rootVisibleFiles.length }} 份</span>
+                </div>
+                <div v-if="tableLoading" class="section-hint">资料加载中…</div>
+                <DirectoryDocList
+                  v-else-if="rootVisibleFiles.length"
+                  :docs="rootVisibleFiles"
+                  :view-mode="dirViewMode"
+                  :selected-ids="dirSelectedIds"
+                  :active-doc-id="infoDoc?.id ?? null"
+                  :can-manage="canManageDocs"
+                  :show-folder-path="true"
+                  :folder-path-of="folderPathOf"
+                  :is-uploader="isUploaderOf"
+                  @select="handleDocRowSelect"
+                  @toggle-select="toggleDirSelect"
+                  @select-all="selectAllRootDocs"
+                  @preview="openDocPreview($event.id, $event.title)"
+                  @download="handleDownload"
+                  @edit="handleEdit"
+                  @delete="handleDelete"
+                  @resubmit="handleResubmit"
+                  @tag-filter="setTagFilter"
+                />
+                <div v-else class="directory-empty compact">
+                  <el-icon><FolderOpened /></el-icon>
+                  <h3>{{ personalMode ? '专属空间暂无文件' : '暂无资料' }}</h3>
+                  <p>
+                    {{
+                      personalMode
+                        ? '在「文件管理」中上传文件，文件仅本人可见，并可归档到左侧专属目录。'
+                        : canManageDocs
+                          ? '拖入文件即可开始 AI 识别，上传后会显示在这里。'
+                          : '当前筛选条件下暂无资料。'
+                    }}
+                  </p>
                 </div>
               </div>
             </template>
 
             <template v-else>
-              <div v-if="selectedFolderNode && !selectedFolderNode.is_system" class="folder-view-note">
+              <div v-if="selectedFolderNode && canManageFolders" class="folder-view-note">
                 拖拽本目录中的文件到左侧其他目录即可移动。
               </div>
 
@@ -1885,9 +2287,9 @@ function saveFiles(files: KnowledgeFile[]) {
                     class="subfolder-card"
                     :class="{ 'drop-over': dragOverFolderId === String(folder.id) }"
                     @click="selectFolderNode(folder)"
-                    @dragover="onFolderCardDragOver(folder, $event)"
+                    @dragover="canManageFolders && onFolderCardDragOver(folder, $event)"
                     @dragleave="onFolderCardDragLeave(folder)"
-                    @drop="onFolderCardDrop(folder, $event)"
+                    @drop="canManageFolders && onFolderCardDrop(folder, $event)"
                   >
                     <el-icon><FolderOpened /></el-icon>
                     <span>{{ folder.name }}</span>
@@ -1910,11 +2312,11 @@ function saveFiles(files: KnowledgeFile[]) {
                   :view-mode="dirViewMode"
                   :selected-ids="dirSelectedIds"
                   :active-doc-id="infoDoc?.id ?? null"
-                  :can-manage="canManageFolders"
+                  :can-manage="canManageDocs"
                   :show-folder-path="selectedFolderHasSubfolders"
                   :folder-path-of="folderPathOf"
                   :is-uploader="isUploaderOf"
-                  @select="selectDocForInfo"
+                  @select="handleDocRowSelect"
                   @toggle-select="toggleDirSelect"
                   @select-all="selectAllFolderDocs"
                   @preview="openDocPreview($event.id, $event.title)"
@@ -1930,220 +2332,19 @@ function saveFiles(files: KnowledgeFile[]) {
                   <p>
                     {{
                       selectedFolder === 'unfiled'
-                        ? '上传时未选择目录的文件会出现在这里。'
-                        : '可以从待分类文件拖拽资料到此目录，或在资料信息中调整归档位置。'
+                        ? '上传时未选择目录的文件会出现在这里，可拖拽到左侧目录归档。'
+                        : canManageDocs
+                          ? '可以从待分类文件拖拽资料到此目录，或在上传前直接选择本目录。'
+                          : '当前筛选条件下暂无资料。'
                     }}
                   </p>
                 </div>
               </template>
             </template>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </div>
-
-    <section v-if="activeTab === 'all'" class="panel all-panel">
-      <div class="all-head">
-        <div>
-          <h2>全部资料</h2>
-          <p>检索部门范围内全部资料，查看审核状态、归档目录与详细元数据。</p>
-        </div>
-        <div class="all-head-actions">
-          <span class="all-count">{{ displayTotalFiles }} 份资料</span>
-          <button
-            v-if="isSuperAdmin"
-            type="button"
-            class="ghost-btn"
-            @click="showTagManager = true"
-          >
-            <el-icon><CollectionTag /></el-icon>
-            标签词表
-          </button>
-        </div>
-      </div>
-
-      <el-alert
-        v-if="myRejectedFiles.length"
-        :title="`你有 ${myRejectedFiles.length} 个文档被驳回，请查看驳回理由并重新提交`"
-        type="error"
-        :closable="false"
-        show-icon
-        class="review-alert"
-      >
-        <div class="review-alert-docs">{{ myRejectedTitleText }}</div>
-      </el-alert>
-
-      <el-alert
-        title="点击文件名可预览；支持 Markdown/文本、图片、音视频、PDF、Word(.docx)、Excel、PPT(.pptx) 在线预览。Office 大文件可能无法预览，可下载后查看。"
-        type="info"
-        :closable="false"
-        show-icon
-        class="preview-hint"
-      />
-
-      <DocFilterBar
-        v-model:search="searchQuery"
-        v-model:format="formatFilter"
-        v-model:college="collegeFilter"
-        v-model:uploader="uploaderFilter"
-        :format-options="formatOptions"
-        :college-options="collegeOptions"
-        :uploader-options="uploaderOptions"
-      />
-
-      <div v-if="activeTagId" class="active-tag-filter">
-        <span class="active-tag-label">按标签筛选：</span>
-        <el-tag type="warning" effect="light" closable @close="clearTagFilter">{{ activeTagName }}</el-tag>
-      </div>
-
-      <div v-if="listError" class="list-error">
-        <el-icon><WarningFilled /></el-icon>
-        <span>{{ listError }}</span>
-        <button type="button" class="link-btn" @click="refreshAll">重试</button>
-      </div>
-
-      <div v-if="selectedDocIds.length" class="batch-bar">
-        <span class="batch-label">已选 {{ selectedDocIds.length }} 项</span>
-        <template v-if="canManageFolders">
-          <el-select v-model="allMoveTarget" size="small" class="batch-select" placeholder="移动到目录">
-            <el-option label="待分类（根目录）" :value="null" />
-            <el-option
-              v-for="folder in folderOptions"
-              :key="folder.id"
-              :label="folder.full_path"
-              :value="folder.id"
-            />
-          </el-select>
-          <button type="button" class="batch-btn primary" :disabled="allMoving" @click="moveAllSelected">
-            {{ allMoving ? '移动中…' : '移动' }}
-          </button>
-        </template>
-        <button type="button" class="batch-btn danger" @click="handleBatchDelete(selectedDocIds)">批量删除</button>
-        <button type="button" class="batch-btn plain" @click="selectedDocIds = []">取消选择</button>
-      </div>
-
-      <div class="table-wrap">
-        <el-table
-          :data="paginatedTableFiles"
-          :loading="tableLoading"
-          class="file-table"
-          empty-text="暂无资料"
-          @selection-change="handleSelectionChange"
-        >
-          <el-table-column type="selection" width="46" align="center" />
-
-          <el-table-column label="资料名" min-width="230" align="left">
-            <template #default="{ row }">
-              <div class="file-name-cell">
-                <span class="table-file-icon" :class="`cat-${categoryOf(row)}`">
-                  <el-icon><component :is="docIconOf(row)" /></el-icon>
-                </span>
-                <span class="file-title" @click="openDocPreview(row.id, row.title)">{{ row.title }}</span>
-                <div v-if="rowTags(row).length" class="file-tag-row">
-                  <el-tag
-                    v-for="tag in rowTags(row)"
-                    :key="tag.id"
-                    size="small"
-                    type="info"
-                    effect="plain"
-                    class="file-tag"
-                    @click.stop="setTagFilter(tag)"
-                  >{{ tag.name }}</el-tag>
-                </div>
-              </div>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="审核状态" width="108" align="center">
-            <template #default="{ row }">
-              <ReviewStatusTag
-                :status="row.review_status"
-                :comment="row.review_comment"
-                :reviewer="row.reviewer_name"
-                :reviewed-at="row.reviewed_at"
-              />
-            </template>
-          </el-table-column>
-
-          <el-table-column label="归档目录" min-width="140" align="left" show-overflow-tooltip>
-            <template #default="{ row }">
-              <span class="folder-cell" :class="{ unfiled: folderPathOf(row) === '待分类' }">
-                {{ folderPathOf(row) }}
-              </span>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="上传单位" min-width="120" align="left" show-overflow-tooltip>
-            <template #default="{ row }">
-              <span class="cell-text">{{ row.collegeName || '未归属' }}</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column prop="author" label="上传者" min-width="90" align="left" show-overflow-tooltip />
-
-          <el-table-column prop="createdAt" label="上传时间" width="150" align="left" sortable>
-            <template #default="{ row }">{{ formatDate(row.createdAt || row.created_at) }}</template>
-          </el-table-column>
-
-          <el-table-column label="格式" width="76" align="center">
-            <template #default="{ row }">
-              <span class="ext-badge">{{ formatCellExt(row) }}</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column prop="fileSize" label="大小" width="84" align="center" sortable>
-            <template #default="{ row }">{{ formatFileSize(Number(row.fileSize ?? row.file_size ?? 0)) }}</template>
-          </el-table-column>
-
-          <el-table-column label="操作" width="176" align="center" fixed="right">
-            <template #default="{ row }">
-              <div class="row-actions">
-                <button type="button" class="row-link row-link-strong" @click.stop="goDocDetail(row)">详情</button>
-                <span class="row-link-sep" aria-hidden="true" />
-                <button type="button" class="row-link" @click.stop="handleDownload(row)">下载</button>
-                <span class="row-link-sep" aria-hidden="true" />
-                <button type="button" class="row-link row-link-danger" @click.stop="handleDelete(row)">删除</button>
-                <el-dropdown
-                  trigger="click"
-                  placement="bottom-end"
-                  @command="(command: string) => handleRowCommand(command, row)"
-                >
-                  <button type="button" class="row-more" title="更多操作">
-                    <el-icon><MoreFilled /></el-icon>
-                  </button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="edit">编辑</el-dropdown-item>
-                      <el-dropdown-item
-                        v-if="row.review_status === 'rejected' && isUploaderOf(row)"
-                        command="resubmit"
-                        divided
-                      >
-                        重新提交审核
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
-              </div>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-
-      <div class="pagination-wrapper">
-        <el-pagination
-          :current-page="currentPage"
-          :page-size="pageSize"
-          :total="displayTotalFiles"
-          :page-sizes="[10, 20, 30]"
-          :pager-count="6"
-          layout="total, sizes, prev, pager, next, jumper"
-          :hide-on-single-page="false"
-          @current-change="handleCurrentChange"
-          @size-change="handleSizeChange"
-        />
-      </div>
-    </section>
 
     <EditFileForm
       :visible="showEditDialog"
@@ -2194,6 +2395,71 @@ function saveFiles(files: KnowledgeFile[]) {
   background: #f8fbff;
   color: #3f6fb5;
   font-size: 11.5px;
+}
+
+.scope-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.scope-field-label {
+  flex-shrink: 0;
+  color: #3f6fb5;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.scope-select {
+  width: 340px;
+  max-width: 100%;
+}
+
+.scope-select :deep(.el-select__wrapper) {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 0 0 2px #c7d9f5 inset, 0 4px 14px rgba(37, 99, 235, 0.1);
+  transition: box-shadow 0.18s ease;
+}
+
+.scope-select :deep(.el-select__wrapper:hover) {
+  box-shadow: 0 0 0 2px #9dbcf0 inset, 0 6px 18px rgba(37, 99, 235, 0.14);
+}
+
+.scope-select :deep(.el-select__wrapper.is-focused) {
+  box-shadow:
+    0 0 0 2px #2563eb inset,
+    0 0 0 4px rgba(37, 99, 235, 0.16),
+    0 6px 18px rgba(37, 99, 235, 0.14);
+}
+
+.scope-select :deep(.el-select__placeholder),
+.scope-select :deep(.el-select__selected-item) {
+  color: #0f3f8f;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.scope-select :deep(.el-select__prefix) {
+  color: #2563eb;
+  font-size: 17px;
+}
+
+.personal-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid #d8c7f5;
+  border-radius: 8px;
+  background: #f7f3ff;
+  color: #6b3fa0;
+  font-size: 12.5px;
 }
 
 .head-copy p {
@@ -2301,19 +2567,55 @@ function saveFiles(files: KnowledgeFile[]) {
   color: #2563eb;
 }
 
-.workbench-grid {
-  display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(0, 2fr);
-  align-items: start;
-  gap: 16px;
-}
-
-.left-col,
-.right-col {
+.workbench {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.workbench-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  align-items: stretch;
+  gap: 16px;
+  /* 上传与信息确认占满页面剩余高度，避免文件管理页下方大块留白 */
+  min-height: clamp(480px, calc(100vh - 250px), 720px);
+}
+
+.workbench-top > * {
   min-width: 0;
+}
+
+/* 超级管理员「全部部门」下不提供上传入口，提示先选择部门 */
+.manage-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 320px;
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.manage-empty .el-icon {
+  font-size: 40px;
+  color: #94a3b8;
+}
+
+.manage-empty h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.manage-empty p {
+  max-width: 460px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #64748b;
 }
 
 .panel {
@@ -2323,9 +2625,41 @@ function saveFiles(files: KnowledgeFile[]) {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
 }
 
-.directory-panel {
-  padding: 16px 18px;
-  min-height: 420px;
+/* 目录树与文件区共处一张卡片，用竖向分隔代替两张独立卡片 */
+.directory-workspace {
+  display: grid;
+  grid-template-columns: clamp(208px, 18%, 272px) minmax(0, 1fr);
+  height: clamp(540px, calc(100vh - 245px), 900px);
+  overflow: hidden;
+}
+
+/* 超级管理员「全部部门」模式无需目录栏：高度随内容收缩，长列表到上限后内部滚动 */
+.directory-workspace.no-rail {
+  grid-template-columns: minmax(0, 1fr);
+  height: auto;
+  max-height: clamp(540px, calc(100vh - 245px), 900px);
+}
+
+.directory-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid #eef2f7;
+  background: #fbfcfe;
+  overflow: hidden;
+}
+
+.directory-rail > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.directory-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 16px 12px;
 }
 
 .directory-head {
@@ -2333,7 +2667,7 @@ function saveFiles(files: KnowledgeFile[]) {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-  padding-bottom: 12px;
+  padding-bottom: 10px;
   border-bottom: 1px solid #eef2f7;
 }
 
@@ -2342,19 +2676,6 @@ function saveFiles(files: KnowledgeFile[]) {
   align-items: flex-start;
   gap: 9px;
   min-width: 0;
-}
-
-.directory-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid #dbe8fb;
-  border-radius: 6px;
-  background: #f4f8ff;
-  color: #4c7dbf;
-  font-size: 16px;
 }
 
 .directory-copy {
@@ -2366,7 +2687,7 @@ function saveFiles(files: KnowledgeFile[]) {
   align-items: center;
   gap: 7px;
   color: #0f172a;
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 650;
 }
 
@@ -2380,6 +2701,24 @@ function saveFiles(files: KnowledgeFile[]) {
   font-weight: 500;
   line-height: 18px;
   text-align: center;
+}
+
+.review-pill {
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 17px;
+}
+
+.review-pill.pending {
+  background: #fff7e8;
+  color: #b7791f;
+}
+
+.review-pill.approved {
+  background: #effaf3;
+  color: #178a4b;
 }
 
 .directory-sub,
@@ -2481,6 +2820,17 @@ function saveFiles(files: KnowledgeFile[]) {
   color: #2563eb;
 }
 
+.soft-btn.active {
+  border-color: #bcd2f5;
+  background: #eef4ff;
+  color: #2563eb;
+}
+
+/* 目录树切换仅在窄屏出现 */
+.rail-toggle {
+  display: none;
+}
+
 .batch-bar {
   display: flex;
   align-items: center;
@@ -2555,14 +2905,15 @@ function saveFiles(files: KnowledgeFile[]) {
 }
 
 .directory-body {
-  max-height: 520px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 2px;
   scrollbar-width: thin;
 }
 
 .dir-section {
-  padding-top: 14px;
+  padding-top: 12px;
 }
 
 .dir-section + .dir-section {
@@ -2575,6 +2926,11 @@ function saveFiles(files: KnowledgeFile[]) {
   align-items: center;
   gap: 7px;
   margin-bottom: 8px;
+}
+
+.section-hint-inline {
+  color: #a3b0c2;
+  font-size: 10.5px;
 }
 
 .section-title {
@@ -2605,12 +2961,6 @@ function saveFiles(files: KnowledgeFile[]) {
   background: #eef4ff;
   color: #3b82f6;
   font-weight: 700;
-}
-
-.section-note {
-  margin-left: auto;
-  color: #a3b0c2;
-  font-size: 10.5px;
 }
 
 .link-btn {
@@ -2651,7 +3001,7 @@ function saveFiles(files: KnowledgeFile[]) {
 
 .folder-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(186px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
   gap: 8px;
 }
 
@@ -2661,7 +3011,7 @@ function saveFiles(files: KnowledgeFile[]) {
   align-items: flex-start;
   gap: 8px;
   min-width: 0;
-  padding: 10px;
+  padding: 9px 10px;
   border: 1px solid #e9eef6;
   border-radius: 6px;
   background: #fff;
@@ -2890,6 +3240,14 @@ function saveFiles(files: KnowledgeFile[]) {
   color: #a3b0c2;
   font-size: 11.5px;
   line-height: 1.65;
+}
+
+.directory-empty.compact {
+  padding: 22px 16px;
+}
+
+.directory-empty.compact .el-icon {
+  font-size: 22px;
 }
 
 .all-panel {
@@ -3169,8 +3527,8 @@ function saveFiles(files: KnowledgeFile[]) {
 }
 
 @media (max-width: 1180px) {
-  .workbench-grid {
-    grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr);
+  .workbench-top {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
   }
 
   .directory-tools {
@@ -3179,13 +3537,48 @@ function saveFiles(files: KnowledgeFile[]) {
   }
 }
 
-@media (max-width: 960px) {
-  .workbench-grid {
+/* 窄屏下目录树收进一张卡片内，默认折叠，避免树与文件区互相挤压 */
+@media (max-width: 1120px) {
+  .directory-workspace {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+  }
+
+  .directory-rail {
+    display: none;
+    border-right: 0;
+    border-bottom: 1px solid #eef2f7;
+  }
+
+  .directory-rail.mobile-open {
+    display: flex;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  .directory-rail.mobile-open > * {
+    flex: none;
+    height: auto;
+  }
+
+  .directory-main {
+    padding: 12px 14px;
   }
 
   .directory-body {
     max-height: none;
+  }
+
+  .rail-toggle {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 960px) {
+  .workbench-top {
+    grid-template-columns: 1fr;
+    min-height: 0;
   }
 
   .page-head {

@@ -30,12 +30,6 @@ const knowledgeRoutes: RouteRecordRaw[] = [
         meta: { title: '上传文档' },
       },
       {
-        path: 'browse',
-        name: 'Browse',
-        redirect: '/knowledge/list',
-        meta: { title: '分类浏览' },
-      },
-      {
         path: 'edit/:id',
         name: 'DocEdit',
         redirect: (to) => ({ name: 'DocDetail', params: { id: to.params.id } }),

@@ -7,8 +7,8 @@ export const roleMenuMap: Record<UserRole, string[]> = {
   admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/departments'],
   college_admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/departments'],
   dept_admin: ['/chat', '/faq-manage', '/knowledge', '/departments'],
-  // 审核员：文档审核 + 教研问答（页面与管理员端同源）；无上传、无后台管理入口
-  reviewer: ['/review', '/chat'],
+  // 审核员：可在文件管理中只读浏览部门目录与资料，并可进入文档审核
+  reviewer: ['/review', '/knowledge', '/chat'],
   super_admin: ['/chat', '/faq-manage', '/knowledge', '/admin', '/logs', '/departments'],
 }
 

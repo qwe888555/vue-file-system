@@ -1,10 +1,10 @@
 /**
  * 部门资料目录状态。
  *
+ * 所有目录均由部门用户自行创建，不再生成 AI 默认分类目录。
  * 新后端提供 /knowledge/folders/ 目录接口时使用服务端目录；
  * 旧环境（例如尚未部署新版接口的测试服）自动降级为本地目录：
- * 系统分类目录仍然可用，自定义目录与文件归档关系保存在浏览器，
- * 页面功能不会被接口缺失阻断。
+ * 自定义目录与文件归档关系保存在浏览器，页面功能不会被接口缺失阻断。
  */
 import { computed, ref } from 'vue'
 import {
@@ -28,79 +28,34 @@ interface LocalFolderState {
   mappings: Record<string, FolderId>
 }
 
-const SYSTEM_TREE: Array<{ key: string; name: string; children: Array<[string, string]> }> = [
-  {
-    key: 'teaching',
-    name: '教学资料',
-    children: [
-      ['teaching-outline', '课程大纲'],
-      ['teaching-lab', '实验指导书'],
-      ['teaching-courseware', '课件与习题'],
-      ['teaching-exam', '试题库'],
-    ],
-  },
-  {
-    key: 'research',
-    name: '科研与项目',
-    children: [
-      ['research-project', '项目申报'],
-      ['research-result', '成果材料'],
-    ],
-  },
-  {
-    key: 'admin',
-    name: '行政制度',
-    children: [
-      ['admin-meeting', '会议纪要'],
-      ['admin-rules', '规章制度'],
-    ],
-  },
-]
-
-const SUGGEST_RULES: Array<[string[], string]> = [
-  [['会议', '纪要', '例会', '座谈', '议程'], 'admin-meeting'],
-  [['制度', '规章', '办法', '规定', '条例', '细则', '通知'], 'admin-rules'],
-  [['实验', '实训', '指导书', '操作手册'], 'teaching-lab'],
-  [['试题', '试卷', '题库', '答案', '考试', '测验'], 'teaching-exam'],
-  [['大纲', '教学计划', '课程标准', '培养方案'], 'teaching-outline'],
-  [['课件', '讲义', '习题', '教案', 'demo', '演示'], 'teaching-courseware'],
-  [['科研', '课题', '项目', '申报', '立项', '基金'], 'research-project'],
-  [['成果', '论文', '专利', '获奖', '结题'], 'research-result'],
-  [['教学', '课程', '课堂', '教材'], 'teaching-courseware'],
-]
-
-function localSystemFolders(): KnowledgeFolder[] {
-  const list: KnowledgeFolder[] = []
-  SYSTEM_TREE.forEach((root, rootIndex) => {
-    const rootId = `local-sys:${root.key}`
-    list.push({
-      id: rootId,
-      name: root.name,
-      parent_id: null,
-      is_system: true,
-      system_key: root.key,
-      sort_order: rootIndex + 1,
-    })
-    root.children.forEach(([key, name], childIndex) => {
-      list.push({
-        id: `local-sys:${key}`,
-        name,
-        parent_id: rootId,
-        is_system: true,
-        system_key: key,
-        sort_order: (rootIndex + 1) * 100 + childIndex + 1,
-      })
-    })
-  })
-  return list
-}
-
 function sortFolders(list: KnowledgeFolder[]): KnowledgeFolder[] {
   return list.slice().sort((a, b) => {
-    if (a.is_system !== b.is_system) return a.is_system ? -1 : 1
     const orderDiff = Number(a.sort_order || 0) - Number(b.sort_order || 0)
     return orderDiff !== 0 ? orderDiff : String(a.name).localeCompare(String(b.name), 'zh-CN')
   })
+}
+
+/**
+ * 过滤旧版 AI/系统自动生成的目录。
+ * 旧服务器尚未执行清理迁移时接口仍会返回 is_system 目录，
+ * 这里一律隐藏；其下文件由 folderIdForDoc 自动归入「待分类」。
+ */
+function sanitizeServerFolders(list: KnowledgeFolder[]): KnowledgeFolder[] {
+  const visible = list.filter((folder) => !folder.is_system && !folder.system_key)
+  const ids = new Set(visible.map((folder) => String(folder.id)))
+  return visible.map((folder) =>
+    folder.parent_id != null && !ids.has(String(folder.parent_id))
+      ? { ...folder, parent_id: null }
+      : folder,
+  )
+}
+
+function stripLegacySystemMappings(mappings: Record<string, FolderId>): Record<string, FolderId> {
+  return Object.fromEntries(
+    Object.entries(mappings).filter(
+      ([, folderId]) => folderId != null && !String(folderId).startsWith('local-sys:'),
+    ),
+  )
 }
 
 export function useDeptFolders(storageKey: () => string) {
@@ -109,7 +64,13 @@ export function useDeptFolders(storageKey: () => string) {
   const loading = ref(false)
   const loadError = ref('')
   const canManage = ref(true)
-  const scopeKind = ref<'school' | 'college' | 'department'>('department')
+  const scopeKind = ref<'school' | 'college' | 'department' | 'personal'>('department')
+  /** 当前是否处于超级管理员「我的专属空间」（目录仅本人可见） */
+  const currentPersonal = ref(false)
+  /** 超级管理员当前查看的部门；为空表示未按部门查看 */
+  const currentDepartmentId = ref<number | null>(null)
+  /** 超级管理员当前查看的二级学院；为空表示未按学院查看 */
+  const currentCollegeId = ref<number | null>(null)
   const localMappings = ref<Record<string, FolderId>>({})
   const localCustom = ref<LocalFolderState['custom']>([])
 
@@ -129,6 +90,11 @@ export function useDeptFolders(storageKey: () => string) {
     return map
   })
 
+  /** 根目录列表 */
+  const rootFolders = computed(() =>
+    folders.value.filter((folder) => folder.parent_id == null),
+  )
+
   /** 目录选项（先序展开，供下拉/选择器使用） */
   const folderOptions = computed(() => {
     const result: Array<KnowledgeFolder & { depth: number; full_path: string }> = []
@@ -143,13 +109,6 @@ export function useDeptFolders(storageKey: () => string) {
     visit(null, 0, '')
     return result
   })
-
-  const systemRootFolders = computed(() =>
-    folders.value.filter((folder) => folder.is_system && folder.parent_id == null),
-  )
-  const customRootFolders = computed(() =>
-    folders.value.filter((folder) => !folder.is_system && folder.parent_id == null),
-  )
 
   function folderById(id: FolderId | null | undefined): KnowledgeFolder | undefined {
     if (id == null) return undefined
@@ -221,10 +180,10 @@ export function useDeptFolders(storageKey: () => string) {
       id: item.id,
       name: item.name,
       parent_id: item.parent_id,
-      is_system: false,
+      sort_order: 0,
       created_at: item.created_at,
     }))
-    return sortFolders([...localSystemFolders(), ...custom])
+    return sortFolders(custom)
   }
 
   function activateLocalMode() {
@@ -233,21 +192,44 @@ export function useDeptFolders(storageKey: () => string) {
     scopeKind.value = 'department'
     const state = readLocalState()
     localCustom.value = state.custom
-    localMappings.value = { ...state.mappings }
+    localMappings.value = stripLegacySystemMappings(state.mappings)
+    // 清掉旧版系统目录留下的映射，避免文件仍指向不存在的目录
+    persistLocalState()
     folders.value = buildLocalFolders()
   }
 
-  async function loadFolders() {
+  async function loadFolders(options?: {
+    departmentId?: number | null
+    collegeId?: number | null
+    personal?: boolean
+  }) {
+    const personal = Boolean(options?.personal)
+    const departmentId = personal ? null : (options?.departmentId ?? null)
+    const collegeId = personal ? null : (options?.collegeId ?? null)
+    currentPersonal.value = personal
+    currentDepartmentId.value = departmentId
+    currentCollegeId.value = collegeId
     loading.value = true
     loadError.value = ''
     try {
-      const res = await getFolderListApi()
+      const res = await getFolderListApi({
+        department_id: departmentId,
+        college_id: collegeId,
+        personal,
+      })
       localMode.value = false
-      folders.value = sortFolders(res.folders || [])
+      folders.value = sortFolders(sanitizeServerFolders(res.folders || []))
       canManage.value = Boolean(res.scope?.can_manage)
       scopeKind.value = res.scope?.kind || 'department'
+      currentPersonal.value = Boolean(res.scope?.personal ?? personal)
+      if (res.scope?.department_id != null) {
+        currentDepartmentId.value = Number(res.scope.department_id)
+      }
+      if (res.scope?.college_id != null) {
+        currentCollegeId.value = Number(res.scope.college_id)
+      }
       const state = readLocalState()
-      localMappings.value = { ...state.mappings }
+      localMappings.value = stripLegacySystemMappings(state.mappings)
       localCustom.value = state.custom
     } catch (error: any) {
       const statusCode = Number(error?.response?.status || 0)
@@ -261,6 +243,19 @@ export function useDeptFolders(storageKey: () => string) {
     } finally {
       loading.value = false
     }
+  }
+
+  /** 切换范围时清空目录状态（全部部门 / 专属空间不加载目录） */
+  function resetFolders() {
+    folders.value = []
+    localMode.value = false
+    loading.value = false
+    loadError.value = ''
+    canManage.value = false
+    scopeKind.value = 'school'
+    currentPersonal.value = false
+    currentDepartmentId.value = null
+    currentCollegeId.value = null
   }
 
   async function createFolder(name: string, parentId: FolderId | null): Promise<KnowledgeFolder> {
@@ -286,33 +281,45 @@ export function useDeptFolders(storageKey: () => string) {
       folders.value = buildLocalFolders()
       return folderById(id)!
     }
-    const created = await createFolderApi({ name: cleanName, parent_id: parentId })
-    await loadFolders()
+    const created = await createFolderApi({
+      name: cleanName,
+      parent_id: parentId,
+      department_id: currentDepartmentId.value,
+      college_id: currentCollegeId.value,
+      personal: currentPersonal.value,
+    })
+    await loadFolders({
+      departmentId: currentDepartmentId.value,
+      collegeId: currentCollegeId.value,
+      personal: currentPersonal.value,
+    })
     return created
   }
 
   async function renameFolder(id: FolderId, name: string): Promise<void> {
     const folder = folderById(id)
     if (!folder) throw new Error('目录不存在')
-    if (folder.is_system) throw new Error('系统分类目录不可重命名')
     const cleanName = name.trim()
     if (!cleanName) throw new Error('目录名称不能为空')
     if (localMode.value) {
-      const target = localCustom.value.find((item) => item.id === id)
+      const target = localCustom.value.find((item) => String(item.id) === String(id))
       if (!target) throw new Error('目录不存在')
       target.name = cleanName
       persistLocalState()
       folders.value = buildLocalFolders()
       return
     }
-    await updateFolderApi(id, { name: cleanName })
-    await loadFolders()
+    await updateFolderApi(id, { name: cleanName }, currentPersonal.value)
+    await loadFolders({
+      departmentId: currentDepartmentId.value,
+      collegeId: currentCollegeId.value,
+      personal: currentPersonal.value,
+    })
   }
 
   async function deleteFolder(id: FolderId): Promise<{ movedDocs: number }> {
     const folder = folderById(id)
     if (!folder) throw new Error('目录不存在')
-    if (folder.is_system) throw new Error('系统分类目录不可删除')
     if (localMode.value) {
       const ids = new Set([String(id), ...descendantsOf(id).map(String)])
       const parentId = folder.parent_id
@@ -329,8 +336,12 @@ export function useDeptFolders(storageKey: () => string) {
       folders.value = buildLocalFolders()
       return { movedDocs }
     }
-    const res = await deleteFolderApi(id)
-    await loadFolders()
+    const res = await deleteFolderApi(id, currentPersonal.value)
+    await loadFolders({
+      departmentId: currentDepartmentId.value,
+      collegeId: currentCollegeId.value,
+      personal: currentPersonal.value,
+    })
     return { movedDocs: res.moved_doc_count || 0 }
   }
 
@@ -341,11 +352,10 @@ export function useDeptFolders(storageKey: () => string) {
   }
 
   function folderIdForDoc(doc: KnowledgeFile): FolderId | null {
-    if (localMode.value) {
-      const local = localMappings.value[doc.id]
-      return local ?? null
-    }
-    return doc.folder ?? null
+    const id = localMode.value ? (localMappings.value[doc.id] ?? null) : (doc.folder ?? null)
+    if (id == null) return null
+    // 目录已不存在（如被清理的系统目录）时视作待分类，避免文件从列表中消失
+    return folderById(id) ? id : null
   }
 
   /** 把文档归档到目录；本地模式只更新浏览器映射 */
@@ -361,13 +371,14 @@ export function useDeptFolders(storageKey: () => string) {
     const numericTarget =
       targetFolderId == null ? null : typeof targetFolderId === 'number' ? targetFolderId : null
     if (docs.length === 1) {
-      await moveDocApi(docs[0].id, numericTarget)
+      await moveDocApi(docs[0].id, numericTarget, currentPersonal.value)
       docs[0].folder = numericTarget
       return 1
     }
     const res = await batchMoveDocsApi(
       docs.map((doc) => doc.id),
       numericTarget,
+      currentPersonal.value,
     )
     docs.forEach((doc) => {
       doc.folder = numericTarget
@@ -375,34 +386,20 @@ export function useDeptFolders(storageKey: () => string) {
     return res.moved_count || docs.length
   }
 
-  function folderIdBySystemKey(key: string): FolderId | null {
-    const folder = folders.value.find((item) => item.system_key === key)
-    return folder?.id ?? null
-  }
-
-  /** 依据标题与 AI 关键词推荐系统分类目录 */
-  function suggestFolder(title: string, keywords: string[]): KnowledgeFolder | null {
-    const haystack = `${title || ''} ${(keywords || []).join(' ')}`.toLowerCase()
-    if (!haystack.trim()) return null
-    const matched = SUGGEST_RULES.find(([tokens]) =>
-      tokens.some((token) => haystack.includes(token.toLowerCase())),
-    )
-    if (!matched) return null
-    const id = folderIdBySystemKey(matched[1])
-    return id == null ? null : folderById(id) || null
-  }
-
   return {
     folders,
     folderOptions,
-    systemRootFolders,
-    customRootFolders,
+    rootFolders,
     localMode,
     loading,
     loadError,
     canManage,
     scopeKind,
+    currentPersonal,
+    currentDepartmentId,
+    currentCollegeId,
     loadFolders,
+    resetFolders,
     createFolder,
     renameFolder,
     deleteFolder,
@@ -413,7 +410,5 @@ export function useDeptFolders(storageKey: () => string) {
     fullPath,
     childFolders,
     descendantsOf,
-    suggestFolder,
-    folderIdBySystemKey,
   }
 }

@@ -105,9 +105,33 @@ export function batchDeleteAccountsApi(data: {
 //  学院管理 — /api/admin/colleges/
 // ══════════════════════════════════════
 
-/** 获取学院列表 */
-export function getCollegesApi(): Promise<{ count: number; results: College[] }> {
-  return request.get('/admin/colleges/')
+/**
+ * 按页码循环拉取全量列表。
+ * 兼容扁平数组 / DRF 分页 { results, next } / { data } 三种返回。
+ * 全局分页固定 20 条/页，学院与部门都必须翻页，否则下拉框会缺项。
+ */
+async function fetchAllPages<T>(
+  url: string,
+  params?: Record<string, unknown>,
+): Promise<T[]> {
+  const items: T[] = []
+  let page = 1
+  while (page <= 50) {
+    const res: any = await request.get(url, { params: { ...params, page } })
+    if (Array.isArray(res)) return items.concat(res)
+    const batch: T[] = res?.results || res?.data || []
+    if (!Array.isArray(batch) || !batch.length) break
+    items.push(...batch)
+    if (!res?.next) break
+    page += 1
+  }
+  return items
+}
+
+/** 获取学院列表（自动翻页，返回结构与旧接口保持一致） */
+export async function getCollegesApi(): Promise<{ count: number; results: College[] }> {
+  const results = await fetchAllPages<College>('/admin/colleges/')
+  return { count: results.length, results }
 }
 
 /** 新建学院 */
@@ -151,11 +175,11 @@ export interface Department {
 export async function getDepartmentsApi(params?: {
   college_id?: number
 }): Promise<Department[]> {
-  const res: any = await request.get('/admin/departments/', { params })
-  // 兼容三种返回：扁平数组（文档 v1.0）/ { results } 分页 / { data } 包装
-  const flat: Department[] = Array.isArray(res)
-    ? res
-    : (res?.results || res?.data || [])
+  // 自动翻页后再归一化，避免超过 20 条时后续部门被截断
+  const flat = await fetchAllPages<Department>(
+    '/admin/departments/',
+    params as Record<string, unknown> | undefined,
+  )
   const byId = new Map<number, Department>()
   for (const d of flat) {
     byId.set(d.id, { ...d, children: [] })

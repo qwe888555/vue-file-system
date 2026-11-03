@@ -41,6 +41,12 @@ export interface OssUploadOptions {
   tags?: string[]
   /** 资料目录 ID（仅服务端目录可用；本地降级目录由页面在上传后归档） */
   folderId?: number | null
+  /** 超级管理员为指定部门上传时的归属部门 */
+  departmentId?: number | null
+  /** 超级管理员为指定二级学院上传时的归属学院 */
+  collegeId?: number | null
+  /** 归入我的专属空间（仅超级管理员生效，文件仅本人可见） */
+  personal?: boolean
   /** 分片大小，默认 5MB */
   partSize?: number
   /** 并发数，默认 4 */
@@ -167,6 +173,9 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     keywords,
     tags,
     folderId,
+    departmentId,
+    collegeId,
+    personal = false,
     partSize = 5 * 1024 * 1024, // 默认 5MB 分片
     parallel = 4, // 默认 4 个并发上传
     onProgress,
@@ -210,6 +219,7 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
     file_size: file.size,
     md5,
     file_type: stsFileType,
+    visibility: scope === 'public' ? 'public' : 'private',
   })
 
   // 检查是否为直接上传模式（后端返回 upload_url 而非 STS 凭证）
@@ -257,11 +267,13 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
       file_type: file.name.split('.').pop() || '',
       md5,
       file_size: file.size,
-      college_id: userCollegeId,
+      college_id: personal ? null : (collegeId ?? userCollegeId),
+      department_id: personal ? null : (departmentId ?? null),
       visibility: scope === 'public' ? 'public' : 'private',
       keywords,
       tags,
       folder_id: typeof folderId === 'number' ? folderId : null,
+      personal,
     })
 
     return callbackResult
@@ -366,11 +378,13 @@ export async function uploadFileToOss(options: OssUploadOptions): Promise<Knowle
       file_type: file.name.split('.').pop() || '',
       md5, // 传入计算好的 MD5，支持秒传
       file_size: file.size,
-      college_id: userCollegeId,
+      college_id: personal ? null : (collegeId ?? userCollegeId),
+      department_id: personal ? null : (departmentId ?? null),
       visibility: scope === 'public' ? 'public' : 'private',
       keywords,
       tags,
       folder_id: typeof folderId === 'number' ? folderId : null,
+      personal,
     })
 
     return callbackResult

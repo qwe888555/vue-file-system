@@ -23,6 +23,8 @@ const props = defineProps<{
   activeDocId?: number | null
   canManage: boolean
   showFolderPath: boolean
+  /** 跨部门视图：显示文件所属部门 */
+  showDepartment?: boolean
   folderPathOf: (doc: KnowledgeFile) => string
   isUploader?: (doc: KnowledgeFile) => boolean
 }>()
@@ -105,6 +107,15 @@ function sizeLabel(file: KnowledgeFile): string {
   return `${Math.max(1, Math.round(size / 1024))} KB`
 }
 
+function departmentOf(file: KnowledgeFile): string {
+  return (
+    file.uploader_department_name ||
+    file.uploader_college_name ||
+    file.collegeName ||
+    '—'
+  )
+}
+
 function dateLabel(file: KnowledgeFile): string {
   const raw = file.createdAt || (file as any).created_at
   if (!raw) return '-'
@@ -156,14 +167,19 @@ function canResubmit(doc: KnowledgeFile): boolean {
 </script>
 
 <template>
-  <div v-if="viewMode === 'list'" class="doc-list">
+  <div
+    v-if="viewMode === 'list'"
+    class="doc-list"
+    :class="{ 'no-check': !canManage, 'with-dept': showDepartment }"
+  >
     <div class="list-head">
-      <label class="check-wrap">
+      <label v-if="canManage" class="check-wrap">
         <input type="checkbox" :checked="allSelected()" @change="toggleAll(($event.target as HTMLInputElement).checked)" />
       </label>
       <span class="head-name">资料名称</span>
       <span class="head-review">审核</span>
       <span class="head-meta">上传者 / 时间</span>
+      <span v-if="showDepartment" class="head-dept">所属部门</span>
       <span class="head-size">大小</span>
       <span class="head-actions">操作</span>
     </div>
@@ -177,7 +193,7 @@ function canResubmit(doc: KnowledgeFile): boolean {
       @click="emit('select', doc)"
       @dragstart="onDragStart(doc, $event)"
     >
-      <label class="check-wrap" @click.stop>
+      <label v-if="canManage" class="check-wrap" @click.stop>
         <input type="checkbox" :checked="isSelected(doc.id)" @change="onToggle(doc, $event)" />
       </label>
 
@@ -219,6 +235,10 @@ function canResubmit(doc: KnowledgeFile): boolean {
         <span>{{ dateLabel(doc) }}</span>
       </div>
 
+      <div v-if="showDepartment" class="cell-dept" :title="departmentOf(doc)">
+        {{ departmentOf(doc) }}
+      </div>
+
       <div class="cell-size">{{ sizeLabel(doc) }}</div>
 
       <div class="row-actions" @click.stop>
@@ -228,11 +248,11 @@ function canResubmit(doc: KnowledgeFile): boolean {
         <button type="button" title="下载" @click="emit('download', doc)">
           <el-icon><Download /></el-icon>
         </button>
-        <button type="button" title="编辑信息" @click="emit('edit', doc)">
+        <button v-if="canManage" type="button" title="编辑信息" @click="emit('edit', doc)">
           <el-icon><Edit /></el-icon>
         </button>
         <button
-          v-if="canResubmit(doc)"
+          v-if="canManage && canResubmit(doc)"
           type="button"
           class="success"
           title="重新提交审核"
@@ -240,7 +260,7 @@ function canResubmit(doc: KnowledgeFile): boolean {
         >
           <el-icon><Refresh /></el-icon>
         </button>
-        <button type="button" class="danger" title="删除" @click="emit('delete', doc)">
+        <button v-if="canManage" type="button" class="danger" title="删除" @click="emit('delete', doc)">
           <el-icon><Delete /></el-icon>
         </button>
       </div>
@@ -261,7 +281,7 @@ function canResubmit(doc: KnowledgeFile): boolean {
         <span class="doc-icon" :class="`cat-${categoryOf(doc)}`">
           <el-icon><component :is="iconOf(doc)" /></el-icon>
         </span>
-        <label class="check-wrap" @click.stop>
+        <label v-if="canManage" class="check-wrap" @click.stop>
           <input type="checkbox" :checked="isSelected(doc.id)" @change="onToggle(doc, $event)" />
         </label>
         <ReviewStatusTag
@@ -288,6 +308,9 @@ function canResubmit(doc: KnowledgeFile): boolean {
         <el-icon><FolderOpened /></el-icon>
         {{ folderPathOf(doc) }}
       </div>
+      <div v-if="showDepartment" class="card-folder" :title="departmentOf(doc)">
+        {{ departmentOf(doc) }}
+      </div>
       <div class="card-foot">
         <span>{{ doc.uploader_name || doc.author || '未知' }} · {{ dateLabel(doc) }}</span>
         <span>{{ sizeLabel(doc) }}</span>
@@ -295,15 +318,15 @@ function canResubmit(doc: KnowledgeFile): boolean {
       <div class="card-actions" @click.stop>
         <button type="button" title="预览" @click="emit('preview', doc)"><el-icon><View /></el-icon></button>
         <button type="button" title="下载" @click="emit('download', doc)"><el-icon><Download /></el-icon></button>
-        <button type="button" title="编辑信息" @click="emit('edit', doc)"><el-icon><Edit /></el-icon></button>
+        <button v-if="canManage" type="button" title="编辑信息" @click="emit('edit', doc)"><el-icon><Edit /></el-icon></button>
         <button
-          v-if="canResubmit(doc)"
+          v-if="canManage && canResubmit(doc)"
           type="button"
           class="success"
           title="重新提交审核"
           @click="emit('resubmit', doc)"
         ><el-icon><Refresh /></el-icon></button>
-        <button type="button" class="danger" title="删除" @click="emit('delete', doc)"><el-icon><Delete /></el-icon></button>
+        <button v-if="canManage" type="button" class="danger" title="删除" @click="emit('delete', doc)"><el-icon><Delete /></el-icon></button>
       </div>
     </article>
   </div>
@@ -316,9 +339,28 @@ function canResubmit(doc: KnowledgeFile): boolean {
   overflow: hidden;
 }
 
+.list-head,
+.doc-row {
+  grid-template-columns: 24px minmax(140px, 2fr) 92px 112px 64px 116px;
+}
+
+.doc-list.with-dept .list-head,
+.doc-list.with-dept .doc-row {
+  grid-template-columns: 24px minmax(140px, 2fr) 92px 112px 96px 64px 116px;
+}
+
+.doc-list.no-check .list-head,
+.doc-list.no-check .doc-row {
+  grid-template-columns: minmax(140px, 2fr) 92px 112px 64px 116px;
+}
+
+.doc-list.no-check.with-dept .list-head,
+.doc-list.no-check.with-dept .doc-row {
+  grid-template-columns: minmax(140px, 2fr) 92px 112px 96px 64px 116px;
+}
+
 .list-head {
   display: grid;
-  grid-template-columns: 24px minmax(180px, 2fr) 110px 120px 68px 116px;
   align-items: center;
   gap: 8px;
   min-height: 31px;
@@ -335,9 +377,12 @@ function canResubmit(doc: KnowledgeFile): boolean {
   text-align: center;
 }
 
+.head-dept {
+  text-align: center;
+}
+
 .doc-row {
   display: grid;
-  grid-template-columns: 24px minmax(180px, 2fr) 110px 120px 68px 116px;
   align-items: center;
   gap: 8px;
   min-height: 48px;
@@ -505,6 +550,15 @@ function canResubmit(doc: KnowledgeFile): boolean {
   white-space: nowrap;
 }
 
+.cell-dept {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 10.5px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .cell-size {
   color: #7c8da3;
   font-size: 10.5px;
@@ -521,6 +575,11 @@ function canResubmit(doc: KnowledgeFile): boolean {
 
 .doc-row:hover .row-actions,
 .doc-row.active .row-actions {
+  opacity: 1;
+}
+
+/* 只读角色没有其他行内操作，预览/下载按钮常驻显示，避免难以发现 */
+.doc-list.no-check .row-actions {
   opacity: 1;
 }
 
@@ -688,5 +747,33 @@ function canResubmit(doc: KnowledgeFile): boolean {
 .doc-card:hover .card-top .check-wrap,
 .doc-card:hover .card-review {
   visibility: hidden;
+}
+
+/* 窄屏收起「上传者 / 时间」列，保证操作列完整可见 */
+@media (max-width: 1100px) {
+  .head-meta,
+  .cell-meta {
+    display: none;
+  }
+
+  .list-head,
+  .doc-row {
+    grid-template-columns: 24px minmax(110px, 2fr) 88px 64px 116px;
+  }
+
+  .doc-list.with-dept .list-head,
+  .doc-list.with-dept .doc-row {
+    grid-template-columns: 24px minmax(110px, 2fr) 88px 88px 64px 116px;
+  }
+
+  .doc-list.no-check .list-head,
+  .doc-list.no-check .doc-row {
+    grid-template-columns: minmax(110px, 2fr) 88px 64px 116px;
+  }
+
+  .doc-list.no-check.with-dept .list-head,
+  .doc-list.no-check.with-dept .doc-row {
+    grid-template-columns: minmax(110px, 2fr) 88px 88px 64px 116px;
+  }
 }
 </style>

@@ -5,6 +5,8 @@ export type UploadItemStatus = 'analyzing' | 'ready' | 'error' | 'uploading' | '
 /** 上传暂存队列中的单个文件 */
 export interface UploadQueueItem {
   key: string
+  /** 上传前草稿在信息面板中的临时 id（负数，避免与已入库文档冲突） */
+  draftId: number
   file: File
   title: string
   originalTitle: string
@@ -15,21 +17,23 @@ export interface UploadQueueItem {
   keywords: string[]
   tags: string[]
   scope: 'public' | 'private'
+  /** 加入队列时处于专属空间：无论 AI 建议或之后切换范围，都固定私密 */
+  forcedPrivate?: boolean
   status: UploadItemStatus
   errorMessage: string
+  /** 加入队列后即开始 AI 识别，失败时记录原因但允许直接上传 */
+  analysisError?: string
+  /** 本文件预选的上传目录；为空表示待分类 */
+  targetFolderId: FolderId | null
   progress: number
   docId?: number
   confidence?: 'high' | 'medium' | 'low' | string
-  suggestedFolderId?: FolderId | null
-  suggestedFolderName?: string
 }
 
 /** 右侧信息确认面板的 AI 识别补充信息（不落库，仅展示） */
 export interface AiDocMeta {
   confidence?: string
   recommendedTitle?: string
-  suggestedFolderId?: FolderId | null
-  suggestedFolderName?: string
   analyzedAt?: string
   fromUpload?: boolean
   /** AI 提取的关键词 */
@@ -42,7 +46,7 @@ export interface AiDocMeta {
 export interface InfoTab {
   key: string
   title: string
-  status: 'pending' | 'analyzing' | 'uploading' | 'done' | 'error'
+  status: 'pending' | 'analyzing' | 'ready' | 'uploading' | 'done' | 'error'
   docId?: number
   error?: string
   progress?: number

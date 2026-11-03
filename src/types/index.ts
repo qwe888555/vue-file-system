@@ -176,7 +176,8 @@ export interface KnowledgeFolder {
   name: string
   parent_id: number | string | null
   path?: string
-  is_system: boolean
+  /** 历史系统目录标记，仅用于兼容旧接口；新目录一律由用户创建 */
+  is_system?: boolean
   system_key?: string
   sort_order?: number
   doc_count?: number
@@ -191,11 +192,22 @@ export interface FolderListResult {
   unfiled_count: number
   total_docs: number
   scope: {
-    kind: 'school' | 'college' | 'department'
+    kind: 'school' | 'college' | 'department' | 'personal'
     college_id: number | null
     department_id: number | null
+    /** 超级管理员未指定部门时为 true（跨部门只读浏览） */
+    all_departments?: boolean
+    /** 我的专属空间：目录仅当前超级管理员本人可见 */
+    personal?: boolean
     can_manage: boolean
   }
+}
+
+/** 部门范围选项（超级管理员） */
+export interface DepartmentOption {
+  id: number
+  name: string
+  full_path: string
 }
 
 // ── 文档审核（对齐后端 /api/knowledge/reviews/* 与 review/*） ──

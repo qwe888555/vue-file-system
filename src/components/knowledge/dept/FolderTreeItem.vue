@@ -25,7 +25,6 @@ const expanded = ref(true)
 const dragActive = ref(false)
 const count = computed(() => props.counts[String(props.folder.id)] || 0)
 const selected = computed(() => String(props.selectedId) === String(props.folder.id))
-const isCustom = computed(() => !props.folder.is_system)
 
 function toggle(event: MouseEvent) {
   event.stopPropagation()
@@ -73,12 +72,12 @@ function onDrop(event: DragEvent) {
   <div class="folder-node">
     <div
       class="folder-row"
-      :class="{ selected, 'drag-active': dragActive, custom: isCustom }"
+      :class="{ selected, 'drag-active': dragActive }"
       :style="{ paddingLeft: `${8 + depth * 14}px` }"
       @click="onSelect"
-      @dragover="onDragOver"
-      @dragleave="onDragLeave"
-      @drop="onDrop"
+      @dragover="canManage && onDragOver($event)"
+      @dragleave="canManage && onDragLeave($event)"
+      @drop="canManage && onDrop($event)"
     >
       <button
         v-if="children.length"
@@ -101,16 +100,10 @@ function onDrop(event: DragEvent) {
         <button type="button" title="新建子文件夹" @click="emit('add-child', folder)">
           <el-icon><Plus /></el-icon>
         </button>
-        <button
-          v-if="isCustom"
-          type="button"
-          title="重命名"
-          @click="emit('rename', folder)"
-        >
+        <button type="button" title="重命名" @click="emit('rename', folder)">
           <el-icon><EditPen /></el-icon>
         </button>
         <button
-          v-if="isCustom"
           type="button"
           class="danger"
           title="删除文件夹"

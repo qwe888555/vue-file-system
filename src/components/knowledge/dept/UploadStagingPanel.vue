@@ -1,29 +1,47 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { CircleCheck, Clock, Close, FolderOpened, Loading, UploadFilled, View, WarningFilled } from '@element-plus/icons-vue'
+import { computed, ref, watch } from 'vue'
+import {
+  CircleCheck,
+  Clock,
+  Close,
+  FolderOpened,
+  Loading,
+  RefreshRight,
+  UploadFilled,
+  View,
+  WarningFilled,
+} from '@element-plus/icons-vue'
 import type { FolderId, KnowledgeFolder } from '@/types'
 import type { UploadQueueItem } from '@/types/workbench'
 import { formatUploadSize, fileExtension } from '@/utils/uploadValidation'
 
 const props = defineProps<{
   items: UploadQueueItem[]
+  /** 新增文件默认继承的存放目录 */
   targetFolderId: FolderId | null
   folderOptions: Array<KnowledgeFolder & { depth: number; full_path: string }>
   uploading: boolean
   disabledReason?: string
+  /** 我的专属空间：文件仅本人可见，目录为专属目录 */
+  personalSpace?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'add-files', files: File[]): void
   (e: 'remove', key: string): void
+  (e: 'remove-selected', keys: string[]): void
   (e: 'update-title', payload: { key: string; title: string }): void
   (e: 'preview', item: UploadQueueItem): void
+  (e: 'retry-analysis', key: string): void
   (e: 'confirm'): void
+  (e: 'assign-folders', payload: { keys: string[]; folderId: FolderId | null }): void
   (e: 'update:targetFolderId', value: FolderId | null): void
 }>()
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const dragging = ref(false)
+const selectedKeys = ref<Set<string>>(new Set())
+const bulkFolderId = ref<FolderId | ''>('')
 let dragDepth = 0
 
 const pendingCount = computed(() => props.items.length)
@@ -32,13 +50,65 @@ const canConfirm = computed(
   () => !props.uploading && pendingCount.value > 0 && analyzingCount.value === 0,
 )
 
-const targetLabel = computed(() => {
-  if (props.targetFolderId == null) return '待分类（全部文件根目录）'
-  return (
-    props.folderOptions.find((item) => item.id === props.targetFolderId)?.full_path ||
-    '待分类（全部文件根目录）'
+const selectableItems = computed(() =>
+  props.items.filter((item) => item.status !== 'uploading' && item.status !== 'done'),
+)
+const selectedCount = computed(
+  () => selectableItems.value.filter((item) => selectedKeys.value.has(item.key)).length,
+)
+const allSelected = computed(
+  () => selectableItems.value.length > 0 && selectedCount.value === selectableItems.value.length,
+)
+const someSelected = computed(() => selectedCount.value > 0 && !allSelected.value)
+
+const folderLabel = (id: FolderId | null): string => {
+  if (id == null) return '待分类'
+  return props.folderOptions.find((item) => item.id === id)?.full_path || '待分类'
+}
+
+const targetLabel = computed(() => folderLabel(props.targetFolderId))
+
+watch(
+  () => props.items.map((item) => item.key),
+  (keys) => {
+    const alive = new Set(keys)
+    const next = new Set([...selectedKeys.value].filter((key) => alive.has(key)))
+    if (next.size !== selectedKeys.value.size) selectedKeys.value = next
+  },
+)
+
+function toggleSelect(key: string, checked: boolean) {
+  const next = new Set(selectedKeys.value)
+  if (checked) next.add(key)
+  else next.delete(key)
+  selectedKeys.value = next
+}
+
+function toggleAll(checked: boolean) {
+  selectedKeys.value = checked ? new Set(selectableItems.value.map((item) => item.key)) : new Set()
+}
+
+function applyBulkFolder(value: FolderId | '') {
+  if (!selectedCount.value) return
+  emit('assign-folders', {
+    keys: selectableItems.value
+      .filter((item) => selectedKeys.value.has(item.key))
+      .map((item) => item.key),
+    folderId: value === '' ? null : value,
+  })
+  bulkFolderId.value = ''
+}
+
+function withdrawSelected() {
+  if (!selectedCount.value) return
+  emit(
+    'remove-selected',
+    selectableItems.value
+      .filter((item) => selectedKeys.value.has(item.key))
+      .map((item) => item.key),
   )
-})
+  selectedKeys.value = new Set()
+}
 
 function selectFiles() {
   if (props.uploading) return
@@ -79,12 +149,16 @@ function onDrop(event: DragEvent) {
   if (files?.length) emit('add-files', Array.from(files))
 }
 
-function onFolderChange(value: FolderId | null | undefined) {
-  emit('update:targetFolderId', value ?? null)
+function onFolderChange(value: FolderId | '') {
+  emit('update:targetFolderId', value === '' ? null : value)
 }
 
 function typeLabel(item: UploadQueueItem): string {
   return fileExtension(item.file).toUpperCase().slice(0, 4) || 'FILE'
+}
+
+function onItemFolderChange(key: string, value: FolderId | '') {
+  emit('assign-folders', { keys: [key], folderId: value === '' ? null : value })
 }
 
 function statusText(item: UploadQueueItem): string {
@@ -92,7 +166,8 @@ function statusText(item: UploadQueueItem): string {
   if (item.status === 'uploading') return `上传中 ${Math.round(item.progress)}%`
   if (item.status === 'done') return '已完成'
   if (item.status === 'error') return item.errorMessage || '上传失败'
-  return '待上传'
+  if (item.analysisError) return 'AI 识别失败，可直接上传'
+  return item.description || item.keywords.length ? 'AI 识别完成' : '待上传'
 }
 </script>
 
@@ -103,7 +178,9 @@ function statusText(item: UploadQueueItem): string {
         <h2>上传文件</h2>
         <p>支持批量选择文件，文件将暂存至待上传队列。</p>
       </div>
-      <span class="head-badge">部门资料</span>
+      <span class="head-badge" :class="{ private: personalSpace }">
+        {{ personalSpace ? '专属空间 · 仅本人可见' : '部门资料' }}
+      </span>
     </div>
 
     <div
@@ -121,7 +198,7 @@ function statusText(item: UploadQueueItem): string {
     >
       <el-icon class="drop-icon"><UploadFilled /></el-icon>
       <strong>拖拽文件到这里，或点击选择</strong>
-      <span>支持多文件暂存，确认上传后才开始上传与 AI 分析</span>
+      <span>加入队列后立即开始 AI 识别，确认后上传并入库</span>
       <input
         ref="fileInput"
         type="file"
@@ -132,9 +209,39 @@ function statusText(item: UploadQueueItem): string {
     </div>
 
     <div class="queue-head">
+      <label v-if="selectableItems.length" class="select-all">
+        <input
+          type="checkbox"
+          :checked="allSelected"
+          :indeterminate="someSelected"
+          @change="toggleAll(($event.target as HTMLInputElement).checked)"
+        />
+        全选
+      </label>
       <span>待上传队列</span>
       <em>{{ pendingCount }}</em>
       <small v-if="analyzingCount">{{ analyzingCount }} 个正在识别</small>
+    </div>
+
+    <div v-if="selectedCount" class="batch-bar">
+      <span class="batch-count">已选 {{ selectedCount }} 个</span>
+      <el-select
+        v-model="bulkFolderId"
+        size="small"
+        class="batch-select"
+        placeholder="批量指定目录"
+        :disabled="uploading"
+        @change="applyBulkFolder"
+      >
+        <el-option label="待分类（不指定目录）" value="" />
+        <el-option
+          v-for="folder in folderOptions"
+          :key="folder.id"
+          :label="folder.full_path"
+          :value="folder.id"
+        />
+      </el-select>
+      <button type="button" class="batch-withdraw" @click="withdrawSelected">撤回所选</button>
     </div>
 
     <div class="queue-list" :class="{ empty: !items.length }">
@@ -145,8 +252,22 @@ function statusText(item: UploadQueueItem): string {
         v-for="item in items"
         :key="item.key"
         class="queue-row"
-        :class="[item.status, { failed: !!item.errorMessage && item.status === 'error' }]"
+        :class="[
+          item.status,
+          {
+            failed: !!item.errorMessage && item.status === 'error',
+            picked: selectedKeys.has(item.key),
+          },
+        ]"
       >
+        <label class="queue-check" @click.stop>
+          <input
+            type="checkbox"
+            :checked="selectedKeys.has(item.key)"
+            :disabled="item.status === 'uploading' || item.status === 'done'"
+            @change="toggleSelect(item.key, ($event.target as HTMLInputElement).checked)"
+          />
+        </label>
         <span class="queue-type">{{ typeLabel(item) }}</span>
         <div class="queue-main">
           <input
@@ -170,6 +291,39 @@ function statusText(item: UploadQueueItem): string {
               <el-icon v-else-if="item.status === 'error'"><WarningFilled /></el-icon>
               {{ statusText(item) }}
             </span>
+            <span class="queue-target" :title="folderLabel(item.targetFolderId)">
+              <el-icon><FolderOpened /></el-icon>
+              {{ folderLabel(item.targetFolderId) }}
+            </span>
+          </div>
+          <div v-if="item.analysisError" class="queue-analysis-error">
+            <span :title="item.analysisError">{{ item.analysisError }}</span>
+            <button
+              type="button"
+              :disabled="item.status === 'analyzing'"
+              @click.stop="emit('retry-analysis', item.key)"
+            >
+              <el-icon><RefreshRight /></el-icon>
+              重新识别
+            </button>
+          </div>
+          <div class="queue-location">
+            <el-select
+              :model-value="item.targetFolderId ?? ''"
+              size="small"
+              class="row-folder-select"
+              :disabled="uploading || item.status === 'uploading' || item.status === 'done'"
+              placeholder="待分类"
+              @update:model-value="onItemFolderChange(item.key, $event)"
+            >
+              <el-option label="待分类（不指定目录）" value="" />
+              <el-option
+                v-for="folder in folderOptions"
+                :key="folder.id"
+                :label="folder.full_path"
+                :value="folder.id"
+              />
+            </el-select>
           </div>
           <div v-if="item.status === 'uploading'" class="queue-progress">
             <i :style="{ width: `${Math.max(2, item.progress)}%` }"></i>
@@ -188,7 +342,7 @@ function statusText(item: UploadQueueItem): string {
             v-if="item.status !== 'uploading' && item.status !== 'done'"
             type="button"
             class="queue-remove"
-            title="从队列移除"
+            title="撤回文件"
             @click.stop="emit('remove', item.key)"
           >
             <el-icon><Close /></el-icon>
@@ -200,17 +354,17 @@ function statusText(item: UploadQueueItem): string {
     <div class="location-row">
       <span class="location-label">
         <el-icon><FolderOpened /></el-icon>
-        存放位置
+        新文件默认存放
       </span>
       <el-select
-        :model-value="targetFolderId"
+        :model-value="targetFolderId ?? ''"
         size="small"
         class="location-select"
         :disabled="uploading"
         placeholder="待分类（全部文件根目录）"
         @update:model-value="onFolderChange"
       >
-        <el-option label="待分类（全部文件根目录）" :value="null" />
+        <el-option label="待分类（全部文件根目录）" value="" />
         <el-option
           v-for="folder in folderOptions"
           :key="folder.id"
@@ -218,7 +372,9 @@ function statusText(item: UploadQueueItem): string {
           :value="folder.id"
         />
       </el-select>
-      <span class="location-tip" :title="targetLabel">上传后仍可移动</span>
+      <span class="location-tip" :title="targetLabel">
+        {{ personalSpace ? '仅本人可见，可归档到专属目录' : '上传后仍可移动' }}
+      </span>
     </div>
 
     <div class="upload-foot">
@@ -247,7 +403,10 @@ function statusText(item: UploadQueueItem): string {
 }
 
 .upload-panel {
-  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 18px;
 }
 
 .panel-head {
@@ -282,9 +441,16 @@ function statusText(item: UploadQueueItem): string {
   font-size: 11px;
 }
 
+.head-badge.private {
+  border-color: #d8c7f5;
+  background: #f7f3ff;
+  color: #6b3fa0;
+}
+
 .upload-drop {
+  flex: 1 1 auto;
   margin-top: 14px;
-  min-height: 120px;
+  min-height: 150px;
   border: 1px dashed #c7d6ea;
   border-radius: 7px;
   background: linear-gradient(180deg, #fbfdff, #f7faff);
@@ -357,19 +523,93 @@ function statusText(item: UploadQueueItem): string {
   font-size: 11px;
 }
 
+.select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 2px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.select-all input,
+.queue-check input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 7px;
+  padding: 6px 8px;
+  border: 1px solid #dbe7f8;
+  border-radius: 5px;
+  background: #f5f9ff;
+}
+
+.batch-count {
+  flex-shrink: 0;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.batch-select {
+  min-width: 0;
+  flex: 1;
+}
+
+.batch-select :deep(.el-select__wrapper) {
+  min-height: 26px;
+  border-radius: 4px;
+  font-size: 11.5px;
+}
+
+.batch-withdraw {
+  flex-shrink: 0;
+  margin-left: auto;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid #f0cfcf;
+  border-radius: 4px;
+  background: #fff;
+  color: #b91c1c;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.batch-withdraw:hover {
+  border-color: #e7a8a8;
+  background: #fef5f5;
+}
+
 .queue-list {
+  flex: 1 1 120px;
+  min-height: 90px;
+  max-height: 360px;
   border: 1px solid #eef2f7;
   border-radius: 6px;
-  max-height: 190px;
   overflow-y: auto;
   background: #fcfdff;
 }
 
 .queue-list.empty {
-  min-height: 70px;
+  min-height: 90px;
 }
 
 .queue-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
   padding: 16px 18px;
   color: #94a3b8;
   font-size: 12px;
@@ -380,13 +620,25 @@ function statusText(item: UploadQueueItem): string {
 .queue-row {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
+  gap: 8px;
   padding: 9px 10px;
   border-bottom: 1px solid #f1f5fa;
 }
 
+.queue-row.picked {
+  background: #f7faff;
+}
+
 .queue-row:last-child {
   border-bottom: none;
+}
+
+.queue-check {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  height: 18px;
+  margin-top: 1px;
 }
 
 .queue-type {
@@ -446,6 +698,69 @@ function statusText(item: UploadQueueItem): string {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+}
+
+.queue-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 42%;
+  overflow: hidden;
+  color: #7c8da3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-analysis-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: #b45309;
+  font-size: 10.5px;
+}
+
+.queue-analysis-error span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-analysis-error button {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #2563eb;
+  font: inherit;
+  cursor: pointer;
+}
+
+.queue-analysis-error button:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.queue-location {
+  margin-top: 5px;
+}
+
+.row-folder-select {
+  width: min(220px, 100%);
+}
+
+.row-folder-select :deep(.el-select__wrapper) {
+  min-height: 23px;
+  padding: 0 7px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px #edf2f8 inset;
+  font-size: 10.5px;
 }
 
 .queue-status.ready {

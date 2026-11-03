@@ -6,7 +6,6 @@ import {
   CircleCheck,
   Clock,
   Close,
-  Download,
   Document,
   FolderOpened,
   Loading,
@@ -32,13 +31,16 @@ const props = defineProps<{
   canManageFolder: boolean
   canResubmit: boolean
   saving: boolean
+  /** 我的专属空间：可见范围锁定为「仅本人可见」，目录只能使用专属目录 */
+  lockPrivate?: boolean
+  /** 上传前草稿：保存只会写回待上传队列，不会调用入库接口 */
+  draftMode?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'select-tab', key: string): void
   (e: 'save', payload: InfoSavePayload): void
   (e: 'preview', doc: KnowledgeFile): void
-  (e: 'download', doc: KnowledgeFile): void
   (e: 'resubmit', doc: KnowledgeFile): void
 }>()
 
@@ -78,23 +80,12 @@ const aiTitle = computed(() => (props.aiMeta?.recommendedTitle || '').trim())
 const showAiTitle = computed(
   () => !!aiTitle.value && aiTitle.value !== form.title.trim(),
 )
-const aiFolderPath = computed(() => {
-  const id = props.aiMeta?.suggestedFolderId
-  if (id == null) return ''
-  return props.folderOptions.find((folder) => String(folder.id) === String(id))?.full_path || ''
-})
-const aiFolderAvailable = computed(() => {
-  const id = props.aiMeta?.suggestedFolderId
-  return id != null && props.folderOptions.some((folder) => String(folder.id) === String(id))
-})
-const showAiFolder = computed(
-  () =>
-    !!aiFolderPath.value &&
-    String(props.aiMeta?.suggestedFolderId) !== String(form.folderId ?? ''),
-)
 const aiVisibility = computed(() => props.aiMeta?.visibility)
 const showAiVisibility = computed(
-  () => !!aiVisibility.value && aiVisibility.value !== form.visibility,
+  () =>
+    !props.lockPrivate &&
+    !!aiVisibility.value &&
+    aiVisibility.value !== form.visibility,
 )
 const aiConfidenceLabel = computed(() => {
   const map: Record<string, string> = { high: '置信度高', medium: '置信度中', low: '置信度低' }
@@ -182,7 +173,7 @@ function resetForm() {
     form.description = ''
     form.keywords = []
     form.tags = []
-    form.visibility = 'public'
+    form.visibility = props.lockPrivate ? 'private' : 'public'
     form.folderId = null
     snapshot.value = serialize()
     return
@@ -195,8 +186,9 @@ function resetForm() {
     ? docKeywords
     : keywordPhrases(props.aiMeta?.keywords)
   form.tags = tagNames(props.doc.tags)
-  form.visibility =
-    props.doc.visibility === 'private' || props.doc.visibility === 'public'
+  form.visibility = props.lockPrivate
+    ? 'private'
+    : props.doc.visibility === 'private' || props.doc.visibility === 'public'
       ? props.doc.visibility
       : props.aiMeta?.visibility || 'public'
   form.folderId = props.currentFolderId
@@ -207,6 +199,15 @@ watch(
   () => [props.doc?.id ?? null, props.formVersion],
   () => {
     resetForm()
+  },
+  { immediate: true },
+)
+
+// 切换到专属空间后，已打开的面板立即锁定为「仅本人可见」
+watch(
+  () => props.lockPrivate,
+  (locked) => {
+    if (locked) form.visibility = 'private'
   },
   { immediate: true },
 )
@@ -258,17 +259,13 @@ function adoptAiTitle() {
   form.title = aiTitle.value
 }
 
-function adoptAiFolder() {
-  if (!aiFolderAvailable.value) return
-  form.folderId = props.aiMeta?.suggestedFolderId ?? null
-}
-
 function adoptAiVisibility() {
+  if (props.lockPrivate) return
   if (aiVisibility.value) form.visibility = aiVisibility.value
 }
 
-function onFolderChange(value: FolderId | null | undefined) {
-  form.folderId = value ?? null
+function onFolderChange(value: FolderId | '') {
+  form.folderId = value === '' ? null : value
 }
 
 function submit() {
@@ -282,7 +279,7 @@ function submit() {
     description: form.description.trim(),
     keywords: [...new Set(form.keywords.map((item) => item.trim()).filter(Boolean))],
     tags: [...new Set(form.tags.map((item) => item.trim()).filter(Boolean))],
-    scope: form.visibility,
+    scope: props.lockPrivate ? 'private' : form.visibility,
     folderId: form.folderId,
   })
 }
@@ -292,8 +289,14 @@ function submit() {
   <section class="panel info-panel">
     <div class="info-head">
       <div>
-        <h2>信息确认</h2>
-        <p>AI 识别完成后，请确认资料标题、摘要与归档位置。</p>
+        <h2>资料确认</h2>
+        <p>
+          {{
+            draftMode
+              ? '文件加入后立即开始识别，可在此核对并修改标题、摘要与存放目录。'
+              : 'AI 识别完成后，请确认资料标题、摘要与归档位置。'
+          }}
+        </p>
       </div>
       <span v-if="doc && aiMeta" class="ai-badge">
         <el-icon><MagicStick /></el-icon>
@@ -330,12 +333,12 @@ function submit() {
 
     <div v-if="!tabs.length && !doc" class="info-empty">
       <span class="empty-glyph"><el-icon><Document /></el-icon></span>
-      <h3>等待文件上传</h3>
-      <p>在左侧拖入文件并点击「确认上传」，AI 会自动识别标题、摘要、关键词与归档目录。</p>
+      <h3>等待文件加入队列</h3>
+      <p>文件加入上传队列后立即开始 AI 识别，识别结果会显示在左侧队列与这里的信息面板。</p>
       <ol class="empty-steps">
-        <li><em>1</em>拖入文件，暂存到上传队列</li>
-        <li><em>2</em>确认上传，触发上传与 AI 识别</li>
-        <li><em>3</em>在此核对信息并保存归档</li>
+        <li><em>1</em>拖入文件，立即开始 AI 识别</li>
+        <li><em>2</em>核对标题、摘要与存放目录</li>
+        <li><em>3</em>确认上传，完成后确认入库</li>
       </ol>
     </div>
 
@@ -508,20 +511,21 @@ function submit() {
       <div class="field-grid">
         <div class="field">
           <div class="field-label"><span>可见范围</span></div>
-          <div class="segment" :class="{ disabled: !canEditInfo || saving }">
+          <div class="segment" :class="{ disabled: !canEditInfo || saving || lockPrivate }">
             <button
               type="button"
               :class="{ active: form.visibility === 'public' }"
-              :disabled="!canEditInfo || saving"
+              :disabled="!canEditInfo || saving || lockPrivate"
               @click="form.visibility = 'public'"
             >部门公开</button>
             <button
               type="button"
               :class="{ active: form.visibility === 'private' }"
-              :disabled="!canEditInfo || saving"
+              :disabled="!canEditInfo || saving || lockPrivate"
               @click="form.visibility = 'private'"
             >仅本人可见</button>
           </div>
+          <div v-if="lockPrivate" class="lock-hint">我的专属空间：可见范围固定为「仅本人可见」</div>
           <div v-if="showAiVisibility" class="ai-suggest compact">
             <span class="ai-suggest-label">AI 建议</span>
             <span class="ai-suggest-value">{{ aiVisibility === 'private' ? '仅本人可见' : '部门公开' }}</span>
@@ -537,17 +541,19 @@ function submit() {
         <div class="field">
           <div class="field-label">
             <span>归档目录</span>
-            <em class="field-hint">{{ canManageFolder ? '可随时调整' : '由管理员维护' }}</em>
+            <em class="field-hint">
+              {{ lockPrivate ? '仅归档到专属目录' : canManageFolder ? '可随时调整' : '由管理员维护' }}
+            </em>
           </div>
           <el-select
-            :model-value="form.folderId"
+            :model-value="form.folderId ?? ''"
             size="default"
             class="folder-select"
             :disabled="!canManageFolder || saving"
             placeholder="待分类（全部文件根目录）"
             @update:model-value="onFolderChange"
           >
-            <el-option label="待分类（全部文件根目录）" :value="null" />
+            <el-option label="待分类（全部文件根目录）" value="" />
             <el-option
               v-for="folder in folderOptions"
               :key="folder.id"
@@ -555,17 +561,7 @@ function submit() {
               :value="folder.id"
             />
           </el-select>
-          <div v-if="showAiFolder" class="ai-suggest compact">
-            <span class="ai-suggest-label">AI 建议归档</span>
-            <span class="ai-suggest-value" :title="aiFolderPath">{{ aiFolderPath }}</span>
-            <button
-              type="button"
-              class="ai-suggest-btn"
-              :disabled="!canManageFolder || !aiFolderAvailable || saving"
-              @click="adoptAiFolder"
-            >采用</button>
-          </div>
-          <div v-else class="folder-current" :title="currentFolderLabel">
+          <div class="folder-current" :title="currentFolderLabel">
             <el-icon><FolderOpened /></el-icon>
             {{ currentFolderLabel }}
           </div>
@@ -611,8 +607,9 @@ function submit() {
       <div class="file-meta">
         <span><el-icon><Document /></el-icon>{{ fileTypeLabel }}</span>
         <span>{{ fileSizeLabel }}</span>
-        <span><el-icon><User /></el-icon>{{ uploaderLabel }}</span>
-        <span><el-icon><Calendar /></el-icon>{{ createdAtLabel }}</span>
+        <span v-if="!draftMode"><el-icon><User /></el-icon>{{ uploaderLabel }}</span>
+        <span v-if="!draftMode"><el-icon><Calendar /></el-icon>{{ createdAtLabel }}</span>
+        <span v-if="draftMode" class="draft-hint">上传后自动记录上传者与入库时间</span>
       </div>
 
       <div v-if="!editable" class="readonly-note">
@@ -631,18 +628,20 @@ function submit() {
             <el-icon><View /></el-icon>
             预览
           </button>
-          <button type="button" class="btn btn-ghost" @click="emit('download', doc)">
-            <el-icon><Download /></el-icon>
-            下载
-          </button>
           <button
             type="button"
             class="btn btn-primary"
             :disabled="saving || detailLoading || !editable"
-            :title="editable ? '保存并确认资料信息' : '当前账号无编辑权限'"
+            :title="
+              editable
+                ? draftMode
+                  ? '保存修改，随文件一起上传'
+                  : '确认资料信息并正式入库'
+                : '当前账号无编辑权限'
+            "
             @click="submit"
           >
-            {{ saving ? '保存中…' : '保存信息' }}
+            {{ saving ? '保存中…' : draftMode ? '保存修改' : '确认入库' }}
           </button>
         </div>
       </div>
@@ -1022,7 +1021,12 @@ function submit() {
 }
 
 .info-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding-top: 13px;
+  padding-right: 2px;
+  scrollbar-width: thin;
 }
 
 .ai-strip {
@@ -1281,6 +1285,13 @@ function submit() {
   opacity: 0.7;
 }
 
+.lock-hint {
+  margin-top: 4px;
+  color: #6b3fa0;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
 .segment button:disabled {
   cursor: not-allowed;
 }
@@ -1399,6 +1410,10 @@ function submit() {
   gap: 3px;
 }
 
+.file-meta .draft-hint {
+  color: #a3b0c2;
+}
+
 .readonly-note {
   margin-top: 9px;
   padding: 6px 8px;
@@ -1410,12 +1425,16 @@ function submit() {
 }
 
 .info-foot {
+  position: sticky;
+  bottom: 0;
   display: flex;
   align-items: center;
   gap: 10px;
   margin-top: 12px;
   padding-top: 11px;
+  padding-bottom: 2px;
   border-top: 1px solid #f1f5fa;
+  background: #fff;
 }
 
 .save-state {

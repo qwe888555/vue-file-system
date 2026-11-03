@@ -11,11 +11,13 @@ const props = defineProps<{
   unfiledCount: number
   totalCount: number
   scopeLabel: string
-  scopeKind: 'school' | 'college' | 'department'
+  scopeKind: 'school' | 'college' | 'department' | 'personal'
   canManage: boolean
   loading: boolean
   loadError: string
   localMode: boolean
+  /** 嵌入目录浏览工作区时使用，去掉面板外框并收窄留白 */
+  embedded?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -33,12 +35,17 @@ const expanded = ref(true)
 const unfiledActive = ref(false)
 
 const scopeHint = computed(() => {
+  if (props.scopeKind === 'personal') return '专属目录，仅本人可见'
   if (props.scopeKind === 'school') return '校级目录，对全校部门可见'
   if (props.scopeKind === 'college') return '学院级目录，仅本学院可见'
   return '部门级目录，仅本部门可见'
 })
 
-function buildTree(predicate: (folder: KnowledgeFolder) => boolean): KnowledgeFolder[] {
+const panelTitle = computed(() =>
+  props.scopeKind === 'personal' ? '专属目录' : '部门目录',
+)
+
+const roots = computed<KnowledgeFolder[]>(() => {
   const childrenMap = new Map<string, KnowledgeFolder[]>()
   props.folders.forEach((folder) => {
     const key = folder.parent_id == null ? '__root__' : String(folder.parent_id)
@@ -50,12 +57,9 @@ function buildTree(predicate: (folder: KnowledgeFolder) => boolean): KnowledgeFo
     children: (childrenMap.get(String(folder.id)) || []).map(attach),
   })
   return props.folders
-    .filter((folder) => folder.parent_id == null && predicate(folder))
+    .filter((folder) => folder.parent_id == null)
     .map(attach)
-}
-
-const systemRoots = computed(() => buildTree((folder) => Boolean(folder.is_system)))
-const customRoots = computed(() => buildTree((folder) => !folder.is_system))
+})
 
 function toggleRoot() {
   expanded.value = !expanded.value
@@ -88,11 +92,11 @@ function onUnfiledDrop(event: DragEvent) {
 </script>
 
 <template>
-  <section class="panel folder-panel">
+  <section class="panel folder-panel" :class="{ embedded }">
     <div class="panel-head">
       <div>
-        <h2>部门目录</h2>
-        <p>上传后的资料按目录归档，支持拖拽移动。</p>
+        <h2>{{ panelTitle }}</h2>
+        <p v-if="!embedded">上传后的资料按目录归档，支持拖拽移动。</p>
       </div>
       <div class="head-tools">
         <button
@@ -110,10 +114,10 @@ function onUnfiledDrop(event: DragEvent) {
       </div>
     </div>
 
-    <div class="scope-row">
+    <div class="scope-row" :title="scopeLabel">
       <el-icon><OfficeBuilding /></el-icon>
       <span class="scope-name">{{ scopeLabel || '当前部门' }}</span>
-      <span class="scope-hint">{{ scopeHint }}</span>
+      <span v-if="!embedded" class="scope-hint">{{ scopeHint }}</span>
     </div>
 
     <div v-if="localMode" class="mode-note">
@@ -143,23 +147,31 @@ function onUnfiledDrop(event: DragEvent) {
           class="special-row"
           :class="{ selected: selectedId === 'unfiled', 'drag-active': unfiledActive }"
           @click="emit('select-unfiled')"
-          @dragover="onUnfiledDragOver"
+          @dragover="canManage && onUnfiledDragOver($event)"
           @dragleave="unfiledActive = false"
-          @drop="onUnfiledDrop"
+          @drop="canManage && onUnfiledDrop($event)"
         >
           <el-icon><Clock /></el-icon>
           <span class="special-name">待分类文件</span>
           <span class="special-count" :class="{ zero: !unfiledCount }">{{ unfiledCount }}</span>
         </div>
 
-        <div class="group-label">
-          <span>系统自动分类</span>
-          <em>AI</em>
+        <div class="group-label custom-label">
+          <span>我的文件夹</span>
+          <button
+            v-if="canManage"
+            type="button"
+            class="group-add"
+            title="新建文件夹"
+            @click="emit('create', null)"
+          >
+            <el-icon><Plus /></el-icon>
+          </button>
         </div>
         <div v-if="loading && !folders.length" class="tree-loading">目录加载中…</div>
-        <template v-else-if="systemRoots.length">
+        <template v-else-if="roots.length">
           <FolderTreeItem
-            v-for="folder in systemRoots"
+            v-for="folder in roots"
             :key="folder.id"
             :folder="folder"
             :children="folder.children || []"
@@ -174,37 +186,9 @@ function onUnfiledDrop(event: DragEvent) {
             @drop-docs="emit('drop-docs', $event)"
           />
         </template>
-        <div v-else class="tree-empty">暂无系统分类目录</div>
-
-        <div class="group-label custom-label">
-          <span>自定义文件夹</span>
-          <button
-            v-if="canManage"
-            type="button"
-            class="group-add"
-            title="新建自定义文件夹"
-            @click="emit('create', null)"
-          >
-            <el-icon><Plus /></el-icon>
-          </button>
-        </div>
-        <FolderTreeItem
-          v-for="folder in customRoots"
-          :key="folder.id"
-          :folder="folder"
-          :children="folder.children || []"
-          :counts="counts"
-          :selected-id="selectedId"
-          :can-manage="canManage"
-          :depth="0"
-          @select="emit('select', $event)"
-          @add-child="emit('create', $event)"
-          @rename="emit('rename', $event)"
-          @delete="emit('delete', $event)"
-          @drop-docs="emit('drop-docs', $event)"
-        />
+        <div v-else-if="!canManage" class="tree-empty">暂无可见文件夹</div>
         <button
-          v-if="canManage && !customRoots.length"
+          v-if="canManage"
           type="button"
           class="new-folder-row"
           @click="emit('create', null)"
@@ -227,6 +211,58 @@ function onUnfiledDrop(event: DragEvent) {
 
 .folder-panel {
   padding: 16px 12px 12px;
+}
+
+/* 嵌入目录工作区：与外层共用一张卡片，只保留内部导航 */
+.folder-panel.embedded {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 14px 10px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.folder-panel.embedded .panel-head {
+  padding: 0 4px;
+}
+
+.folder-panel.embedded .panel-head h2 {
+  font-size: 13.5px;
+}
+
+.folder-panel.embedded .scope-row {
+  margin: 10px 4px 0;
+  padding: 7px 8px;
+}
+
+.folder-panel.embedded .scope-name {
+  max-width: 100%;
+}
+
+.folder-panel.embedded .mode-note {
+  margin: 8px 4px 0;
+}
+
+.folder-panel.embedded .tree-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding-right: 2px;
+  scrollbar-width: thin;
+}
+
+.folder-panel.embedded .new-folder-row {
+  width: 100%;
+  margin: 4px 0 2px;
+}
+
+.folder-panel.embedded .group-add {
+  display: none;
 }
 
 .panel-head {
