@@ -24,6 +24,8 @@ const props = defineProps<{
   disabledReason?: string
   /** 我的专属空间：文件仅本人可见，目录为专属目录 */
   personalSpace?: boolean
+  /** 当前上传范围名称（由角色/左侧范围决定，非本人可选） */
+  scopeLabel?: string
   /** 右侧「资料确认」当前展示的文件 key，用于高亮队列行 */
   activeKey?: string | null
 }>()
@@ -182,8 +184,12 @@ function statusText(item: UploadQueueItem): string {
         <h2>上传文件</h2>
         <p>支持批量选择文件，文件将暂存至待上传队列。</p>
       </div>
-      <span class="head-badge" :class="{ private: personalSpace }">
-        {{ personalSpace ? '专属空间 · 仅本人可见' : '部门资料' }}
+      <span
+        class="head-badge"
+        :class="{ private: personalSpace }"
+        :title="personalSpace ? '专属空间 · 仅本人可见' : (scopeLabel || '当前范围')"
+      >
+        {{ personalSpace ? '专属空间 · 仅本人可见' : (scopeLabel || '当前范围') }}
       </span>
     </div>
 
@@ -440,12 +446,16 @@ function statusText(item: UploadQueueItem): string {
 
 .head-badge {
   flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
   padding: 2px 7px;
   border: 1px solid #dbe6f7;
   border-radius: 4px;
   background: #f8fbff;
   color: #3f6fb5;
   font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .head-badge.private {

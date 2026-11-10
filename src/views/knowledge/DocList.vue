@@ -137,6 +137,17 @@ const departmentScope = computed<number | null>(() => {
   return Number.isFinite(id) ? id : null
 })
 
+/** 上传草稿的归属类型：非超管由账号归属决定，超管由左栏选择决定 */
+const uploadScopeKind = computed<'school' | 'college' | 'department' | 'personal'>(() => {
+  if (personalMode.value) return 'personal'
+  if (!isSuperAdmin.value) {
+    return userStore.role === 'dept_admin' ? 'department' : 'college'
+  }
+  if (scopeMode.value === 'college') return 'college'
+  if (scopeMode.value === 'department') return 'department'
+  return 'school'
+})
+
 // ── 「全部部门」浏览时的部门导航范围 ──
 // 仅筛选右侧资料，不改变上传/维护范围；需要维护某部门时使用「进入该部门管理」
 type BrowseScope =
@@ -811,6 +822,9 @@ const showTagManager = ref(false)
 const dirSelectedIds = ref<number[]>([])
 const dirViewMode = ref<'list' | 'grid'>('list')
 const dirSort = ref<'newest' | 'oldest' | 'name' | 'size'>('newest')
+// 目录区（文件列表 / 待分类 / 自定义目录）前端分页：文件量大时一次性渲染会把页面无限拉长
+const dirPage = ref(1)
+const dirPageSize = ref(20)
 // 移动端将目录树收起，避免进入页面时目录与文件两层内容同时铺开
 const folderRailOpen = ref(false)
 const dirMoveTarget = ref<FolderId | null>(null)
@@ -1254,6 +1268,45 @@ function sortDocs(docs: KnowledgeFile[]): KnowledgeFile[] {
 const sortedSelectedFolderDocs = computed(() => sortDocs(selectedFolderDocs.value))
 const rootVisibleFiles = computed(() => sortDocs(visibleFiles.value))
 
+/** 目录区当前视图的完整文件集合（分页前） */
+const directoryDocs = computed(() =>
+  selectedFolder.value === 'root' || allDepartmentsMode.value
+    ? rootVisibleFiles.value
+    : sortedSelectedFolderDocs.value,
+)
+
+const directoryPageCount = computed(() =>
+  Math.max(1, Math.ceil(directoryDocs.value.length / dirPageSize.value)),
+)
+
+/** 只渲染当前页，避免几百上千条文件把页面撑长、拖慢滚动 */
+const pagedDirectoryDocs = computed(() => {
+  const start = (dirPage.value - 1) * dirPageSize.value
+  return directoryDocs.value.slice(start, start + dirPageSize.value)
+})
+
+// 切换目录、筛选条件或每页条数后回到第 1 页
+watch(
+  [
+    selectedFolder,
+    searchQuery,
+    formatFilter,
+    collegeFilter,
+    uploaderFilter,
+    activeTagId,
+    browseScope,
+    dirPageSize,
+  ],
+  () => {
+    dirPage.value = 1
+  },
+)
+
+// 删除/移动文件导致总页数变少时，把页码收敛到最后一页
+watch(directoryPageCount, (count) => {
+  if (dirPage.value > count) dirPage.value = count
+})
+
 function handleDocRowSelect(doc: KnowledgeFile) {
   if (allDepartmentsMode.value || isReviewer.value) {
     openDocPreview(doc.id, doc.title)
@@ -1348,8 +1401,9 @@ function toggleDirSelect(payload: { id: number; checked: boolean }) {
   }
 }
 
+// 表头全选只作用于当前页；跨页选择保留已勾选项
 function selectAllRootDocs(checked: boolean) {
-  const ids = rootVisibleFiles.value.map((file) => file.id)
+  const ids = pagedDirectoryDocs.value.map((file) => file.id)
   if (checked) {
     dirSelectedIds.value = [...new Set([...dirSelectedIds.value, ...ids])]
   } else {
@@ -1358,7 +1412,7 @@ function selectAllRootDocs(checked: boolean) {
 }
 
 function selectAllFolderDocs(checked: boolean) {
-  const ids = sortedSelectedFolderDocs.value.map((file) => file.id)
+  const ids = pagedDirectoryDocs.value.map((file) => file.id)
   if (checked) {
     dirSelectedIds.value = [...new Set([...dirSelectedIds.value, ...ids])]
   } else {
@@ -2063,6 +2117,7 @@ async function handleResubmit(file: KnowledgeFile) {
           :items="queue"
           :folder-options="folderOptions"
           :personal-space="personalMode"
+          :scope-label="scopeLabel"
           :uploading="uploading"
           :active-key="activeInfoKey"
           @add-files="addFiles"
@@ -2090,6 +2145,9 @@ async function handleResubmit(file: KnowledgeFile) {
           :saving="savingInfo"
           :lock-private="personalMode"
           :draft-mode="Boolean(activeQueueItem)"
+          :context-scope-label="scopeLabel"
+          :context-scope-kind="uploadScopeKind"
+          :is-super-admin="isSuperAdmin"
           @select-tab="openInfoTab"
           @save="handleInfoSave"
           @preview="previewInfoDoc"
@@ -2332,7 +2390,7 @@ async function handleResubmit(file: KnowledgeFile) {
               <div v-if="tableLoading" class="section-hint">资料加载中…</div>
               <DirectoryDocList
                 v-else-if="rootVisibleFiles.length"
-                :docs="rootVisibleFiles"
+                :docs="pagedDirectoryDocs"
                 :view-mode="dirViewMode"
                 :selected-ids="dirSelectedIds"
                 :active-doc-id="infoDoc?.id ?? null"
@@ -2428,7 +2486,7 @@ async function handleResubmit(file: KnowledgeFile) {
                 <div v-if="tableLoading" class="section-hint">资料加载中…</div>
                 <DirectoryDocList
                   v-else-if="rootVisibleFiles.length"
-                  :docs="rootVisibleFiles"
+                  :docs="pagedDirectoryDocs"
                   :view-mode="dirViewMode"
                   :selected-ids="dirSelectedIds"
                   :active-doc-id="infoDoc?.id ?? null"
@@ -2498,7 +2556,7 @@ async function handleResubmit(file: KnowledgeFile) {
 
                 <DirectoryDocList
                   v-if="sortedSelectedFolderDocs.length"
-                  :docs="sortedSelectedFolderDocs"
+                  :docs="pagedDirectoryDocs"
                   :view-mode="dirViewMode"
                   :selected-ids="dirSelectedIds"
                   :active-doc-id="infoDoc?.id ?? null"
@@ -2531,6 +2589,18 @@ async function handleResubmit(file: KnowledgeFile) {
                 </div>
               </template>
             </template>
+          </div>
+
+          <div v-if="directoryDocs.length > dirPageSize" class="directory-pagination">
+            <el-pagination
+              v-model:current-page="dirPage"
+              v-model:page-size="dirPageSize"
+              :page-sizes="[20, 50, 100]"
+              :total="directoryDocs.length"
+              layout="total, sizes, prev, pager, next, jumper"
+              background
+              size="small"
+            />
           </div>
         </div>
       </section>
@@ -3117,6 +3187,16 @@ async function handleResubmit(file: KnowledgeFile) {
   overflow-y: auto;
   padding-right: 2px;
   scrollbar-width: thin;
+}
+
+/* 分页条固定在列表下方，不随列表滚动 */
+.directory-pagination {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  padding-top: 10px;
+  margin-top: 8px;
+  border-top: 1px solid #eef2f7;
 }
 
 .dir-section {
