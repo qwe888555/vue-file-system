@@ -64,7 +64,6 @@ const form = reactive<FormState>({
 
 const snapshot = ref('')
 const newKeyword = ref('')
-const newTag = ref('')
 
 const activeTab = computed(
   () => props.tabs.find((tab) => tab.key === props.activeKey) || null,
@@ -167,7 +166,6 @@ function tagNames(list: unknown): string[] {
 
 function resetForm() {
   newKeyword.value = ''
-  newTag.value = ''
   if (!props.doc) {
     form.title = ''
     form.description = ''
@@ -233,25 +231,6 @@ function addKeyword() {
 
 function removeKeyword(index: number) {
   form.keywords.splice(index, 1)
-}
-
-function addTag() {
-  const value = normalized(newTag.value)
-  if (!value) return
-  if (form.tags.includes(value)) {
-    newTag.value = ''
-    return
-  }
-  if (form.tags.length >= 12) {
-    ElMessage.warning('最多添加 12 个标签')
-    return
-  }
-  form.tags.push(value)
-  newTag.value = ''
-}
-
-function removeTag(index: number) {
-  form.tags.splice(index, 1)
 }
 
 function adoptAiTitle() {
@@ -450,7 +429,7 @@ function submit() {
 
       <div class="field">
         <div class="field-label">
-          <span>关键词</span>
+          <span>资料标签（关键词）</span>
           <em class="field-hint">{{ form.keywords.length }}/20 · 支持检索与推荐</em>
         </div>
         <div class="chip-box" :class="{ readonly: !canEditInfo }">
@@ -475,36 +454,6 @@ function submit() {
             @blur="addKeyword"
           />
           <span v-if="!form.keywords.length && !canEditInfo" class="chip-placeholder">暂无关键词</span>
-        </div>
-      </div>
-
-      <div class="field">
-        <div class="field-label">
-          <span>资料标签</span>
-          <em class="field-hint">{{ form.tags.length }}/12 · 人工维护</em>
-        </div>
-        <div class="chip-box" :class="{ readonly: !canEditInfo }">
-          <span v-for="(tag, index) in form.tags" :key="`tag-${tag}-${index}`" class="chip tag-chip">
-            {{ tag }}
-            <button
-              v-if="canEditInfo && !saving"
-              type="button"
-              title="移除标签"
-              @click="removeTag(index)"
-            >
-              <el-icon><Close /></el-icon>
-            </button>
-          </span>
-          <input
-            v-if="canEditInfo && !saving && form.tags.length < 12"
-            v-model="newTag"
-            class="chip-input"
-            maxlength="16"
-            placeholder="+ 添加标签"
-            @keydown.enter.prevent="addTag"
-            @blur="addTag"
-          />
-          <span v-if="!form.tags.length && !canEditInfo" class="chip-placeholder">暂无标签</span>
         </div>
       </div>
 
@@ -1217,12 +1166,6 @@ function submit() {
   border: 1px solid #d5e3f7;
   background: #f3f8ff;
   color: #3f6fb5;
-}
-
-.tag-chip {
-  border: 1px solid #f0e4cb;
-  background: #fffbf1;
-  color: #a16207;
 }
 
 .chip-input {
