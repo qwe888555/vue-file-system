@@ -637,10 +637,6 @@ onUnmounted(() => {
             @keydown="handleInputKeydown"
           />
           <div class="m-composer-bar">
-            <span class="m-composer-feature">
-              <ChatIcon name="sparkles" :size="12" />
-              知识库增强
-            </span>
             <div class="m-composer-actions">
               <button
                 class="m-mic-btn"
@@ -1285,24 +1281,9 @@ onUnmounted(() => {
 .m-composer-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
   margin-top: 5px;
-}
-.m-composer-feature {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 7px;
-  background: var(--mq-brand-50);
-  color: var(--mq-brand-700);
-  font-size: 10.5px;
-  font-weight: 500;
-  white-space: nowrap;
-  min-width: 0;
-  overflow: hidden;
 }
 .m-composer-actions {
   display: flex;
@@ -1916,10 +1897,6 @@ onUnmounted(() => {
   }
   .m-welcome-trust {
     gap: 7px 11px;
-  }
-  .m-composer-feature {
-    font-size: 10px;
-    padding: 0 6px;
   }
   .m-input-area {
     padding-left: 8px;

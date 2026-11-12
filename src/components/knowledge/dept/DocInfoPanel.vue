@@ -31,16 +31,12 @@ const props = defineProps<{
   canManageFolder: boolean
   canResubmit: boolean
   saving: boolean
-  /** 我的专属空间：可见范围锁定为「仅本人可见」，目录只能使用专属目录 */
-  lockPrivate?: boolean
   /** 上传前草稿：保存只会写回待上传队列，不会调用入库接口 */
   draftMode?: boolean
   /** 当前上传范围的名称（草稿尚未入库，归属字段由后端在上传时确定） */
   contextScopeLabel?: string
-  /** 当前账号是否超级管理员（仅超管的私密文档是严格仅本人可见） */
-  isSuperAdmin?: boolean
   /** 草稿的归属类型（已入库文档以实际字段为准，不看这个） */
-  contextScopeKind?: 'school' | 'college' | 'department' | 'personal'
+  contextScopeKind?: 'school' | 'college' | 'department'
 }>()
 
 const emit = defineEmits<{
@@ -85,13 +81,6 @@ const aiTitle = computed(() => (props.aiMeta?.recommendedTitle || '').trim())
 const showAiTitle = computed(
   () => !!aiTitle.value && aiTitle.value !== form.title.trim(),
 )
-const aiVisibility = computed(() => props.aiMeta?.visibility)
-const showAiVisibility = computed(
-  () =>
-    !props.lockPrivate &&
-    !!aiVisibility.value &&
-    aiVisibility.value !== form.visibility,
-)
 const aiConfidenceLabel = computed(() => {
   const map: Record<string, string> = { high: '置信度高', medium: '置信度中', low: '置信度低' }
   return map[props.aiMeta?.confidence || ''] || ''
@@ -113,7 +102,6 @@ const reviewStatus = computed(() => props.doc?.review_status)
  * visibility（公开/私密）不等于范围，不能再用可见性按钮表达“部门可见”。
  */
 const scopeRangeLabel = computed(() => {
-  if (props.lockPrivate) return '我的专属空间（仅本人）'
   const doc = props.doc
   if (doc?.department_id) {
     // 学院与部门是两套并列归属，部门不属于某个学院，因此这里只显示部门名
@@ -133,8 +121,7 @@ const scopeRangeLabel = computed(() => {
  * 草稿对象虽然有 doc（队列里的临时数据），但没有 college_id/department_id，
  * 必须先看 draftMode，否则会被误判成校级资料。
  */
-const scopeKind = computed<'school' | 'college' | 'department' | 'personal'>(() => {
-  if (props.lockPrivate) return 'personal'
+const scopeKind = computed<'school' | 'college' | 'department'>(() => {
   if (props.draftMode) return props.contextScopeKind || 'school'
   const doc = props.doc
   if (doc?.department_id) return 'department'
@@ -148,10 +135,8 @@ const scopeKind = computed<'school' | 'college' | 'department' | 'personal'>(() 
  * - 学院级：本院管理员、学院级审核员、超管；部门管理员看不到
  * - 部门级：本部门管理员、部门审核员、超管；学院管理员和其他部门看不到
  * - 校级：全校各学院/部门的管理员、审核员、超管
- * - 专属空间：仅本人
  */
 const audienceLabel = computed(() => {
-  if (scopeKind.value === 'personal') return '只有你自己'
   if (scopeKind.value === 'department') {
     return '本部门管理员、本部门审核员和超级管理员（学院管理员和其他部门看不到）'
   }
@@ -161,36 +146,14 @@ const audienceLabel = computed(() => {
   return '全校各学院、部门的管理员、审核员和超级管理员'
 })
 
-const visibilityPlace = computed(() =>
-  scopeKind.value === 'school'
-    ? '全校资料列表'
-    : `「${scopeRangeLabel.value}」的资料列表`,
-)
-
-/** 开头点明这份资料是哪一级，避免把学院级资料和“全校资料”混为一谈 */
-const scopeKindLabel = computed(() => {
-  if (scopeKind.value === 'personal') return '专属空间'
-  if (scopeKind.value === 'department') return '部门级资料'
-  if (scopeKind.value === 'college') return '学院级资料'
-  return '校级资料'
-})
-
 /**
- * 用「哪一级、放进哪里、谁能看到、AI 用不用」四件事描述。
- * 私密不改变能看到的人，只是不参与 AI 检索；只有超级管理员的私密文档
- * 在后端是严格仅本人可见。
+ * 公开/私密都不影响浏览可见范围与 AI 检索；私密只限制 AI 引用区的源文件下载。
  */
 const visibilityHint = computed(() => {
-  if (props.lockPrivate) {
-    return '专属空间：只有你自己能看到，AI 问答不会引用'
-  }
   if (form.visibility === 'private') {
-    if (props.isSuperAdmin) {
-      return '私密：只有你自己能看到，AI 问答不会引用'
-    }
-    return `${scopeKindLabel.value}。私密：仍会放进${visibilityPlace.value}，能看到的人：${audienceLabel.value}；但 AI 问答不会引用`
+    return `可见范围：${audienceLabel.value}；AI 问答可检索引用，但不能下载源文件`
   }
-  return `${scopeKindLabel.value}。公开：会放进${visibilityPlace.value}，能看到的人：${audienceLabel.value}；审核通过后 AI 问答会引用`
+  return `可见范围：${audienceLabel.value}；AI 问答会引用，可下载源文件`
 })
 
 const fileSizeLabel = computed(() => {
@@ -262,7 +225,7 @@ function resetForm() {
     form.description = ''
     form.keywords = []
     form.tags = []
-    form.visibility = props.lockPrivate ? 'private' : 'public'
+    form.visibility = 'public'
     form.folderId = null
     snapshot.value = serialize()
     return
@@ -275,9 +238,8 @@ function resetForm() {
     ? docKeywords
     : keywordPhrases(props.aiMeta?.keywords).slice(0, 5)
   form.tags = tagNames(props.doc.tags)
-  form.visibility = props.lockPrivate
-    ? 'private'
-    : props.doc.visibility === 'private' || props.doc.visibility === 'public'
+  form.visibility =
+    props.doc.visibility === 'private' || props.doc.visibility === 'public'
       ? props.doc.visibility
       : props.aiMeta?.visibility || 'public'
   form.folderId = props.currentFolderId
@@ -288,15 +250,6 @@ watch(
   () => [props.doc?.id ?? null, props.formVersion],
   () => {
     resetForm()
-  },
-  { immediate: true },
-)
-
-// 切换到专属空间后，已打开的面板立即锁定为「仅本人可见」
-watch(
-  () => props.lockPrivate,
-  (locked) => {
-    if (locked) form.visibility = 'private'
   },
   { immediate: true },
 )
@@ -329,11 +282,6 @@ function adoptAiTitle() {
   form.title = aiTitle.value
 }
 
-function adoptAiVisibility() {
-  if (props.lockPrivate) return
-  if (aiVisibility.value) form.visibility = aiVisibility.value
-}
-
 function onFolderChange(value: FolderId | '') {
   form.folderId = value === '' ? null : value
 }
@@ -349,7 +297,7 @@ function submit() {
     description: form.description.trim(),
     keywords: [...new Set(form.keywords.map((item) => item.trim()).filter(Boolean))],
     tags: [...new Set(form.tags.map((item) => item.trim()).filter(Boolean))],
-    scope: props.lockPrivate ? 'private' : form.visibility,
+    scope: form.visibility,
     folderId: form.folderId,
   })
 }
@@ -557,38 +505,28 @@ function submit() {
           <div class="scope-value" :title="scopeRangeLabel">{{ scopeRangeLabel }}</div>
 
           <div class="field-label scope-sub-label"><span>可见性</span></div>
-          <div class="segment" :class="{ disabled: !canEditInfo || saving || lockPrivate }">
+          <div class="segment" :class="{ disabled: !canEditInfo || saving }">
             <button
               type="button"
               :class="{ active: form.visibility === 'public' }"
-              :disabled="!canEditInfo || saving || lockPrivate"
+              :disabled="!canEditInfo || saving"
               @click="form.visibility = 'public'"
             >公开</button>
             <button
               type="button"
               :class="{ active: form.visibility === 'private' }"
-              :disabled="!canEditInfo || saving || lockPrivate"
+              :disabled="!canEditInfo || saving"
               @click="form.visibility = 'private'"
             >私密</button>
           </div>
           <div class="lock-hint">{{ visibilityHint }}</div>
-          <div v-if="showAiVisibility" class="ai-suggest compact">
-            <span class="ai-suggest-label">AI 建议</span>
-            <span class="ai-suggest-value">{{ aiVisibility === 'private' ? '私密' : '公开' }}</span>
-            <button
-              type="button"
-              class="ai-suggest-btn"
-              :disabled="!canEditInfo || saving"
-              @click="adoptAiVisibility"
-            >采用</button>
-          </div>
         </div>
 
         <div class="field">
           <div class="field-label">
             <span>归档目录</span>
             <em class="field-hint">
-              {{ lockPrivate ? '仅归档到专属目录' : canManageFolder ? '可随时调整' : '由管理员维护' }}
+              {{ canManageFolder ? '可随时调整' : '由管理员维护' }}
             </em>
           </div>
           <el-select
@@ -1167,11 +1105,6 @@ function submit() {
   border-radius: 4px;
   background: #fbfdff;
   font-size: 11px;
-}
-
-.ai-suggest.compact {
-  margin-top: 4px;
-  padding: 3px 6px;
 }
 
 .ai-suggest-label {

@@ -17,8 +17,6 @@ export interface UploadQueueItem {
   keywords: string[]
   tags: string[]
   scope: 'public' | 'private'
-  /** 加入队列时处于专属空间：无论 AI 建议或之后切换范围，都固定私密 */
-  forcedPrivate?: boolean
   status: UploadItemStatus
   errorMessage: string
   /** 加入队列后即开始 AI 识别，失败时记录原因但允许直接上传 */

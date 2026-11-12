@@ -148,6 +148,8 @@ export interface KnowledgeFile {
   uploader?: number
   uploader_name?: string
   visibility?: string
+  /** AI 引用区：该文件是否允许当前用户下载（公开，或私密但为上传者本人） */
+  downloadable?: boolean
   /** 文档标签（仅详情接口返回） */
   tags?: DocTag[]
   /** 文档对外关联（文件网出边，仅详情接口返回） */

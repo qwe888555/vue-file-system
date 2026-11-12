@@ -164,6 +164,13 @@ async function handleDocDownload(docId: number, title: string) {
     // 优先使用 download_url（通过获取详情获取）
     try {
       const docDetail = await getDocDetailApi(docId)
+      // 私密文件仅上传者本人可下载；其他用户只能看到 AI 引用
+      const isPrivateDoc = docDetail.visibility === 'private'
+      const isUploader = docDetail.uploader != null && docDetail.uploader === userStore.userInfo?.id
+      if (isPrivateDoc && !isUploader) {
+        ElMessage.warning('私密文件不可下载，仅上传者本人可下载源文件')
+        return
+      }
       if (docDetail.download_url) {
         const iframe = document.createElement('iframe')
         iframe.style.display = 'none'

@@ -146,6 +146,11 @@ export function useSSE(conversationId: number, question: string, onDone?: () => 
               fileType: r.file_type || '',
               summary: r.doc_title || '',
               status: 1,
+              // 下载授权由后端判定：公开或私密但为上传者本人时为 true
+              visibility: r.visibility || '',
+              downloadable: r.downloadable === true,
+              file_name: r.file_name || '',
+              download_url: r.download_url || '',
             })) as any
           }
           break

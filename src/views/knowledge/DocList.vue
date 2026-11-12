@@ -10,7 +10,6 @@ import {
   FolderOpened,
   Grid,
   List,
-  Lock,
   OfficeBuilding,
   Refresh,
   WarningFilled,
@@ -104,9 +103,8 @@ type FolderSelection = 'root' | 'unfiled' | FolderId
 const selectedFolder = ref<FolderSelection>('root')
 
 // ── 超级管理员查看范围 ──
-// 'all' 全部部门 | 'personal' 我的专属空间 | 'college:<id>' 二级学院 | 'dept:<id>' 行政部门
+// 'all' 全部部门 | 'college:<id>' 二级学院 | 'dept:<id>' 行政部门
 const ALL_DEPARTMENTS = 'all'
-const PERSONAL_SPACE = 'personal'
 const scopeValue = ref<string>(ALL_DEPARTMENTS)
 const collegeScopeOptions = ref<College[]>([])
 const departmentOptions = ref<DepartmentOption[]>([])
@@ -114,17 +112,13 @@ const departmentOptions = ref<DepartmentOption[]>([])
 const departmentTree = ref<Department[]>([])
 const scopeOptionsLoading = ref(false)
 
-const scopeMode = computed<'all' | 'personal' | 'college' | 'department'>(() => {
-  if (scopeValue.value === PERSONAL_SPACE) return 'personal'
+const scopeMode = computed<'all' | 'college' | 'department'>(() => {
   if (scopeValue.value.startsWith('college:')) return 'college'
   if (scopeValue.value.startsWith('dept:')) return 'department'
   return 'all'
 })
 const allDepartmentsMode = computed(
   () => isSuperAdmin.value && scopeMode.value === 'all',
-)
-const personalMode = computed(
-  () => isSuperAdmin.value && scopeMode.value === 'personal',
 )
 const collegeScope = computed<number | null>(() => {
   if (!isSuperAdmin.value || scopeMode.value !== 'college') return null
@@ -138,8 +132,7 @@ const departmentScope = computed<number | null>(() => {
 })
 
 /** 上传草稿的归属类型：非超管由账号归属决定，超管由左栏选择决定 */
-const uploadScopeKind = computed<'school' | 'college' | 'department' | 'personal'>(() => {
-  if (personalMode.value) return 'personal'
+const uploadScopeKind = computed<'school' | 'college' | 'department'>(() => {
   if (!isSuperAdmin.value) {
     return userStore.role === 'dept_admin' ? 'department' : 'college'
   }
@@ -197,7 +190,7 @@ const browseDepartmentIds = computed<Set<number>>(() => {
   return new Set(collectDepartmentIds(entry.node))
 })
 
-/** 「全部部门」为只读总览，不展示资料目录；专属空间同样支持目录 */
+/** 「全部部门」为只读总览，不展示资料目录 */
 const hideFolderRail = computed(() => allDepartmentsMode.value)
 
 const canManageFolders = computed(
@@ -229,7 +222,6 @@ const selectedDepartment = computed(() =>
 )
 
 const scopeLabel = computed(() => {
-  if (personalMode.value) return '我的专属空间'
   if (allDepartmentsMode.value) return '全部部门'
   if (isSuperAdmin.value && selectedCollege.value) return selectedCollege.value.name
   if (isSuperAdmin.value && selectedDepartment.value) return selectedDepartment.value.full_path
@@ -311,11 +303,6 @@ async function onScopeChange(value: string) {
   targetFolderId.value = null
   queue.value.forEach((item) => {
     item.targetFolderId = null
-    // 切到专属空间后，队列中的文件同样固定私密
-    if (value === PERSONAL_SPACE) {
-      item.forcedPrivate = true
-      item.scope = 'private'
-    }
   })
   clearInfoSelection()
   resetDirectoryFilters()
@@ -359,8 +346,7 @@ function addFiles(files: File[]) {
       description: '',
       keywords: [],
       tags: [],
-      scope: personalMode.value ? 'private' : 'public',
-      forcedPrivate: personalMode.value,
+      scope: 'public',
       status: 'analyzing',
       errorMessage: '',
       targetFolderId: targetFolderId.value,
@@ -710,8 +696,7 @@ async function handleInfoSave(payload: InfoSavePayload) {
       queueItem.description = payload.description
       queueItem.keywords = payload.keywords
       queueItem.tags = payload.tags
-      // 专属空间加入队列的文件始终私密
-      queueItem.scope = queueItem.forcedPrivate ? 'private' : payload.scope
+      queueItem.scope = payload.scope
       queueItem.targetFolderId = payload.folderId
       const tab = infoTabs.value.find((entry) => entry.key === queueItem.key)
       if (tab) tab.title = payload.title
@@ -865,10 +850,6 @@ function normalizeDoc(file: any): KnowledgeFile {
 }
 
 async function fetchDocPages(tagId?: number): Promise<KnowledgeFile[]> {
-  const personalOwnerId = personalMode.value ? userStore.userInfo?.id : undefined
-  if (personalMode.value && !personalOwnerId) {
-    throw new Error('无法确定当前用户，请重新登录')
-  }
   let page = 1
   let collected: any[] = []
   let hasNext = true
@@ -879,10 +860,6 @@ async function fetchDocPages(tagId?: number): Promise<KnowledgeFile[]> {
       tagId,
       collegeId: collegeScope.value ?? undefined,
       departmentId: departmentScope.value ?? undefined,
-      // 专属空间：只看自己上传的私密文件，且不受默认「近一年」限制
-      visibility: personalMode.value ? 'private' : undefined,
-      uploaderId: personalOwnerId,
-      daysBack: personalMode.value ? 0 : undefined,
     })
     const data = res?.results ?? res?.data ?? (Array.isArray(res) ? res : [])
     const batch = Array.isArray(data) ? data : []
@@ -944,7 +921,6 @@ async function refreshAll() {
     loadFolders({
       departmentId: departmentScope.value,
       collegeId: collegeScope.value,
-      personal: personalMode.value,
     }),
   ])
 }
@@ -1316,7 +1292,6 @@ function handleDocRowSelect(doc: KnowledgeFile) {
 }
 
 const directoryTitle = computed(() => {
-  if (personalMode.value) return '我的专属文件'
   if (allDepartmentsMode.value) {
     if (browseCollege.value) return browseCollege.value.name
     if (browseDepartment.value) return browseDepartment.value.name
@@ -1334,7 +1309,6 @@ const directoryCount = computed(() => {
 })
 
 const directoryHint = computed(() => {
-  if (personalMode.value) return '专属空间内的文件仅本人可见，不会出现在其他部门或超管的资料中'
   if (allDepartmentsMode.value) return '点击左侧部门树按学院或部门筛选；选中后可直接进入该部门管理'
   if (isReviewer.value) return '只读浏览部门资料与审核状态，可预览和下载文件'
   if (selectedFolder.value === 'root') return '按目录整理部门资料，待分类文件可直接拖入目录'
@@ -1436,7 +1410,6 @@ async function moveDocsAndRefresh(
   await loadFolders({
     departmentId: departmentScope.value,
     collegeId: collegeScope.value,
-    personal: personalMode.value,
   })
   return moved
 }
@@ -1639,10 +1612,7 @@ function applyAiResult(item: UploadQueueItem, result: Awaited<ReturnType<typeof 
     .map((keyword) => String(keyword).trim())
     .filter(Boolean)
     .slice(0, 5)
-  // 加入队列时处于专属空间的文件始终私密，不被 AI 建议改回公开
-  item.scope = item.forcedPrivate
-    ? 'private'
-    : result.visibility === 'private' ? 'private' : 'public'
+  item.scope = result.visibility === 'private' ? 'private' : 'public'
   item.confidence = result.confidence
 }
 
@@ -1668,11 +1638,10 @@ async function uploadViaBackend(
   if (item.description) formData.append('description', item.description)
   item.keywords.forEach((keyword) => formData.append('keywords', keyword))
   appendUploadMeta(formData, item.tags)
-  formData.append('visibility', item.forcedPrivate ? 'private' : item.scope)
+  formData.append('visibility', item.scope)
   if (folderId != null) {
     formData.append('folder_id', String(folderId))
   }
-  if (personalMode.value) formData.append('personal', 'true')
   if (collegeScope.value != null) {
     formData.append('college_id', String(collegeScope.value))
   }
@@ -1689,7 +1658,7 @@ async function uploadOne(item: UploadQueueItem): Promise<KnowledgeFile> {
   const title = item.title.trim() || fileBaseName(item.file)
   const selectedTarget = item.targetFolderId
   const numericFolder = typeof selectedTarget === 'number' ? selectedTarget : null
-  const effectiveScope = item.forcedPrivate ? 'private' : item.scope
+  const effectiveScope = item.scope
   let result: KnowledgeFile
 
   if (item.file.size > LARGE_FILE_THRESHOLD) {
@@ -1704,7 +1673,6 @@ async function uploadOne(item: UploadQueueItem): Promise<KnowledgeFile> {
         folderId: numericFolder,
         collegeId: collegeScope.value,
         departmentId: departmentScope.value,
-        personal: personalMode.value,
         onProgress: (percent) => setUploadProgress(item.key, percent),
       })
     } catch (error) {
@@ -2028,12 +1996,6 @@ async function handleResubmit(file: KnowledgeFile) {
             <template #prefix>
               <el-icon><OfficeBuilding /></el-icon>
             </template>
-            <el-option-group label="我的空间">
-              <el-option
-                label="我的专属空间（仅本人可见）"
-                :value="PERSONAL_SPACE"
-              />
-            </el-option-group>
             <el-option-group label="全校">
               <el-option label="全部部门（校级总览）" :value="ALL_DEPARTMENTS" />
             </el-option-group>
@@ -2059,13 +2021,11 @@ async function handleResubmit(file: KnowledgeFile) {
           {{
             isReviewer
               ? '只读查看部门资料目录、审核状态与文件内容。'
-              : personalMode
-                ? '专属空间内的文件仅本人可见，不会出现在其他部门或超管的资料中。'
-                : allDepartmentsMode
-                  ? '查看全校各部门资料；选择具体学院或部门后可进入目录上传与维护。'
-                  : activeTab === 'manage'
-                    ? '上传、即时 AI 识别与目录归档一体化工作台。'
-                    : '按部门目录浏览、检索与归档全部资料。'
+              : allDepartmentsMode
+                ? '查看全校各部门资料；选择具体学院或部门后可进入目录上传与维护。'
+                : activeTab === 'manage'
+                  ? '上传、即时 AI 识别与目录归档一体化工作台。'
+                  : '按部门目录浏览、检索与归档全部资料。'
           }}
         </p>
       </div>
@@ -2116,7 +2076,6 @@ async function handleResubmit(file: KnowledgeFile) {
           v-model:target-folder-id="targetFolderId"
           :items="queue"
           :folder-options="folderOptions"
-          :personal-space="personalMode"
           :scope-label="scopeLabel"
           :uploading="uploading"
           :active-key="activeInfoKey"
@@ -2143,11 +2102,9 @@ async function handleResubmit(file: KnowledgeFile) {
           :can-manage-folder="canManageFolders"
           :can-resubmit="canResubmitInfo"
           :saving="savingInfo"
-          :lock-private="personalMode"
           :draft-mode="Boolean(activeQueueItem)"
           :context-scope-label="scopeLabel"
           :context-scope-kind="uploadScopeKind"
-          :is-super-admin="isSuperAdmin"
           @select-tab="openInfoTab"
           @save="handleInfoSave"
           @preview="previewInfoDoc"
@@ -2317,11 +2274,6 @@ async function handleResubmit(file: KnowledgeFile) {
                 新建文件夹
               </button>
             </div>
-          </div>
-
-          <div v-if="personalMode" class="personal-banner">
-            <el-icon><Lock /></el-icon>
-            <span>我的专属空间：文件与文件夹仅本人可见。可在左侧专属目录中新建文件夹，并把文件归档进去。</span>
           </div>
 
           <el-alert
@@ -2506,14 +2458,12 @@ async function handleResubmit(file: KnowledgeFile) {
                 />
                 <div v-else class="directory-empty compact">
                   <el-icon><FolderOpened /></el-icon>
-                  <h3>{{ personalMode ? '专属空间暂无文件' : '暂无资料' }}</h3>
+                  <h3>暂无资料</h3>
                   <p>
                     {{
-                      personalMode
-                        ? '在「文件管理」中上传文件，文件仅本人可见，并可归档到左侧专属目录。'
-                        : canManageDocs
-                          ? '拖入文件即可开始 AI 识别，上传后会显示在这里。'
-                          : '当前筛选条件下暂无资料。'
+                      canManageDocs
+                        ? '拖入文件即可开始 AI 识别，上传后会显示在这里。'
+                        : '当前筛选条件下暂无资料。'
                     }}
                   </p>
                 </div>
@@ -2713,19 +2663,6 @@ async function handleResubmit(file: KnowledgeFile) {
 .scope-select :deep(.el-select__prefix) {
   color: #2563eb;
   font-size: 17px;
-}
-
-.personal-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 9px 12px;
-  border: 1px solid #d8c7f5;
-  border-radius: 8px;
-  background: #f7f3ff;
-  color: #6b3fa0;
-  font-size: 12.5px;
 }
 
 .head-copy p {

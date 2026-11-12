@@ -1018,10 +1018,6 @@ watch(
                 @keydown="handleInputKeydown"
               />
               <div class="composer-bar">
-                <span class="composer-feature">
-                  <ChatIcon name="sparkles" :size="12" />
-                  知识库增强
-                </span>
                 <div class="composer-actions">
                   <button
                     class="mic-btn"
@@ -1907,22 +1903,9 @@ button { -webkit-tap-highlight-color: transparent; }
 .composer-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 10px;
   margin-top: 7px;
-}
-.composer-feature {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 9px;
-  border-radius: 7px;
-  background: var(--qa-brand-50);
-  color: var(--qa-brand-700);
-  font-size: 10.5px;
-  font-weight: 500;
-  white-space: nowrap;
 }
 .composer-actions {
   display: flex;

@@ -146,10 +146,23 @@ function escapeHtml(s: string): string {
   ))
 }
 
+/**
+ * 是否允许下载：公开文件人人可下；私密文件仅上传者本人可下（后端 downloadable 判定）。
+ * 历史消息没有 visibility 字段时按可下载处理，保持原有行为。
+ */
+function canDownload(file: KnowledgeFile): boolean {
+  if (file.visibility === 'private') return file.downloadable === true
+  return true
+}
+
 /** 下载文件 */
 async function downloadFile(file: KnowledgeFile) {
   if (!file.id || file.id === 0) {
     ElMessage.warning('该文件暂不支持下载')
+    return
+  }
+  if (!canDownload(file)) {
+    ElMessage.warning('私密文件不可下载，仅上传者本人可下载源文件')
     return
   }
 
@@ -248,8 +261,14 @@ function closePreview() {
             <span class="refs-title">{{ file.title }}</span>
             <span v-if="file.fileType" class="refs-type">{{ file.fileType.toUpperCase() }}</span>
           </div>
-          <!-- 下载按钮 -->
-          <button class="refs-download-btn" @click.stop="downloadFile(file)" title="下载文件">
+          <!-- 下载按钮：私密文件且非上传者本人时禁用 -->
+          <button
+            class="refs-download-btn"
+            :class="{ 'is-locked': !canDownload(file) }"
+            :disabled="!canDownload(file)"
+            :title="canDownload(file) ? '下载文件' : '私密文件不可下载，仅上传者本人可下载源文件'"
+            @click.stop="downloadFile(file)"
+          >
             <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
               <path d="M8 2a.75.75 0 01.75.75v6.638l1.96-2.158a.75.75 0 111.08 1.04l-3.25 3.5a.75.75 0 01-1.08 0l-3.25-3.5a.75.75 0 111.08-1.04l1.96 2.158V2.75A.75.75 0 018 2z" />
               <path d="M2.5 12a.75.75 0 01.75.75v.5c0 .138.112.25.25.25h9a.25.25 0 00.25-.25v-.5a.75.75 0 011.5 0v.5A1.75 1.75 0 0112.5 15h-9A1.75 1.75 0 011.75 13.25v-.5A.75.75 0 012.5 12z" />
@@ -401,6 +420,16 @@ function closePreview() {
 .refs-download-btn:hover {
   background: rgba(64, 158, 255, 0.12);
   color: var(--color-primary, #409eff);
+}
+
+.refs-download-btn.is-locked {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.refs-download-btn.is-locked:hover {
+  background: transparent;
+  color: var(--color-text-secondary, #909399);
 }
 
 .refs-limited {
