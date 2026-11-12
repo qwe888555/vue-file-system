@@ -88,6 +88,30 @@ export function deleteFaqItemApi(id: number): Promise<void> {
 }
 
 /**
+ * 管理端编辑 FAQ —— 文档：PATCH /faq/manage/items/{id}/。
+ * 已发布、草稿、已驳回均可用；编辑不改变 status（已发布仍为已发布）。
+ * 响应不含 category_name / college_name / frequency，与列表结构不同，故单独定义。
+ */
+export interface FaqItemUpdateResult {
+  id: number
+  question: string
+  answer: string
+  category: number | null
+  college: number | null
+  tags: string[]
+  status: 'draft' | 'published' | 'rejected'
+  created_at: string
+  updated_at: string
+}
+
+export function updateFaqItemApi(
+  id: number,
+  data: { question?: string; answer?: string; category?: number | null; college?: number | null; tags?: string[] },
+): Promise<FaqItemUpdateResult> {
+  return request.patch(`/faq/manage/items/${id}/`, data)
+}
+
+/**
  * 草稿详情 —— 文档 4.2 GET：返回单个草稿的完整数据。
  * 列表接口（4.4）基于 3.2 结构不含 updated_at，且可能是缓存数据，
  * 故打开编辑弹窗时以此接口为准，避免用陈旧数据全量覆盖他人修改。

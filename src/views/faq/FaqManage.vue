@@ -46,8 +46,8 @@
             </div>
           </div>
           <div class="fm-card-actions">
-            <!-- 仅草稿可编辑/发布；已发布、已驳回保持只读（后端仅允许 draft 状态修改） -->
-            <el-button v-if="item.status === 'draft'" size="small" @click.stop="openEdit(item)">编辑</el-button>
+            <!-- 已发布、草稿、已驳回均可编辑（编辑不改变状态）；发布/驳回仅对草稿开放 -->
+            <el-button size="small" @click.stop="openEdit(item)">编辑</el-button>
             <el-button v-if="item.status === 'draft'" type="primary" size="small" @click.stop="handlePublish(item)">发布</el-button>
             <el-button v-if="item.status === 'draft'" type="warning" size="small" @click.stop="handleReject(item)">驳回</el-button>
             <el-button type="danger" size="small" @click.stop="handleDelete(item)">删除</el-button>
@@ -133,7 +133,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
-import { getFaqManageItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, getFaqDraftApi, updateFaqDraftApi } from '@/api/faq'
+import { getFaqManageItemsApi, deleteFaqItemApi, getFaqCategoriesApi, actionFaqDraftApi, getFaqDraftApi, updateFaqItemApi } from '@/api/faq'
 import type { FaqCategory, FaqItem } from '@/api/faq'
 
 const keyword = ref('')
@@ -161,12 +161,12 @@ const editVisible = ref(false)
 const editLoading = ref(false)
 const editForm = ref({ question: '', answer: '', category: null as number | null, tags: [] as string[] })
 const editingId = ref<number | null>(null)
-// 本条草稿已有的标签（来源：4.2 GET），作为「可勾选添加」的候选池
-const draftTags = ref<string[]>([])
+// 本条 FAQ 已有的标签（草稿来源于 4.2 GET，其余状态来源于列表），作为「可勾选添加」的候选池
+const sourceTags = ref<string[]>([])
 // 输入框里的新标签，点「添加」才并入 editForm.tags
 const newTag = ref('')
 // 候选标签 = 本条已有标签中当前未选中的部分（移出后可再次点回）
-const availableTags = computed(() => draftTags.value.filter((t) => !editForm.value.tags.includes(t)))
+const availableTags = computed(() => sourceTags.value.filter((t) => !editForm.value.tags.includes(t)))
 const formRef = ref()
 const editRules = {
   question: [{ required: true, message: '请输入问题', trigger: 'blur' }],
@@ -277,10 +277,12 @@ async function openEdit(row: FaqItem) {
     category: row.category ?? null,
     tags: [...(row.tags || [])],
   }
-  draftTags.value = row.tags || []
+  sourceTags.value = row.tags || []
   editVisible.value = true
-  // 文档 4.2 GET：再拉一次草稿最新详情。列表（4.4）结构不含 updated_at 且可能已过期，
-  // 若直接用列表数据编辑保存，会用陈旧的全量字段覆盖他人在此期间的修改
+  // 草稿仍先拉一次最新详情（文档 4.2 GET）：列表（4.4）可能已过期，
+  // 直接用列表数据编辑保存，会用陈旧字段覆盖他人在此期间的修改。
+  // 已发布/已驳回没有文档化的详情接口，使用当前列表数据填充。
+  if (row.status !== 'draft') return
   try {
     const draft = await getFaqDraftApi(row.id)
     // 期间用户可能已关闭弹窗或改编辑了另一条，丢弃过期响应
@@ -291,7 +293,7 @@ async function openEdit(row: FaqItem) {
       category: draft.category ?? null,
       tags: [...(draft.tags || [])],
     }
-    draftTags.value = draft.tags || []
+    sourceTags.value = draft.tags || []
   } catch (e) {
     console.error('获取草稿详情失败', e)
   }
@@ -320,10 +322,12 @@ async function confirmEdit() {
   }
   editLoading.value = true
   try {
-    await updateFaqDraftApi(editingId.value, {
+    // 已发布、草稿、已驳回统一走 PATCH /faq/manage/items/{id}/，
+    // 编辑不改变 status，已发布条目保存后无需再调用发布接口
+    await updateFaqItemApi(editingId.value, {
       question: editForm.value.question,
       answer: editForm.value.answer,
-      // 文档 4.2：category 传 null 表示清除分类。
+      // category 传 null 表示清除分类。
       // el-select 清空时置为 undefined（element-plus 的 valueOnClear 默认值），
       // 而 axios 会丢弃 undefined 字段导致清不掉，故用 ?? 归一到 null
       category: editForm.value.category ?? null,
